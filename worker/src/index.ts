@@ -213,6 +213,26 @@ app.put("/api/settings", async (c) => {
   return c.json({ ok: true, settings: next });
 });
 
+/* ---------------- manual cron triggers (also fire the scheduled jobs) ---------------- */
+
+/** Trigger the live odds pull — same code path as the 09:00/18:00 cron. */
+app.post("/api/ingest", async (c) => {
+  try {
+    return c.json(await ingestOdds(c.env));
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
+/** Trigger the closing-odds pull — same code path as the 18:30 CLV cron. */
+app.post("/api/closing", async (c) => {
+  try {
+    return c.json(await pullClosingOdds(c.env));
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
 /* ---------------- seed (demo / local dev) ---------------- */
 
 app.post("/api/seed", async (c) => {

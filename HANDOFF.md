@@ -4,8 +4,9 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 1 — full V1 monorepo scaffold **complete** (all typechecks, prod build,
-model pipeline, and worker end-to-end tests green)
+**Last updated:** Pass 1b — worker e2e **50/50 green**, live-odds path wired + verified against
+the real The Odds API (clean `INVALID_KEY` error proves the request leaves the box), manual
+cron triggers added (`POST /api/ingest`, `POST /api/closing`), full end-to-end test guide below
 
 ---
 
@@ -62,14 +63,14 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
 | `packages/core/src/backtest.ts` | Historical replay of finished fixtures through the same EV engine |
 | `packages/core/src/seed.ts` | Deterministic demo dataset (4 leagues, 80 fixtures, ~110 bets) |
 | `packages/core/src/correlation.ts` | Multi-leg independence warnings (same-fixture, same-kickoff) |
-| `worker/src/index.ts` | Hono app + scheduled (Cron) handler |
+| `worker/src/index.ts` | Hono app + scheduled (Cron) handler + manual triggers `POST /api/ingest` / `POST /api/closing` |
 | `worker/src/db.ts` | D1 row mappers + all queries (plain SQL, no ORM) |
 | `worker/src/odds/ingest.ts` | Pull → store snapshots (free-tier budget aware) |
 | `worker/src/odds/closing.ts` | Daily closing-odds pull → CLV records for pending bets |
 | `worker/wrangler.toml` | D1 binding, Cron triggers, env vars |
 | `worker/scripts/bundle.mjs` | esbuild bundle for local testing without workerd |
 | `worker/scripts/serve.mjs` | Local API dev server on :8787 (SQLite-backed, proot-safe `wrangler dev` replacement) |
-| `worker/test/e2e.mjs` | 48-check end-to-end API test against real SQLite (node:sqlite) |
+| `worker/test/e2e.mjs` | 50-check end-to-end API test against real SQLite (node:sqlite) |
 | `worker/test/d1-adapter.mjs` | Shared D1-compatible adapter over node:sqlite (e2e + serve) |
 | `apps/web/app/*` | Pages: overview, slips, calibration, bets, backtest, settings |
 | `apps/web/lib/data-provider.tsx` | LIVE-API-or-seed fallback data layer |
@@ -92,8 +93,13 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
    address-space errors — so:
    - `cd worker && npm run serve:local` → real HTTP API on `http://localhost:8787`
      (persistent SQLite DB at `worker/.local/oddket.db`), then `POST /api/seed?force=1`.
-   - `cd worker && npm run test:local` → the 48-check e2e suite.
+     `serve.mjs` forwards `ODDS_API_KEY` (+ `ODDS_*` vars) from the shell, so live mode
+     works locally: `export ODDS_API_KEY=... && npm run serve:local`.
+   - `cd worker && npm run test:local` → the 50-check e2e suite.
    `wrangler d1` remote still works for deploy.
+10. **Cron jobs are HTTP-triggerable for testing.** `POST /api/ingest` runs the same code
+    path as the 09:00/18:00 odds cron; `POST /api/closing` same as the 18:30 CLV cron.
+    Without `ODDS_API_KEY` both are safe demo no-ops.
 8. **esbuild pinned at 0.17.19** as a worker devDependency (offline-installed from store) —
    the exact version already present in the root store. Bump with care.
 9. **No `.npmrc`** — the `node-linker=hoisted` hack was removed once the project moved to
@@ -102,8 +108,10 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
 ## 6. Known gaps / what's next
 
 - [ ] Create real D1 database (`wrangler d1 create oddket`) + set `database_id` in `wrangler.toml` for deploy.
-- [ ] Provide `ODDS_API_KEY` (The Odds API free tier) in `worker/.dev.vars`, verify live pull.
-- [ ] Wire model output → `POST /api/predictions/ingest` (currently manual/CLI — endpoint is built and tested).
+- [ ] Set a real `ODDS_API_KEY` (The Odds API free tier — ~500 req/mo) and run the live ingest
+      via `export ODDS_API_KEY=... && cd worker && npm run serve:local` then `POST /api/ingest`.
+      (Live path is wired + verified against the real API; only the valid key is missing.)
+- [ ] Wire model output → `POST /api/predictions/ingest` (endpoint built + tested; push predictions.json with curl).
 - [ ] Real historical training data via `model/scripts/fetch_historical.py` (football-data.org free token).
 - [ ] Next deploy target (Cloudflare Pages / Workers static) for the dashboard.
 - [ ] Backtest page currently reads historical simulation; add explicit "paper-trade mode" toggle that
@@ -113,13 +121,58 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
 
 - [x] `pnpm -r typecheck` across core/worker/web — green
 - [x] `next build` production build (all 6 routes prerendered)
-- [x] Worker e2e: `cd worker && npm run test:local` — **48/48 checks pass**
+- [x] Worker e2e: `cd worker && npm run test:local` — **50/50 checks pass**
       (migrations, seed, dashboard, slips/multiples, bet placement + cap/validation,
       outcome settlement + payout math, CLV entry + series, calibration, backtest,
-      settings persistence, prediction ingest, all three cron paths in demo mode)
+      settings persistence, prediction ingest, manual trigger routes, all three cron paths in demo mode)
 - [x] Python pipeline runs in synthetic mode (calibrated Brier 0.32; `model/output/*.json`)
-- [ ] Live odds pull (needs API key)
-- [ ] Committed to git (pending — first commit this pass)
+- [x] Live odds path wired — with any `ODDS_API_KEY` set, health reports `live`, and
+      `POST /api/ingest` makes a real request to The Odds API (verified: returns the API's
+      own `INVALID_KEY` error for a fake key; a valid key stores fixtures + snapshots)
+- [x] Committed to git (Pass 1 + Pass 1b)
+
+## 9. Testing the WHOLE thing (live pipeline, end-to-end)
+
+This is the full flow — live odds → worker API → model → dashboard — and the accounts you need.
+
+### Accounts / keys (all free)
+
+| Service | Why | Free tier | Signup | Env var |
+|---|---|---|---|---|
+| **The Odds API** | Live odds for fixtures + closing odds for CLV | 500 requests/mo, no card | `https://the-odds-api.com` | `ODDS_API_KEY` |
+| **football-data.org** (optional) | Real historical results to train the model | 10 req/min, free token | `https://www.football-data.org` | `FD_TOKEN` |
+| **Cloudflare** (only for deploy) | Host the worker + D1 in production | Workers + D1 free tier | `https://dash.cloudflare.com` | `CLOUDFLARE_API_TOKEN` (wrangler login) |
+
+### Step-by-step (local, proot-safe)
+
+```bash
+# 1) terminal A — worker API with your key (live mode)
+export ODDS_API_KEY=your_the_odds_api_key
+cd ~/oddket/worker && npm run serve:local
+
+# 2) terminal B — seed demo data, then pull REAL live odds
+curl -s -X POST 'http://localhost:8787/api/seed?force=1'
+curl -s -X POST http://localhost:8787/api/ingest      # live odds in (same code as the cron)
+curl -s http://localhost:8787/api/health              # expect "mode":"live"
+
+# 3) train the model on real data (optional; needs football-data.org token)
+cd ~/oddket/model && FD_TOKEN=your_token .venv/bin/python scripts/fetch_historical.py
+.venv/bin/python scripts/train.py --source historical
+# ...or skip straight to predictions with the synthetic model:
+cd ~/oddket && pnpm model:predict
+
+# 4) push model predictions into the worker DB
+curl -s -X POST http://localhost:8787/api/predictions/ingest \
+  -H 'Content-Type: application/json' -d @model/output/predictions.json
+
+# 5) terminal C — dashboard, now in LIVE mode
+cd ~/oddket && pnpm dev:web     # http://localhost:3000
+# log a bet → record its outcome → watch CLV + calibration update
+```
+
+That's the whole thing: live odds → stored snapshots → model probabilities → edge-flagged
+slips → logged bets → settlement → CLV/calibration dashboards. The cron schedules run the
+same code in production (see `wrangler.toml`).
 
 ## 8. Gotchas
 

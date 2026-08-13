@@ -40,6 +40,13 @@ const DB = new D1Adapter(sqlite);
 
 const worker = (await import(BUNDLE)).default;
 
+// Forward worker env bindings from the shell so live mode works locally:
+//   export ODDS_API_KEY=your_key && npm run serve:local
+const bindings = { DB };
+for (const k of ["ODDS_API_KEY", "ODDS_SPORT", "ODDS_REGIONS", "ODDS_MARKETS", "ODDS_FETCH_LIMIT"]) {
+  if (process.env[k]) bindings[k] = process.env[k];
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
@@ -53,7 +60,7 @@ const server = http.createServer(async (req, res) => {
       body: body.length > 0 ? body : undefined,
     });
 
-    const response = await worker.fetch(request, { DB }, { waitUntil: () => Promise.resolve() });
+    const response = await worker.fetch(request, bindings, { waitUntil: () => Promise.resolve() });
 
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
     res.end(Buffer.from(await response.arrayBuffer()));
@@ -67,5 +74,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`OddKet worker API on http://localhost:${PORT}`);
   console.log(`  DB: ${DB_FILE} (SQLite, D1-compatible)`);
+  console.log(`  Mode: ${bindings.ODDS_API_KEY ? "LIVE (ODDS_API_KEY set)" : "demo (no ODDS_API_KEY)"}`);
   console.log(`  Try: curl http://localhost:${PORT}/api/health`);
 });

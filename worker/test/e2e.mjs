@@ -217,7 +217,15 @@ console.log("\n[10] predictions ingest");
   check("prediction present", ps.json.some((p) => p.modelVersion === "e2e-test"));
 }
 
-console.log("\n[11] scheduled (demo no-op)");
+console.log("\n[11] manual trigger routes (demo no-op without key)");
+{
+  const i = await api("POST", "/api/ingest");
+  check("POST /api/ingest demo no-op", i.status === 200 && i.json?.mode === "demo" && i.json?.eventsPulled === 0, JSON.stringify(i.json));
+  const c = await api("POST", "/api/closing");
+  check("POST /api/closing demo no-op", c.status === 200 && c.json?.mode === "demo" && c.json?.pendingBets === 0, JSON.stringify(c.json));
+}
+
+console.log("\n[12] scheduled (demo no-op)");
 {
   const ctx = { waitUntil: () => Promise.resolve() };
   const r1 = await worker.scheduled({ cron: "0 9,18 * * *" }, env, ctx);

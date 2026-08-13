@@ -1,0 +1,30 @@
+name = "oddket-worker"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# --- D1 ---
+# Before first deploy:  wrangler d1 create oddket
+# then paste the returned database_id below.
+[[d1_databases]]
+binding = "DB"
+database_name = "oddket"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# --- Cron ---
+# Budget math (free tier ~500 req/mo on The Odds API):
+#   2 pulls/day x (1 sports request + N leagues) + 1 closing-odds pull/day
+#   ≈ 4-6 requests/day ≈ 150-180/mo. Safe headroom.
+[triggers]
+crons = [
+  "0 9,18 * * *",   # 09:00 & 18:00 UTC — odds ingestion
+  "30 18 * * *"     # 18:30 UTC — closing-odds pull for logged bets (CLV)
+]
+
+# --- Vars (safe, non-secret). API key goes in .dev.vars / secret ---
+[vars]
+ODDS_SPORT = "soccer_epl"
+ODDS_REGIONS = "eu"
+ODDS_MARKETS = "h2h,totals"
+ODDS_FETCH_LIMIT = "3"

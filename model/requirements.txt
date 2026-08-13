@@ -1,0 +1,6 @@
+numpy>=1.26
+scikit-learn>=1.5
+# xgboost is preferred but optional — train.py auto-falls-back to
+# sklearn's GradientBoostingClassifier if wheels are unavailable.
+xgboost>=2.0 ; platform_machine != "arm64"
+requests>=2.31

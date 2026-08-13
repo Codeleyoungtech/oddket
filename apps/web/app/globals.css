@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-ink-950 text-slate-200 antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(52, 211, 153, 0.06), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 0%, rgba(56, 189, 248, 0.04), transparent);
+  background-repeat: no-repeat;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1c2636;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3444;
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-ink-700/60 bg-ink-900/80 shadow-card backdrop-blur-sm;
+  }
+  .card-pad {
+    @apply p-5;
+  }
+  .label {
+    @apply text-[11px] font-semibold uppercase tracking-widest text-slate-500;
+  }
+  .num {
+    @apply font-mono tabular-nums;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-emerald-500/90 text-ink-950 hover:bg-emerald-400 active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn border border-ink-600/70 bg-ink-800/50 text-slate-300 hover:border-ink-600 hover:bg-ink-700/60 active:scale-[0.98];
+  }
+  .input {
+    @apply w-full rounded-lg border border-ink-600/70 bg-ink-800/60 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 transition-colors focus:border-emerald-400/50 focus:outline-none focus:ring-1 focus:ring-emerald-400/30;
+  }
+  .tabular {
+    @apply font-mono tabular-nums;
+  }
+}

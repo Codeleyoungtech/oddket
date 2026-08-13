@@ -1,0 +1,183 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import type { Settings } from "@oddket/core";
+import { useData } from "../../lib/data-provider";
+import { Badge, Card, CardHeader, Loading, SectionTitle } from "../../components/ui";
+import { fmtMoney, fmtPct } from "../../lib/format";
+
+const MARKET_OPTIONS = [
+  { value: "h2h", label: "Match result (1X2)" },
+  { value: "totals", label: "Over/Under 2.5" },
+  { value: "btts", label: "Both teams to score" },
+] as const;
+
+export default function SettingsPage() {
+  const { db, saveSettings, mode } = useData();
+  const [form, setForm] = useState<Settings | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (db && !form) setForm(db.settings);
+  }, [db, form]);
+
+  if (!db || !form) return <Loading />;
+
+  const update = (patch: Partial<Settings>) => {
+    setForm((f) => (f ? { ...f, ...patch } : f));
+    setSaved(false);
+  };
+
+  const toggleMarket = (m: (typeof MARKET_OPTIONS)[number]["value"]) => {
+    setForm((f) => {
+      if (!f) return f;
+      const has = f.markets.includes(m);
+      const markets = has ? f.markets.filter((x) => x !== m) : [...f.markets, m];
+      return { ...f, markets };
+    });
+    setSaved(false);
+  };
+
+  const onSave = async () => {
+    await saveSettings(form);
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2000);
+  };
+
+  const kellyExposure = form.bankroll * form.kellyFraction * 0.25; // rough max single stake before cap
+
+  return (
+    <div className="animate-fade-in mx-auto max-w-3xl space-y-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Settings</h1>
+          <p className="mt-1 text-sm text-slate-500">Bankroll discipline is built in, not optional.</p>
+        </div>
+        {saved && <Badge tone="green">saved</Badge>}
+      </div>
+
+      <Card className="card-pad">
+        <CardHeader title="Bankroll & staking" subtitle="These feed every Kelly stake suggestion in the slip builder." />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="label mb-1.5 block">Starting bankroll (₦)</span>
+            <input
+              className="input num"
+              type="number"
+              min={0}
+              step={100}
+              value={form.bankroll}
+              onChange={(e) => update({ bankroll: Number(e.target.value) || 0 })}
+            />
+          </label>
+          <label className="block">
+            <span className="label mb-1.5 block">Kelly fraction ({fmtPct(form.kellyFraction, 0)} × full Kelly)</span>
+            <input
+              className="input"
+              type="range"
+              min={0.05}
+              max={1}
+              step={0.05}
+              value={form.kellyFraction}
+              onChange={(e) => update({ kellyFraction: Number(e.target.value) })}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Quarter Kelly (0.25) is the PRD default — full Kelly over-bets on noisy probabilities.
+            </span>
+          </label>
+          <label className="block">
+            <span className="label mb-1.5 block">Minimum edge to flag a slip ({fmtPct(form.edgeThreshold, 0)})</span>
+            <input
+              className="input"
+              type="range"
+              min={0.01}
+              max={0.1}
+              step={0.005}
+              value={form.edgeThreshold}
+              onChange={(e) => update({ edgeThreshold: Number(e.target.value) })}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Below this, the edge is noise. Higher = fewer, cleaner picks.</span>
+          </label>
+          <label className="block">
+            <span className="label mb-1.5 block">Single-bet cap ({fmtPct(form.defaultStakeCapPct, 0)} of bankroll)</span>
+            <input
+              className="input"
+              type="range"
+              min={0.01}
+              max={0.1}
+              step={0.005}
+              value={form.defaultStakeCapPct}
+              onChange={(e) => update({ defaultStakeCapPct: Number(e.target.value) })}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Hard ceiling on any one stake ≈ ₦{fmtMoney(form.bankroll * form.defaultStakeCapPct, 0)}.</span>
+          </label>
+        </div>
+        <div className="mt-4 rounded-lg border border-ink-700/60 bg-ink-800/40 px-4 py-3 text-xs text-slate-400">
+          At current settings a typical flagged single stakes up to{" "}
+          <span className="num font-semibold text-emerald-300">₦{fmtMoney(Math.min(kellyExposure, form.bankroll * form.defaultStakeCapPct), 0)}</span>.
+        </div>
+      </Card>
+
+      <Card className="card-pad">
+        <CardHeader title="Stop-losses" subtitle="Enforced at the UI level. OddKet never chases losses." />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="label mb-1.5 block">Daily stop-loss (₦)</span>
+            <input
+              className="input num"
+              type="number"
+              min={0}
+              step={50}
+              value={form.dailyStopLoss}
+              onChange={(e) => update({ dailyStopLoss: Number(e.target.value) || 0 })}
+            />
+          </label>
+          <label className="block">
+            <span className="label mb-1.5 block">Weekly stop-loss (₦)</span>
+            <input
+              className="input num"
+              type="number"
+              min={0}
+              step={100}
+              value={form.weeklyStopLoss}
+              onChange={(e) => update({ weeklyStopLoss: Number(e.target.value) || 0 })}
+            />
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">0 disables the cap — not recommended.</p>
+      </Card>
+
+      <Card className="card-pad">
+        <CardHeader title="Markets in play" subtitle="Which markets the EV engine scans. More markets = more API budget on live pulls." />
+        <div className="flex flex-wrap gap-2">
+          {MARKET_OPTIONS.map((m) => {
+            const on = form.markets.includes(m.value);
+            return (
+              <button
+                key={m.value}
+                onClick={() => toggleMarket(m.value)}
+                className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  on
+                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                    : "border-ink-600/60 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {m.label}
+                <span className={`ml-2 text-[11px] ${on ? "text-emerald-400/70" : "text-slate-600"}`}>{on ? "on" : "off"}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div className="flex items-center justify-between gap-3">
+        <button className="btn-primary" onClick={onSave}>
+          {mode === "live" ? "Save to worker" : "Save (demo — local only)"}
+        </button>
+        <p className="text-xs text-slate-600">
+          Demo mode persists only for this session; LIVE mode writes to D1 via <span className="num">PUT /api/settings</span>.
+        </p>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,28 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# next.js
+apps/web/.next/
+apps/web/out/
+apps/web/tsconfig.tsbuildinfo
+
+# cloudflare / wrangler
+worker/dist/
+.wrangler/
+.dev.vars
+
+# python
+model/.venv/
+__pycache__/
+*.pyc
+model/output/
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+*.log

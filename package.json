@@ -1,0 +1,24 @@
+{
+  "name": "oddket",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OddKet — personal decision-support for sports betting. Truth over excitement. CLV is the scoreboard.",
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "dev:web": "pnpm --filter @oddket/web dev",
+    "dev:worker": "pnpm --filter @oddket/worker dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test:worker": "pnpm --filter @oddket/worker test:local",
+    "seed:worker": "curl -s -X POST http://localhost:8787/api/seed?force=1 | head -c 200",
+    "model:train": "cd model && python3 scripts/train.py --source synthetic",
+    "model:predict": "cd model && python3 scripts/predict.py --source synthetic"
+  },
+  "devDependencies": {
+    "esbuild": "0.17.19"
+  }
+}

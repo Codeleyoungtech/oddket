@@ -9,6 +9,7 @@ apps/web/tsconfig.tsbuildinfo
 
 # cloudflare / wrangler
 worker/dist/
+worker/.local/
 .wrangler/
 .dev.vars
 

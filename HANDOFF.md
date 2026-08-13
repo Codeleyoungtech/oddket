@@ -68,7 +68,9 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
 | `worker/src/odds/closing.ts` | Daily closing-odds pull → CLV records for pending bets |
 | `worker/wrangler.toml` | D1 binding, Cron triggers, env vars |
 | `worker/scripts/bundle.mjs` | esbuild bundle for local testing without workerd |
+| `worker/scripts/serve.mjs` | Local API dev server on :8787 (SQLite-backed, proot-safe `wrangler dev` replacement) |
 | `worker/test/e2e.mjs` | 48-check end-to-end API test against real SQLite (node:sqlite) |
+| `worker/test/d1-adapter.mjs` | Shared D1-compatible adapter over node:sqlite (e2e + serve) |
 | `apps/web/app/*` | Pages: overview, slips, calibration, bets, backtest, settings |
 | `apps/web/lib/data-provider.tsx` | LIVE-API-or-seed fallback data layer |
 | `model/scripts/*.py` | fetch → train → calibrate → predict |
@@ -85,10 +87,13 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
    legs flagged non-independent).
 6. **The Odds API markets default `h2h,totals`** (safe on free tier). `btts` can be added to
    `ODDS_MARKETS` if the tier supports it.
-7. **Local worker tests use `node:sqlite` + esbuild** (`cd worker && npm run test:local`).
+7. **Local worker dev + tests use `node:sqlite` + esbuild** — no workerd needed.
    workerd (wrangler's local runtime) cannot run under proot — it crashes with tcmalloc
-   address-space errors — so tests bundle the worker with esbuild and drive it in Node
-   against a D1-compatible adapter over real SQLite. `wrangler d1` still works for remote.
+   address-space errors — so:
+   - `cd worker && npm run serve:local` → real HTTP API on `http://localhost:8787`
+     (persistent SQLite DB at `worker/.local/oddket.db`), then `POST /api/seed?force=1`.
+   - `cd worker && npm run test:local` → the 48-check e2e suite.
+   `wrangler d1` remote still works for deploy.
 8. **esbuild pinned at 0.17.19** as a worker devDependency (offline-installed from store) —
    the exact version already present in the root store. Bump with care.
 9. **No `.npmrc`** — the `node-linker=hoisted` hack was removed once the project moved to

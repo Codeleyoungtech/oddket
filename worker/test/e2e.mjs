@@ -17,6 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATION = join(__dirname, "..", "migrations", "0000_init.sql");
@@ -31,52 +32,6 @@ function check(name, cond, detail = "") {
   } else {
     failed++;
     console.log(`  ✗ ${name} ${detail ? `— ${detail}` : ""}`);
-  }
-}
-
-/* ---------------- D1 adapter over node:sqlite ---------------- */
-
-class D1Adapter {
-  constructor(sqlite) {
-    this.sqlite = sqlite;
-  }
-  prepare(sql) {
-    return {
-      bind: (...params) => new BoundStmt(this.sqlite, sql, params),
-      all: () => new BoundStmt(this.sqlite, sql, []).all(),
-      first: () => new BoundStmt(this.sqlite, sql, []).first(),
-      run: () => new BoundStmt(this.sqlite, sql, []).run(),
-    };
-  }
-  batch(stmts) {
-    // D1 batches are transactional; keep it simple and sequential.
-    return stmts.map((s) => s.run());
-  }
-}
-
-class BoundStmt {
-  constructor(sqlite, sql, params) {
-    this.sqlite = sqlite;
-    this.sql = sql;
-    this.params = params;
-  }
-  bind(...params) {
-    this.params = params;
-    return this;
-  }
-  all() {
-    const stmt = this.sqlite.prepare(this.sql);
-    return { results: stmt.all(...this.params) };
-  }
-  first() {
-    const stmt = this.sqlite.prepare(this.sql);
-    const row = stmt.get(...this.params);
-    return row === undefined ? null : row;
-  }
-  run() {
-    const stmt = this.sqlite.prepare(this.sql);
-    const info = stmt.run(...this.params);
-    return { meta: { changes: info.changes } };
   }
 }
 

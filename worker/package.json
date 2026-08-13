@@ -8,6 +8,7 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test:local": "node scripts/bundle.mjs && node test/e2e.mjs",
+    "serve:local": "node scripts/bundle.mjs && node scripts/serve.mjs",
     "migrate:local": "wrangler d1 migrations apply oddket --local",
     "migrate:remote": "wrangler d1 migrations apply oddket --remote"
   },

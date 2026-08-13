@@ -27,4 +27,4 @@ crons = [
 ODDS_SPORT = "soccer_epl"
 ODDS_REGIONS = "eu"
 ODDS_MARKETS = "h2h,totals"
-ODDS_FETCH_LIMIT = "3"
+ODDS_FETCH_LIMIT = "10"

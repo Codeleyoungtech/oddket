@@ -74,10 +74,9 @@ export function mapEvent(event: ApiOddsEvent, bookmakerKeys: string[], capturedA
         if (line !== undefined && line !== 2.5) continue;
       }
       for (const outcome of market.outcomes) {
-        const selection = toSelection(market.key, outcome.name);
-        if (selection === null) continue;
-
         if (market.key === "h2h") {
+          // h2h outcomes are named after the teams (+ Draw) — resolve by name,
+          // since toSelection() only maps non-team outcomes (e.g. Draw).
           if (outcome.name === "Draw") {
             push(snapshots, fixture.id, "h2h", "draw", outcome.price, book.title, capturedAt);
           } else if (outcome.name === fixture.homeTeam) {
@@ -86,6 +85,8 @@ export function mapEvent(event: ApiOddsEvent, bookmakerKeys: string[], capturedA
             push(snapshots, fixture.id, "h2h", "away", outcome.price, book.title, capturedAt);
           }
         } else {
+          const selection = toSelection(market.key, outcome.name);
+          if (selection === null) continue;
           push(snapshots, fixture.id, market.key, selection, outcome.price, book.title, capturedAt);
         }
       }
@@ -125,7 +126,10 @@ export async function fetchOdds(
   const sport = opts.sport ?? "soccer_epl";
   const regions = opts.regions ?? "eu";
   const markets = opts.markets ?? "h2h,totals";
-  const limit = opts.fetchLimit ?? 3;
+  const limit = opts.fetchLimit ?? 10;
+
+  // The Odds API wants strict YYYY-MM-DDTHH:MM:SSZ — toISOString() has milliseconds.
+  const commenceTimeFrom = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
   const url =
     `${ODDS_API_BASE}/sports/${sport}/odds/` +
@@ -134,7 +138,7 @@ export async function fetchOdds(
     `&markets=${encodeURIComponent(markets)}` +
     `&oddsFormat=decimal` +
     `&bookmakers=bet365,sportybet,betway` +
-    `&commenceTimeFrom=${encodeURIComponent(new Date().toISOString())}`;
+    `&commenceTimeFrom=${encodeURIComponent(commenceTimeFrom)}`;
 
   const res = await fetch(url);
   if (!res.ok) {

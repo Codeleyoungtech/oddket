@@ -4,9 +4,15 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 1b — worker e2e **50/50 green**, live-odds path wired + verified against
-the real The Odds API (clean `INVALID_KEY` error proves the request leaves the box), manual
-cron triggers added (`POST /api/ingest`, `POST /api/closing`), full end-to-end test guide below
+**Last updated:** Pass 1c — **LIVE RUN with a real The Odds API key** ✅
+- Fixed a real bug: `mapEvent` only stored `draw` h2h outcomes — home/away were
+  dead code (a `toSelection()` null-check `continue`d before team-name matching).
+  Now all 3 outcomes land. Caught by running against live data, not the seed.
+- Fixed `commenceTimeFrom` format (The Odds API rejects ISO with milliseconds).
+- Ingested **10 live EPL fixtures / 30 odds snapshots**; model predicted on them
+  via new `worker/scripts/export-fixtures.mjs`; 30 predictions ingested.
+  Edge-flagged legs now show real model probability + CI vs live implied.
+- `ODDS_FETCH_LIMIT` 3 → 10 (still 1 API request; slice is client-side).
 
 ---
 
@@ -70,6 +76,7 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
 | `worker/wrangler.toml` | D1 binding, Cron triggers, env vars |
 | `worker/scripts/bundle.mjs` | esbuild bundle for local testing without workerd |
 | `worker/scripts/serve.mjs` | Local API dev server on :8787 (SQLite-backed, proot-safe `wrangler dev` replacement) |
+| `worker/scripts/export-fixtures.mjs` | Export live fixtures + best h2h odds → `model/data/fixtures.json` (feeds the model real games) |
 | `worker/test/e2e.mjs` | 50-check end-to-end API test against real SQLite (node:sqlite) |
 | `worker/test/d1-adapter.mjs` | Shared D1-compatible adapter over node:sqlite (e2e + serve) |
 | `apps/web/app/*` | Pages: overview, slips, calibration, bets, backtest, settings |
@@ -108,10 +115,9 @@ pnpm model:train && pnpm model:predict   # python sidecar (synthetic offline)
 ## 6. Known gaps / what's next
 
 - [ ] Create real D1 database (`wrangler d1 create oddket`) + set `database_id` in `wrangler.toml` for deploy.
-- [ ] Set a real `ODDS_API_KEY` (The Odds API free tier — ~500 req/mo) and run the live ingest
-      via `export ODDS_API_KEY=... && cd worker && npm run serve:local` then `POST /api/ingest`.
-      (Live path is wired + verified against the real API; only the valid key is missing.)
-- [ ] Wire model output → `POST /api/predictions/ingest` (endpoint built + tested; push predictions.json with curl).
+- [x] Live ingest verified with a real key (10 EPL fixtures / 30 snapshots stored; see §10)
+- [x] Model predictions pushed to live fixtures (`export-fixtures.mjs` → predict → ingest — 30 rows)
+- [ ] Deploy so the cron schedules actually fire (needs Cloudflare + D1 database_id)
 - [ ] Real historical training data via `model/scripts/fetch_historical.py` (football-data.org free token).
 - [ ] Next deploy target (Cloudflare Pages / Workers static) for the dashboard.
 - [ ] Backtest page currently reads historical simulation; add explicit "paper-trade mode" toggle that
@@ -173,6 +179,19 @@ cd ~/oddket && pnpm dev:web     # http://localhost:3000
 That's the whole thing: live odds → stored snapshots → model probabilities → edge-flagged
 slips → logged bets → settlement → CLV/calibration dashboards. The cron schedules run the
 same code in production (see `wrangler.toml`).
+
+## 10. Live run results (Pass 1c — verified with a real key)
+
+- `POST /api/ingest` → `{mode:"live", eventsPulled:10, fixturesStored:10, snapshotsStored:30}`
+- 10 real EPL fixtures stored (Arsenal vs Coventry City, Hull vs Man Utd, Man City vs Bournemouth, …)
+- Model predictions for all 30 h2h outcomes pushed; edge-flagged slips show e.g.
+  Hull City home @ 7.0 — modelP 0.51 [0.37–0.66] vs implied 0.13 → +38% edge.
+- **Live-run gotchas:**
+  - The Odds API rejects `commenceTimeFrom` with milliseconds — `toISOString()` needs
+    `.replace(/\.\d{3}Z$/, "Z")` (done in `client.ts`).
+  - Odds aren't posted for every bookmaker until ~days before kickoff — the
+    `bookmakers=bet365,sportybet,betway` filter may return just one book early on.
+  - Re-running `POST /api/ingest` upserts by snapshot id; counts reported are per-call batches.
 
 ## 8. Gotchas
 

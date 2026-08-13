@@ -31,7 +31,7 @@ export async function ingestOdds(env: Env): Promise<IngestResult> {
     sport: env.ODDS_SPORT ?? "soccer_epl",
     regions: env.ODDS_REGIONS ?? "eu",
     markets: env.ODDS_MARKETS ?? "h2h,totals",
-    fetchLimit: Number(env.ODDS_FETCH_LIMIT ?? 3),
+    fetchLimit: Number(env.ODDS_FETCH_LIMIT ?? 10),
   });
 
   const capturedAt = Math.floor(Date.now() / 1000);

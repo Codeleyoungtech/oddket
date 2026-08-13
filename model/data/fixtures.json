@@ -1,0 +1,278 @@
+{
+  "meta": {
+    "source": "live-odds",
+    "n_matches": 10
+  },
+  "matches": [
+    {
+      "id": "eb2553d10d63dc912b99f8fd0d675721",
+      "league": "EPL",
+      "home": "Arsenal",
+      "away": "Coventry City",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.8,
+        "away_strength": 0.1,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 2.32,
+        "exp_away": 1.24
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.8052859797646088,
+        "draw": 0.12347718356390666,
+        "away": 0.07123683667148462
+      },
+      "odds": {
+        "home": 1.15,
+        "draw": 7.5,
+        "away": 13
+      }
+    },
+    {
+      "id": "95bb16d19debff3ec39919f361f072a4",
+      "league": "EPL",
+      "home": "Hull City",
+      "away": "Manchester United",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.1,
+        "away_strength": 0.7,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.51,
+        "exp_away": 1.94
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.1323529411764706,
+        "draw": 0.20588235294117646,
+        "away": 0.661764705882353
+      },
+      "odds": {
+        "home": 7,
+        "draw": 4.5,
+        "away": 1.4
+      }
+    },
+    {
+      "id": "cd1f0173ec061d9b8a8b22ab8f2f8393",
+      "league": "EPL",
+      "home": "Everton",
+      "away": "Crystal Palace",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.4,
+        "away_strength": 0.3,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.88,
+        "exp_away": 1.49
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.44173495902458526,
+        "draw": 0.27283629822106736,
+        "away": 0.28542874275434743
+      },
+      "odds": {
+        "home": 2.1,
+        "draw": 3.4,
+        "away": 3.25
+      }
+    },
+    {
+      "id": "01615d9573ef1e5aa8c09eb32a4a983b",
+      "league": "EPL",
+      "home": "Ipswich Town",
+      "away": "Sunderland",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.4,
+        "away_strength": 0.4,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.77,
+        "exp_away": 1.59
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.3503665373005605,
+        "draw": 0.2824493316084519,
+        "away": 0.36718413109098746
+      },
+      "odds": {
+        "home": 2.62,
+        "draw": 3.25,
+        "away": 2.5
+      }
+    },
+    {
+      "id": "ee99154f8db029efcf567c5f7f7a0c0b",
+      "league": "EPL",
+      "home": "Nottingham Forest",
+      "away": "Leeds United",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.4,
+        "away_strength": 0.3,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.85,
+        "exp_away": 1.51
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.42081447963800905,
+        "draw": 0.28054298642533937,
+        "away": 0.2986425339366516
+      },
+      "odds": {
+        "home": 2.2,
+        "draw": 3.3,
+        "away": 3.1
+      }
+    },
+    {
+      "id": "8b4b033209bb204516cbd1f523614f25",
+      "league": "EPL",
+      "home": "Brentford",
+      "away": "Tottenham Hotspur",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.4,
+        "away_strength": 0.3,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.83,
+        "exp_away": 1.57
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.3973376021568793,
+        "draw": 0.25385457915578397,
+        "away": 0.34880781868733673
+      },
+      "odds": {
+        "home": 2.3,
+        "draw": 3.6,
+        "away": 2.62
+      }
+    },
+    {
+      "id": "f5086c74d4a767e3ad7ea69bd4a66b76",
+      "league": "EPL",
+      "home": "Brighton and Hove Albion",
+      "away": "Aston Villa",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.4,
+        "away_strength": 0.3,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.85,
+        "exp_away": 1.53
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.41797976447172003,
+        "draw": 0.2627301376679383,
+        "away": 0.3192900978603417
+      },
+      "odds": {
+        "home": 2.2,
+        "draw": 3.5,
+        "away": 2.88
+      }
+    },
+    {
+      "id": "87c7c9bfd5e3072bded20c702f553c63",
+      "league": "EPL",
+      "home": "Manchester City",
+      "away": "Bournemouth",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.6,
+        "away_strength": 0.2,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 2.12,
+        "exp_away": 1.35
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.6452369779446269,
+        "draw": 0.18582824964805256,
+        "away": 0.16893477240732052
+      },
+      "odds": {
+        "home": 1.44,
+        "draw": 5,
+        "away": 5.5
+      }
+    },
+    {
+      "id": "ea0bacc4c23f813c6af97ec9b306a850",
+      "league": "EPL",
+      "home": "Newcastle United",
+      "away": "Liverpool",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.3,
+        "away_strength": 0.5,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.67,
+        "exp_away": 1.74
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.27003326277592987,
+        "draw": 0.24160870879951618,
+        "away": 0.48835802842455395
+      },
+      "odds": {
+        "home": 3.4,
+        "draw": 3.8,
+        "away": 1.88
+      }
+    },
+    {
+      "id": "4e4a813bf4218cc527e6f8ef2351170d",
+      "league": "EPL",
+      "home": "Fulham",
+      "away": "Chelsea",
+      "home_goals": 0,
+      "away_goals": 0,
+      "features": {
+        "home_strength": 0.3,
+        "away_strength": 0.5,
+        "home_adv": 1,
+        "form_diff": 0,
+        "exp_home": 1.69,
+        "exp_away": 1.71
+      },
+      "outcome": 0,
+      "probs": {
+        "home": 0.2801556420233463,
+        "draw": 0.2529182879377432,
+        "away": 0.4669260700389105
+      },
+      "odds": {
+        "home": 3.25,
+        "draw": 3.6,
+        "away": 1.95
+      }
+    }
+  ]
+}

@@ -230,6 +230,11 @@ export default function SlipsPage() {
                                 prob <span className="num text-slate-300">{fmtPct(leg.probability)}</span>
                                 <span className="num text-slate-600"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
                               </p>
+                              {displayStake(leg.stake).floored && (
+                                <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
+                                  <span aria-hidden>⚠</span> Thin edge — below the ₦10 min stake. Don't add this leg to a multiple.
+                                </p>
+                              )}
                             </div>
                             <div className="hidden shrink-0 text-right sm:block">
                               <p className={`num text-sm font-semibold ${edgeClass(leg.edge)}`}>{fmtSignedPct(leg.edge)} edge</p>
@@ -281,11 +286,18 @@ export default function SlipsPage() {
                   <p className="label mb-2">Selected legs ({selectedLegs.length})</p>
                   <ul className="space-y-1.5">
                     {selectedLegs.map((l) => (
-                      <li key={legKey(l)} className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate text-slate-400">
-                          {l.fixture.homeTeam} vs {l.fixture.awayTeam} — {marketLabel(l.market, l.selection)}
-                        </span>
-                        <span className="num shrink-0 text-slate-300">@{fmtOdds(l.odds)}</span>
+                      <li key={legKey(l)} className="text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-slate-400">
+                            {l.fixture.homeTeam} vs {l.fixture.awayTeam} — {marketLabel(l.market, l.selection)}
+                          </span>
+                          <span className="num shrink-0 text-slate-300">@{fmtOdds(l.odds)}</span>
+                        </div>
+                        {displayStake(l.stake).floored && (
+                          <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
+                            <span aria-hidden>⚠</span> Thin edge — don't include this leg in a multiple.
+                          </p>
+                        )}
                       </li>
                     ))}
                   </ul>

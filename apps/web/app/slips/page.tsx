@@ -4,12 +4,14 @@ import React, { useMemo, useState } from "react";
 import { buildMultiple, checkLegIndependence, legRefs, marketLabel, type SlipLeg } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle } from "../../components/ui";
-import { edgeClass, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
+import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
 
 export default function SlipsPage() {
   const { slips, bets, db, logBet, refresh } = useData();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [justLogged, setJustLogged] = useState<Set<string>>(new Set());
+  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
+  const [leagueFilter, setLeagueFilter] = useState<string>("all");
 
   const selectedLegs = useMemo(
     () => slips.filter((l) => selected.has(legKey(l))),
@@ -21,6 +23,30 @@ export default function SlipsPage() {
     () => new Set(bets.map((b) => `${b.fixtureId}:${b.market}:${b.selection}`)),
     [bets],
   );
+
+  // Leagues present in the current slips — derived from data so new sports/leagues show up automatically.
+  const leagues = useMemo(
+    () => [...new Set(slips.map((l) => l.fixture.league).filter(Boolean))].sort(),
+    [slips],
+  );
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const filteredSlips = useMemo(() => {
+    const startOfToday = (t: number) => {
+      const d = new Date(t * 1000);
+      d.setHours(0, 0, 0, 0);
+      return Math.floor(d.getTime() / 1000);
+    };
+    const today = startOfToday(nowSec);
+    const weekEnd = today + 7 * 86400;
+    return slips.filter((l) => {
+      const t = l.fixture.commenceTime;
+      if (timeFilter === "today" && (t < today || t >= today + 86400)) return false;
+      if (timeFilter === "week" && (t < today || t >= weekEnd)) return false;
+      if (leagueFilter !== "all" && l.fixture.league !== leagueFilter) return false;
+      return true;
+    });
+  }, [slips, timeFilter, leagueFilter, nowSec]);
 
   const handleLogBet = async (leg: SlipLeg) => {
     await logBet({
@@ -37,6 +63,38 @@ export default function SlipsPage() {
     refresh();
   };
 
+  /** Log every selected leg that isn't already on the books (one paper-trade bet per leg). */
+  const handleLogAll = async () => {
+    const pending = selectedLegs.filter((l) => !justLogged.has(legKey(l)) && !loggedKeys.has(legKey(l)));
+    if (pending.length === 0) return;
+    for (const leg of pending) {
+      await logBet({
+        fixtureId: leg.fixture.id,
+        market: leg.market,
+        selection: leg.selection,
+        odds: leg.odds,
+        stake: Math.max(100, Math.round(leg.stake)),
+        edge: leg.edge,
+        modelProbability: leg.probability,
+        placedAt: Math.floor(Date.now() / 1000),
+      });
+      setJustLogged((prev) => new Set(prev).add(legKey(leg)));
+    }
+    refresh();
+  };
+
+  // Group slips by match so a fixture with legs in several markets (h2h +
+  // totals) shows once, with all its qualifying picks inside one card.
+  const groupedSlips = useMemo(() => {
+    const groups = new Map<string, SlipLeg[]>();
+    for (const leg of filteredSlips) {
+      const arr = groups.get(leg.fixture.id) ?? [];
+      arr.push(leg);
+      groups.set(leg.fixture.id, arr);
+    }
+    return [...groups.entries()];
+  }, [filteredSlips]);
+
   if (!db) return <Loading />;
 
   const toggle = (key: string) => {
@@ -52,10 +110,16 @@ export default function SlipsPage() {
   const correlation = selectedLegs.length >= 2 ? checkLegIndependence(legRefs(selectedLegs)) : null;
   const flagTone = multiple && multiple.compoundProbability >= multiple.compoundFairOdds ? "green" : "amber";
 
+  // Bookmakers enforce a minimum stake (SportyBet: ₦10). The quarter-Kelly
+  // formula can suggest less (even ₦0 on thin edges) — floor display + copy
+  // at the bookie minimum so a slip never says "stake ₦0".
+  const MIN_STAKE = 10;
+  const displayStake = (s: number) => ({ amount: Math.max(MIN_STAKE, Math.round(s)), floored: s < MIN_STAKE });
+
   const copySlip = async () => {
     const lines = selectedLegs.map(
       (l, i) =>
-        `${i + 1}. ${l.fixture.homeTeam} vs ${l.fixture.awayTeam} — ${marketLabel(l.market, l.selection)} @ ${fmtOdds(l.odds)} (stake ₦${fmtMoney(l.stake, 0)})`,
+        `${i + 1}. ${l.fixture.homeTeam} vs ${l.fixture.awayTeam} — ${marketLabel(l.market, l.selection)} @ ${fmtOdds(l.odds)} (stake ₦${fmtMoney(displayStake(l.stake).amount, 0)}${displayStake(l.stake).floored ? " · min" : ""})`,
     );
     const combined = multiple
       ? `\nCombined ${multiple.advertisedOdds.toFixed(2)}x | true prob ${fmtPct(multiple.compoundProbability)} | fair odds ${multiple.compoundFairOdds.toFixed(2)}x`
@@ -82,68 +146,119 @@ export default function SlipsPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Singles list */}
         <div className="lg:col-span-2">
-          <SectionTitle sub={`${slips.length} flagged singles with edge ≥ ${fmtPct(db.settings.edgeThreshold, 0)}`}>
+          {/* Filters — time range + league. League list is derived from the data,
+              so when other sports are added the options grow automatically. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg border border-ink-600/60 bg-ink-800/40 p-0.5">
+              {(
+                [
+                  ["all", "All"],
+                  ["today", "Today"],
+                  ["week", "This week"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setTimeFilter(key)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    timeFilter === key ? "bg-emerald-400 text-ink-950" : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <select
+              value={leagueFilter}
+              onChange={(e) => setLeagueFilter(e.target.value)}
+              className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 outline-none focus:border-sky-400/50"
+            >
+              <option value="all">All leagues</option>
+              {leagues.map((lg) => (
+                <option key={lg} value={lg}>
+                  {lg}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <SectionTitle sub={`${filteredSlips.length} of ${slips.length} flagged singles · edge ≥ ${fmtPct(db.settings.edgeThreshold, 0)}`}>
             Ranked opportunities
           </SectionTitle>
-          {slips.length === 0 ? (
-            <EmptyState title="No flagged singles right now" body="When a fixture has both a model prediction and odds with edge above the threshold, it shows up here." />
+          {filteredSlips.length === 0 ? (
+            <EmptyState title="No flagged singles in this view" body="Try a wider time range or another league — every pick must clear the edge threshold and stay inside the strategy odds band." />
           ) : (
-            <div className="space-y-2.5">
-              {slips.map((leg) => {
-                const key = legKey(leg);
-                const checked = selected.has(key);
-                const isLogged = justLogged.has(key) || loggedKeys.has(key);
+            <div className="space-y-3">
+              {groupedSlips.map(([fixtureId, legs]) => {
+                const first = legs[0]!;
                 return (
-                  <div
-                    key={key}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggle(key)}
-                    onKeyDown={(e) => e.key === "Enter" && toggle(key)}
-                    className={`card group flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left transition-all duration-150 ${
-                      checked ? "border-emerald-400/50 bg-emerald-400/[0.04]" : "hover:border-ink-600 hover:bg-ink-800/40"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-bold transition-colors ${
-                        checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
-                      }`}
-                    >
-                      ✓
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-slate-100">
-                        {leg.fixture.homeTeam} <span className="text-slate-500">vs</span> {leg.fixture.awayTeam}
+                  <div key={fixtureId} className="card overflow-hidden">
+                    <div className="flex items-center justify-between gap-3 border-b border-ink-700/40 bg-ink-800/30 px-4 py-2.5">
+                      <p className="truncate text-sm font-semibold text-slate-100">
+                        {first.fixture.homeTeam} <span className="text-slate-500">vs</span> {first.fixture.awayTeam}
                       </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {leg.fixture.league} · {marketLabel(leg.market, leg.selection)}
+                      <p className="shrink-0 text-xs text-slate-500">
+                        {fmtDate(first.fixture.commenceTime)} · {first.fixture.league}
                       </p>
                     </div>
-                    <div className="hidden shrink-0 text-right sm:block">
-                      <p className="text-xs text-slate-500">
-                        prob <span className="num text-slate-300">{fmtPct(leg.probability)}</span>
-                        <span className="num text-slate-600"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
-                      </p>
-                      <p className={`num mt-0.5 text-sm font-semibold ${edgeClass(leg.edge)}`}>{fmtSignedPct(leg.edge)} edge</p>
+                    <div className="divide-y divide-ink-700/30">
+                      {legs.map((leg) => {
+                        const key = legKey(leg);
+                        const checked = selected.has(key);
+                        const isLogged = justLogged.has(key) || loggedKeys.has(key);
+                        return (
+                          <div
+                            key={key}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggle(key)}
+                            onKeyDown={(e) => e.key === "Enter" && toggle(key)}
+                            className={`group flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left transition-all duration-150 ${
+                              checked ? "bg-emerald-400/[0.05]" : "hover:bg-ink-800/40"
+                            }`}
+                          >
+                            <span
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-bold transition-colors ${
+                                checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
+                              }`}
+                            >
+                              ✓
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-slate-200">{marketLabel(leg.market, leg.selection)}</p>
+                              <p className="mt-0.5 text-xs text-slate-500">
+                                prob <span className="num text-slate-300">{fmtPct(leg.probability)}</span>
+                                <span className="num text-slate-600"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
+                              </p>
+                            </div>
+                            <div className="hidden shrink-0 text-right sm:block">
+                              <p className={`num text-sm font-semibold ${edgeClass(leg.edge)}`}>{fmtSignedPct(leg.edge)} edge</p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</p>
+                              <p className="num mt-0.5 text-xs text-slate-400">
+                                ₦{fmtMoney(displayStake(leg.stake).amount, 0)}
+                                {displayStake(leg.stake).floored && <span className="text-slate-600"> · min</span>}
+                              </p>
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleLogBet(leg);
+                              }}
+                              disabled={isLogged}
+                              className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                isLogged
+                                  ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                                  : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
+                              }`}
+                            >
+                              {isLogged ? "✓ Logged" : "Log bet"}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="shrink-0 text-right">
-                      <p className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</p>
-                      <p className="num mt-0.5 text-xs text-slate-400">₦{fmtMoney(leg.stake, 0)}</p>
-                    </div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleLogBet(leg);
-                      }}
-                      disabled={isLogged}
-                      className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        isLogged
-                          ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                          : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
-                      }`}
-                    >
-                      {isLogged ? "✓ Logged" : "Log bet"}
-                    </button>
                   </div>
                 );
               })}
@@ -193,7 +308,7 @@ export default function SlipsPage() {
                     <div className="my-1 border-t border-ink-700/40" />
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">Suggested stake (quarter Kelly)</span>
-                      <span className="num text-sm font-semibold text-emerald-300">₦{fmtMoney(multiple.stake, 0)}</span>
+                      <span className="num text-sm font-semibold text-emerald-300">₦{fmtMoney(displayStake(multiple.stake).amount, 0)}{displayStake(multiple.stake).floored && <span className="text-slate-600"> · min</span>}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">Bookmaker EV on this multiple</span>
@@ -213,9 +328,14 @@ export default function SlipsPage() {
                   </div>
                 )}
 
-                <button className="btn-primary w-full" onClick={copySlip}>
-                  Copy slip for SportyBet
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button className="btn-primary" onClick={copySlip}>
+                    Copy slip
+                  </button>
+                  <button className="btn-ghost" onClick={() => void handleLogAll()} disabled={selectedLegs.every((l) => justLogged.has(legKey(l)) || loggedKeys.has(legKey(l)))}>
+                    Log all bets
+                  </button>
+                </div>
                 <button className="btn-ghost w-full" onClick={() => setSelected(new Set())}>
                   Clear selection
                 </button>

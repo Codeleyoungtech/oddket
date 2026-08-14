@@ -10,6 +10,10 @@ export default function SlipsPage() {
   const { slips, bets, db, logBet, refresh } = useData();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [justLogged, setJustLogged] = useState<Set<string>>(new Set());
+  // Legs currently being logged — the button shows a spinner and disables so
+  // a slow request can't be double-fired by impatient tapping.
+  const [loggingKeys, setLoggingKeys] = useState<Set<string>>(new Set());
+  const [logError, setLogError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
 
@@ -49,38 +53,60 @@ export default function SlipsPage() {
   }, [slips, timeFilter, leagueFilter, nowSec]);
 
   const handleLogBet = async (leg: SlipLeg) => {
-    await logBet({
-      fixtureId: leg.fixture.id,
-      market: leg.market,
-      selection: leg.selection,
-      odds: leg.odds,
-      stake: Math.max(100, Math.round(leg.stake)),
-      edge: leg.edge,
-      modelProbability: leg.probability,
-      placedAt: Math.floor(Date.now() / 1000),
-    });
-    setJustLogged((prev) => new Set(prev).add(legKey(leg)));
-    refresh();
+    const key = legKey(leg);
+    setLogError(null);
+    setLoggingKeys((prev) => new Set(prev).add(key));
+    try {
+      await logBet({
+        fixtureId: leg.fixture.id,
+        market: leg.market,
+        selection: leg.selection,
+        odds: leg.odds,
+        stake: displayStake(leg.stake).amount,
+        edge: leg.edge,
+        modelProbability: leg.probability,
+        placedAt: Math.floor(Date.now() / 1000),
+      });
+      setJustLogged((prev) => new Set(prev).add(key));
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : "Couldn't log the bet — please try again.");
+    } finally {
+      setLoggingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      refresh();
+    }
   };
 
   /** Log every selected leg that isn't already on the books (one paper-trade bet per leg). */
   const handleLogAll = async () => {
     const pending = selectedLegs.filter((l) => !justLogged.has(legKey(l)) && !loggedKeys.has(legKey(l)));
     if (pending.length === 0) return;
-    for (const leg of pending) {
-      await logBet({
-        fixtureId: leg.fixture.id,
-        market: leg.market,
-        selection: leg.selection,
-        odds: leg.odds,
-        stake: Math.max(100, Math.round(leg.stake)),
-        edge: leg.edge,
-        modelProbability: leg.probability,
-        placedAt: Math.floor(Date.now() / 1000),
-      });
-      setJustLogged((prev) => new Set(prev).add(legKey(leg)));
+    setLogError(null);
+    const keys = new Set(pending.map(legKey));
+    setLoggingKeys((prev) => new Set([...prev, ...keys]));
+    try {
+      for (const leg of pending) {
+        await logBet({
+          fixtureId: leg.fixture.id,
+          market: leg.market,
+          selection: leg.selection,
+          odds: leg.odds,
+          stake: displayStake(leg.stake).amount,
+          edge: leg.edge,
+          modelProbability: leg.probability,
+          placedAt: Math.floor(Date.now() / 1000),
+        });
+        setJustLogged((prev) => new Set(prev).add(legKey(leg)));
+      }
+    } catch (err) {
+      setLogError(err instanceof Error ? err.message : "Couldn't log the bets — please try again.");
+    } finally {
+      setLoggingKeys(new Set());
+      refresh();
     }
-    refresh();
   };
 
   // Group slips by match so a fixture with legs in several markets (h2h +
@@ -185,6 +211,11 @@ export default function SlipsPage() {
           <SectionTitle sub={`${filteredSlips.length} of ${slips.length} flagged singles · edge ≥ ${fmtPct(db.settings.edgeThreshold, 0)}`}>
             Ranked opportunities
           </SectionTitle>
+          {logError && (
+            <div className="mb-3 rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-300">
+              ⚠ {logError}
+            </div>
+          )}
           {filteredSlips.length === 0 ? (
             <EmptyState title="No flagged singles in this view" body="Try a wider time range or another league — every pick must clear the edge threshold and stay inside the strategy odds band." />
           ) : (
@@ -251,14 +282,23 @@ export default function SlipsPage() {
                                 e.stopPropagation();
                                 void handleLogBet(leg);
                               }}
-                              disabled={isLogged}
-                              className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                              disabled={isLogged || loggingKeys.has(key)}
+                              className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
                                 isLogged
                                   ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
                                   : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
                               }`}
                             >
-                              {isLogged ? "✓ Logged" : "Log bet"}
+                              {loggingKeys.has(key) ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-300/40 border-t-sky-300" />
+                                  Logging…
+                                </span>
+                              ) : isLogged ? (
+                                "✓ Logged"
+                              ) : (
+                                "Log bet"
+                              )}
                             </button>
                           </div>
                         );
@@ -344,8 +384,15 @@ export default function SlipsPage() {
                   <button className="btn-primary" onClick={copySlip}>
                     Copy slip
                   </button>
-                  <button className="btn-ghost" onClick={() => void handleLogAll()} disabled={selectedLegs.every((l) => justLogged.has(legKey(l)) || loggedKeys.has(legKey(l)))}>
-                    Log all bets
+                  <button
+                    className="btn-ghost"
+                    onClick={() => void handleLogAll()}
+                    disabled={
+                      loggingKeys.size > 0 ||
+                      selectedLegs.every((l) => justLogged.has(legKey(l)) || loggedKeys.has(legKey(l)))
+                    }
+                  >
+                    {loggingKeys.size > 0 ? "Logging…" : "Log all bets"}
                   </button>
                 </div>
                 <button className="btn-ghost w-full" onClick={() => setSelected(new Set())}>

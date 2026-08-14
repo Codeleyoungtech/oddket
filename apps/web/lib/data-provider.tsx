@@ -127,13 +127,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
     try {
       await api.logBet(withMeta);
-    } catch {
-      // demo mode: apply locally.
+    } catch (err) {
+      // LIVE mode: surface the real error (e.g. stake cap) — never pretend a
+      // rejected bet was logged. Demo mode only: apply locally.
+      if (mode === "live") throw err;
       const prev = db ?? buildSeedDatabase();
       setDb({ ...prev, bets: [...prev.bets, withMeta as Bet] });
     }
     setTick((t) => t + 1);
-  }, [db]);
+  }, [db, mode]);
 
   const deleteBet = useCallback(async (id: string) => {
     try {

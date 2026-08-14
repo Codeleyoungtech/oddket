@@ -21,6 +21,7 @@ export default function BetsPage() {
   const [formOdds, setFormOdds] = useState("");
   const [formStake, setFormStake] = useState("");
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const bettableFixtures = useMemo(() => {
     if (!db) return [];
@@ -72,20 +73,27 @@ export default function BetsPage() {
     const pred = db?.predictions.find(
       (p) => p.fixtureId === formFixture && p.market === "h2h" && p.selection === formSelection,
     );
-    await logBet({
-      fixtureId: formFixture,
-      market: "h2h",
-      selection: formSelection,
-      odds,
-      stake,
-      edge: pred ? pred.probability - 1 / odds : 0,
-      modelProbability: pred?.probability ?? 0,
-      placedAt: Math.floor(Date.now() / 1000),
-    });
-    setFormMsg(`Logged: ${fixture?.homeTeam ?? ""} vs ${fixture?.awayTeam ?? ""} — ${marketLabel("h2h", formSelection)} @ ${odds} for ₦${stake}`);
-    setFormOdds("");
-    setFormStake("");
-    refresh();
+    setSubmitting(true);
+    try {
+      await logBet({
+        fixtureId: formFixture,
+        market: "h2h",
+        selection: formSelection,
+        odds,
+        stake,
+        edge: pred ? pred.probability - 1 / odds : 0,
+        modelProbability: pred?.probability ?? 0,
+        placedAt: Math.floor(Date.now() / 1000),
+      });
+      setFormMsg(`Logged: ${fixture?.homeTeam ?? ""} vs ${fixture?.awayTeam ?? ""} — ${marketLabel("h2h", formSelection)} @ ${odds} for ₦${stake}`);
+      setFormOdds("");
+      setFormStake("");
+    } catch (err) {
+      setFormMsg(err instanceof Error ? err.message : "Couldn't log the bet — please try again.");
+    } finally {
+      setSubmitting(false);
+      refresh();
+    }
   };
 
   const filtered = useMemo(
@@ -159,8 +167,8 @@ export default function BetsPage() {
               onChange={(e) => setFormStake(e.target.value)}
               className="w-full rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-400/50 focus:outline-none"
             />
-            <button type="submit" className="btn-primary shrink-0 whitespace-nowrap">
-              Log bet
+            <button type="submit" disabled={submitting} className="btn-primary shrink-0 whitespace-nowrap">
+              {submitting ? "Logging…" : "Log bet"}
             </button>
           </div>
         </form>

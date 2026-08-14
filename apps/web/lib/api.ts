@@ -34,5 +34,6 @@ export const api = {
   settings: () => req<Settings>("/api/settings"),
   saveSettings: (s: Settings) => req<{ ok: boolean; settings: Settings }>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
   logBet: (b: unknown) => req<{ ok: boolean; bet: unknown }>("/api/bets", { method: "POST", body: JSON.stringify(b) }),
+  deleteBet: (id: string) => req<{ ok: boolean; deleted: string }>(`/api/bets/${encodeURIComponent(id)}`, { method: "DELETE" }),
   recordOutcome: (o: unknown) => req<{ ok: boolean }>("/api/outcomes", { method: "POST", body: JSON.stringify(o) }),
 };

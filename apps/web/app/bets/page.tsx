@@ -3,11 +3,16 @@
 import { useMemo, useState } from "react";
 import { marketLabel } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
+
+// Bets logged in the last 24h can be undone (mistaken logs). Older rows are
+// kept immutable — undoing settled/CLV-scored history would corrupt the scoreboard.
+const UNDO_WINDOW_SEC = 24 * 3600;
 import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtSignedPct, pnlClass } from "../../lib/format";
 
 export default function BetsPage() {
-  const { bets, db, logBet, refresh } = useData();
+  const { bets, db, logBet, deleteBet, refresh } = useData();
+  const [undoMsg, setUndoMsg] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "won" | "lost" | "pending">("all");
 
   // --- paper-trade log form state ---
@@ -43,6 +48,16 @@ export default function BetsPage() {
     setFormSelection(sel);
     const best = bestOddsFor(formFixture, sel);
     setFormOdds(best ? String(best) : "");
+  };
+
+  const undoBet = async (b: { id: string; status: string }) => {
+    if (b.status !== "pending") {
+      setUndoMsg("Only pending bets can be undone — settled bets are locked to keep the scoreboard honest.");
+      return;
+    }
+    await deleteBet(b.id);
+    setUndoMsg("Bet removed from your log.");
+    refresh();
   };
 
   const submitBet = async (e: React.FormEvent) => {
@@ -150,6 +165,7 @@ export default function BetsPage() {
           </div>
         </form>
         {formMsg && <p className="mt-2 text-xs text-emerald-300">{formMsg}</p>}
+        {undoMsg && <p className="mt-2 text-xs text-slate-400">{undoMsg}</p>}
       </Card>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -188,6 +204,7 @@ export default function BetsPage() {
                   <th className="px-4 py-3 text-right font-semibold">CLV</th>
                   <th className="px-4 py-3 text-right font-semibold">P&L</th>
                   <th className="px-4 py-3 text-right font-semibold">Status</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -213,6 +230,17 @@ export default function BetsPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>{b.status}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {b.status === "pending" && b.placedAt > Date.now() / 1000 - UNDO_WINDOW_SEC && (
+                        <button
+                          onClick={() => void undoBet(b)}
+                          title="Remove this mistaken bet log"
+                          className="rounded-md border border-ink-600/60 px-2 py-1 text-[11px] font-semibold text-slate-400 transition-colors hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-300"
+                        >
+                          Undo
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

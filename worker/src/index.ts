@@ -203,6 +203,15 @@ app.get("/api/bets", async (c) => {
   return c.json(enriched.sort((a, b) => b.placedAt - a.placedAt));
 });
 
+/** Undo a mistaken bet log — removes the bet and its CLV records. */
+app.delete("/api/bets/:id", async (c) => {
+  const id = c.req.param("id");
+  await c.env.DB.prepare("DELETE FROM clv_results WHERE bet_id = ?1").bind(id).run();
+  const res = await c.env.DB.prepare("DELETE FROM bets WHERE id = ?1").bind(id).run();
+  if (!res.meta.changes) return c.json({ ok: false, error: "Bet not found." }, 404);
+  return c.json({ ok: true, deleted: id });
+});
+
 app.post("/api/bets", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const { fixtureId, market, selection, odds, stake, edge, modelProbability, placedAt } = body as Partial<Bet>;

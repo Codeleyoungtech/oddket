@@ -39,6 +39,7 @@ export interface DataContextValue {
   refresh: () => void;
   saveSettings: (s: Settings) => Promise<void>;
   logBet: (bet: Omit<Bet, "id" | "status" | "bankrollAtBet">) => Promise<void>;
+  deleteBet: (id: string) => Promise<void>;
   recordOutcome: (fixtureId: string, homeScore: number, awayScore: number) => Promise<void>;
 }
 
@@ -134,6 +135,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setTick((t) => t + 1);
   }, [db]);
 
+  const deleteBet = useCallback(async (id: string) => {
+    try {
+      await api.deleteBet(id);
+    } catch {
+      // demo mode: apply locally.
+      const prev = db ?? buildSeedDatabase();
+      setDb({ ...prev, bets: prev.bets.filter((b) => b.id !== id) });
+    }
+    setTick((t) => t + 1);
+  }, [db]);
+
   const recordOutcome = useCallback(async (fixtureId: string, homeScore: number, awayScore: number) => {
     try {
       await api.recordOutcome({ fixtureId, homeScore, awayScore });
@@ -172,9 +184,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       refresh,
       saveSettings,
       logBet,
+      deleteBet,
       recordOutcome,
     }),
-    [mode, workerError, db, views, refresh, saveSettings, logBet, recordOutcome],
+    [mode, workerError, db, views, refresh, saveSettings, logBet, deleteBet, recordOutcome],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

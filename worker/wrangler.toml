@@ -9,18 +9,25 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "oddket"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "ae42dd06-2251-41ce-86dc-461c01ea189f"
 migrations_dir = "migrations"
 
 # --- Cron ---
+# NOTE: cron triggers are DISABLED because this Cloudflare account is at the
+# free-tier limit of 5 cron triggers per account (error 10072 on deploy).
+# Scheduling runs through GitHub Actions instead (.github/workflows/cron.yml)
+# which POSTs to /api/ingest (09:00 & 18:00 UTC) and /api/closing (18:30 UTC)
+# — the exact same code paths as these crons would fire. Re-enable here if
+# you upgrade to Workers Paid or free up cron slots.
+#
 # Budget math (free tier ~500 req/mo on The Odds API):
 #   2 pulls/day x (1 sports request + N leagues) + 1 closing-odds pull/day
 #   ≈ 4-6 requests/day ≈ 150-180/mo. Safe headroom.
-[triggers]
-crons = [
-  "0 9,18 * * *",   # 09:00 & 18:00 UTC — odds ingestion
-  "30 18 * * *"     # 18:30 UTC — closing-odds pull for logged bets (CLV)
-]
+# [triggers]
+# crons = [
+#   "0 9,18 * * *",   # 09:00 & 18:00 UTC — odds ingestion
+#   "30 18 * * *"     # 18:30 UTC — closing-odds pull for logged bets (CLV)
+# ]
 
 # --- Vars (safe, non-secret). API key goes in .dev.vars / secret ---
 [vars]

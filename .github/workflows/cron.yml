@@ -1,0 +1,41 @@
+name: Cron (odds + CLV pulls)
+
+# Replaces Cloudflare cron triggers (the account is at the free-tier limit of
+# 5 cron triggers, error 10072). These jobs POST to the worker's manual
+# trigger endpoints — the exact same code paths the crons would fire.
+#
+# Required repo secrets:
+#   ODDKET_WORKER_URL — e.g. https://oddket-worker.<subdomain>.workers.dev
+#   PREDICT_SECRET    — must match the worker's PREDICT_SECRET secret
+
+on:
+  schedule:
+    # Odds ingestion — matches the old 09:00 & 18:00 UTC crons
+    - cron: "0 9 * * *"
+    - cron: "0 18 * * *"
+    # Closing-odds pull for CLV — matches the old 18:30 UTC cron
+    - cron: "30 18 * * *"
+  workflow_dispatch: # manual "Run workflow" button for testing
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine which trigger to fire
+        id: which
+        run: |
+          case "$(TZ=UTC date +%H:%M)" in
+            18:30) echo "endpoint=closing" >> "$GITHUB_OUTPUT" ;;
+            *)     echo "endpoint=ingest" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Call worker endpoint
+        env:
+          WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
+          PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}
+          ENDPOINT: ${{ steps.which.outputs.endpoint }}
+        run: |
+          echo "firing /api/$ENDPOINT"
+          curl -sS -m 120 -X POST "$WORKER_URL/api/$ENDPOINT" \
+            -H "x-predict-key: $PREDICT_SECRET"
+          echo

@@ -301,8 +301,16 @@ app.put("/api/settings", async (c) => {
 
 /* ---------------- manual cron triggers (also fire the scheduled jobs) ---------------- */
 
-/** Trigger the live odds pull — same code path as the 09:00/18:00 cron. */
+/** Require the PREDICT_SECRET header on endpoints that cost Odds API credits. */
+function requireSecret(c: { env: Env; req: { header: (n: string) => string | undefined } }): boolean {
+  const secret = c.env.PREDICT_SECRET;
+  if (!secret) return true; // local dev — no secret configured
+  return c.req.header("x-predict-key") === secret;
+}
+
+/** Trigger the live odds pull — GitHub Actions fires this (09:00/18:00). */
 app.post("/api/ingest", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
   try {
     return c.json(await ingestOdds(c.env));
   } catch (err) {
@@ -310,8 +318,9 @@ app.post("/api/ingest", async (c) => {
   }
 });
 
-/** Trigger the closing-odds pull — same code path as the 18:30 CLV cron. */
+/** Trigger the closing-odds pull — GitHub Actions fires this (18:30, CLV). */
 app.post("/api/closing", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
   try {
     return c.json(await pullClosingOdds(c.env));
   } catch (err) {

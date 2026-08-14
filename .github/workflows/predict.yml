@@ -1,0 +1,67 @@
+name: Predict (cloud model run)
+
+# Runs the Python model in the cloud so the deployed worker always has fresh
+# predictions for upcoming fixtures — no laptop required.
+#
+# Flow:
+#   1. Check out the repo (trained models + historical data are committed)
+#   2. Fetch upcoming fixtures + current best odds from the deployed worker
+#   3. Run predict.py for h2h and totals markets
+#   4. POST predictions back to the worker's ingest endpoint
+#
+# Required repo secrets:
+#   ODDKET_WORKER_URL — e.g. https://oddket-worker.<subdomain>.workers.dev
+#   PREDICT_SECRET    — must match the worker's PREDICT_SECRET secret
+
+on:
+  schedule:
+    # 08:05 UTC daily — just before the 09:00 odds pull refreshes the slips
+    - cron: "5 8 * * *"
+  workflow_dispatch: # manual "Run workflow" button for testing
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo (models + data are committed)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: model/requirements.txt
+
+      - name: Install model dependencies
+        working-directory: model
+        run: pip install -r requirements.txt
+
+      - name: Fetch fixtures + best odds from the worker
+        env:
+          WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
+        run: |
+          curl -sS -m 60 "$WORKER_URL/api/fixtures/export" \
+            -o model/data/fixtures.json
+          python3 -c "import json; d=json.load(open('model/data/fixtures.json')); print(f'fetched {d[\"meta\"][\"n_matches\"]} fixtures')"
+
+      - name: Predict h2h (match result)
+        working-directory: model
+        run: python3 scripts/predict.py --source fixtures --data data/fixtures.json --market h2h
+
+      - name: Predict totals (over/under 2.5)
+        working-directory: model
+        run: python3 scripts/predict.py --source fixtures --data data/fixtures.json --market ou
+
+      - name: Push predictions to the worker
+        env:
+          WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
+          PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}
+        run: |
+          for f in output/predictions.json output/predictions_ou.json; do
+            curl -sS -m 60 -X POST "$WORKER_URL/api/predictions/ingest" \
+              -H "Content-Type: application/json" \
+              -H "x-predict-key: $PREDICT_SECRET" \
+              --data-binary @"$f"
+            echo
+          done

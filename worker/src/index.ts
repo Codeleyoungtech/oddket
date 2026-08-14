@@ -31,7 +31,22 @@ import { seedDatabase } from "./seed";
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.use("/api/*", cors({ origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"], allowMethods: ["GET", "POST", "PUT", "OPTIONS"], allowHeaders: ["Content-Type"] }));
+// Local dev origins + the deployed dashboard origin (set via DASHBOARD_ORIGIN
+// secret when you deploy to Vercel/Pages). Everything else gets no CORS.
+function corsOrigins(env: Env): string[] {
+  const list = ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"];
+  if (env.DASHBOARD_ORIGIN) list.push(env.DASHBOARD_ORIGIN);
+  return list;
+}
+
+app.use("/api/*", async (c, next) => {
+  const corsMiddleware = cors({
+    origin: corsOrigins(c.env),
+    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
+    allowHeaders: ["Content-Type", "x-predict-key"],
+  });
+  return corsMiddleware(c, next);
+});
 
 /* ---------------- health ---------------- */
 
@@ -66,8 +81,56 @@ app.get("/api/predictions", async (c) => {
   return c.json(db.predictions);
 });
 
-/** Ingest model output (from the Python sidecar): [{fixtureId, market, selection, probability, confidenceLow, confidenceHigh, modelVersion}] */
+/**
+ * Export UPCOMING real fixtures + their best current odds in the exact shape
+ * the Python model consumes (model/data/fixtures.json). The GitHub Actions
+ * predict job calls this instead of a local SQLite file, so predictions run
+ * in the cloud: fetch here -> predict.py -> POST /api/predictions/ingest.
+ */
+app.get("/api/fixtures/export", async (c) => {
+  const db = await loadDatabase(c.env.DB);
+  const now = Math.floor(Date.now() / 1000);
+  const scheduled = db.fixtures
+    .filter((f) => f.status === "scheduled" && f.sport !== "soccer" && f.commenceTime > now)
+    .sort((a, b) => a.commenceTime - b.commenceTime);
+  const matches = scheduled.map((f) => {
+    const best = (market: string, selection: string): number | null => {
+      let b: number | null = null;
+      for (const o of db.odds) {
+        if (o.fixtureId !== f.id || o.market !== market || o.selection !== selection) continue;
+        if (b === null || o.odds > b) b = o.odds;
+      }
+      return b;
+    };
+    return {
+      id: f.id,
+      league: f.league,
+      home: f.homeTeam,
+      away: f.awayTeam,
+      commenceTime: f.commenceTime,
+      odds: {
+        home: best("h2h", "home"),
+        draw: best("h2h", "draw"),
+        away: best("h2h", "away"),
+        over: best("totals", "over"),
+        under: best("totals", "under"),
+      },
+    };
+  });
+  return c.json({ meta: { source: "live-odds", n_matches: matches.length }, matches });
+});
+
+/** Ingest model output (from the Python sidecar): [{fixtureId, market, selection, probability, confidenceLow, confidenceHigh, modelVersion}]
+ *  When PREDICT_SECRET is set (production), the caller must send it as the
+ *  x-predict-key header so strangers can't push fake predictions. */
 app.post("/api/predictions/ingest", async (c) => {
+  const secret = c.env.PREDICT_SECRET;
+  if (secret) {
+    const provided = c.req.header("x-predict-key") ?? "";
+    if (provided !== secret) {
+      return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
+    }
+  }
   const body = (await c.req.json()) as Array<Partial<Prediction> & { fixtureId: string; market: Prediction["market"]; selection: Prediction["selection"]; probability: number }>;
   if (!Array.isArray(body) || body.length === 0) {
     return c.json({ ok: false, error: "Expected a non-empty array of predictions." }, 400);

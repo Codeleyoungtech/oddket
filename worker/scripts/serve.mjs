@@ -43,7 +43,7 @@ const worker = (await import(BUNDLE)).default;
 // Forward worker env bindings from the shell so live mode works locally:
 //   export ODDS_API_KEY=your_key && npm run serve:local
 const bindings = { DB };
-for (const k of ["ODDS_API_KEY", "ODDS_SPORT", "ODDS_REGIONS", "ODDS_MARKETS", "ODDS_FETCH_LIMIT"]) {
+for (const k of ["ODDS_API_KEY", "ODDS_SPORT", "ODDS_REGIONS", "ODDS_MARKETS", "ODDS_FETCH_LIMIT", "PREDICT_SECRET", "DASHBOARD_ORIGIN"]) {
   if (process.env[k]) bindings[k] = process.env[k];
 }
 

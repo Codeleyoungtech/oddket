@@ -12,6 +12,11 @@ import type {
 export interface Env {
   DB: D1Database;
   ODDS_API_KEY?: string;
+  /** Shared secret required by POST /api/predictions/ingest when set —
+   *  protects the deployed worker from anyone pushing fake predictions. */
+  PREDICT_SECRET?: string;
+  /** Extra CORS origin for a deployed dashboard (e.g. your Vercel URL). */
+  DASHBOARD_ORIGIN?: string;
   ODDS_SPORT?: string;
   ODDS_BOOKMAKERS?: string;
   ODDS_REGIONS?: string;

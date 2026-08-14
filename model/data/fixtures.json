@@ -8,61 +8,121 @@
       "id": "eb2553d10d63dc912b99f8fd0d675721",
       "league": "EPL",
       "home": "Arsenal",
-      "away": "Coventry City"
+      "away": "Coventry City",
+      "commenceTime": 1787338800,
+      "odds": {
+        "home": 1.15,
+        "draw": 7.5,
+        "away": 13
+      }
     },
     {
       "id": "95bb16d19debff3ec39919f361f072a4",
       "league": "EPL",
       "home": "Hull City",
-      "away": "Manchester United"
+      "away": "Manchester United",
+      "commenceTime": 1787398200,
+      "odds": {
+        "home": 7,
+        "draw": 4.5,
+        "away": 1.4
+      }
     },
     {
       "id": "cd1f0173ec061d9b8a8b22ab8f2f8393",
       "league": "EPL",
       "home": "Everton",
-      "away": "Crystal Palace"
+      "away": "Crystal Palace",
+      "commenceTime": 1787407200,
+      "odds": {
+        "home": 2.1,
+        "draw": 3.4,
+        "away": 3.25
+      }
     },
     {
       "id": "01615d9573ef1e5aa8c09eb32a4a983b",
       "league": "EPL",
       "home": "Ipswich Town",
-      "away": "Sunderland"
+      "away": "Sunderland",
+      "commenceTime": 1787407200,
+      "odds": {
+        "home": 2.7,
+        "draw": 3.25,
+        "away": 2.5
+      }
     },
     {
       "id": "ee99154f8db029efcf567c5f7f7a0c0b",
       "league": "EPL",
       "home": "Nottingham Forest",
-      "away": "Leeds United"
+      "away": "Leeds United",
+      "commenceTime": 1787407200,
+      "odds": {
+        "home": 2.2,
+        "draw": 3.3,
+        "away": 3.1
+      }
     },
     {
       "id": "8b4b033209bb204516cbd1f523614f25",
       "league": "EPL",
       "home": "Brentford",
-      "away": "Tottenham Hotspur"
+      "away": "Tottenham Hotspur",
+      "commenceTime": 1787416200,
+      "odds": {
+        "home": 2.3,
+        "draw": 3.6,
+        "away": 2.62
+      }
     },
     {
       "id": "f5086c74d4a767e3ad7ea69bd4a66b76",
       "league": "EPL",
       "home": "Brighton and Hove Albion",
-      "away": "Aston Villa"
+      "away": "Aston Villa",
+      "commenceTime": 1787490000,
+      "odds": {
+        "home": 2.2,
+        "draw": 3.5,
+        "away": 2.88
+      }
     },
     {
       "id": "87c7c9bfd5e3072bded20c702f553c63",
       "league": "EPL",
       "home": "Manchester City",
-      "away": "Bournemouth"
+      "away": "Bournemouth",
+      "commenceTime": 1787490000,
+      "odds": {
+        "home": 1.44,
+        "draw": 5,
+        "away": 5.5
+      }
     },
     {
       "id": "ea0bacc4c23f813c6af97ec9b306a850",
       "league": "EPL",
       "home": "Newcastle United",
-      "away": "Liverpool"
+      "away": "Liverpool",
+      "commenceTime": 1787499000,
+      "odds": {
+        "home": 3.5,
+        "draw": 3.8,
+        "away": 1.85
+      }
     },
     {
       "id": "4e4a813bf4218cc527e6f8ef2351170d",
       "league": "EPL",
       "home": "Fulham",
-      "away": "Chelsea"
+      "away": "Chelsea",
+      "commenceTime": 1787598000,
+      "odds": {
+        "home": 3.2,
+        "draw": 3.8,
+        "away": 2
+      }
     }
   ]
 }

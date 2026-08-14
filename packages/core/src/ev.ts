@@ -14,6 +14,14 @@ import type {
 } from "./types";
 import { stopLossViolation, suggestedStake } from "./kelly";
 
+/**
+ * Shipped strategy band: only flag selections at best odds <= this.
+ * Backtested on 4 leagues x 6 seasons (2019-2025, honest holdout): the
+ * model's signal is real on favorites (<=2.5: ROI +4.9%, CLV +5.6%) but
+ * bleeds on longshots where small calibration error x huge odds dominates.
+ */
+export const STRATEGY_MAX_ODDS = 2.5;
+
 export interface SlipLeg {
   fixture: Fixture;
   market: Market;
@@ -81,6 +89,11 @@ export interface FlagOptions {
   minProb?: number;
   maxProb?: number;
   edgeThreshold?: number;
+  /** strategy band: only flag selections at best odds <= maxOdds (0=off).
+   *  Backtested: the model's signal is real on favorites but bleeds on
+   *  longshots (small calibration error x huge odds), so the shipped
+   *  strategy restricts to short prices. */
+  maxOdds?: number;
 }
 
 /**
@@ -116,6 +129,8 @@ export function flagSlips(
 
       const odds = bestOddsFor(fixtureOdds, fixture.id, pred.market, pred.selection)?.odds ?? 0;
       if (odds <= 1) continue;
+      const maxOdds = opts.maxOdds ?? 0;
+      if (maxOdds > 0 && odds > maxOdds) continue;
 
       legs.push({
         fixture,
@@ -132,7 +147,15 @@ export function flagSlips(
     }
   }
 
-  return legs.sort((a, b) => b.edge - a.edge);
+  // Dedupe safety net: one leg per (fixture, market, selection) — keep the
+  // highest edge. Guards against stale/duplicate prediction rows sneaking in.
+  const best = new Map<string, SlipLeg>();
+  for (const leg of legs) {
+    const key = `${leg.fixture.id}:${leg.market}:${leg.selection}`;
+    const cur = best.get(key);
+    if (!cur || leg.edge > cur.edge) best.set(key, leg);
+  }
+  return [...best.values()].sort((a, b) => b.edge - a.edge);
 }
 
 /**

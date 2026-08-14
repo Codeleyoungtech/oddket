@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Predict match-result probabilities (+ confidence intervals) for fixtures
-using the REAL model and REAL team-level features.
+using the trained model and the SAME feature computation used at training.
 
 Usage:
     python3 scripts/predict.py --source fixtures --data data/fixtures.json
 
-The fixtures file is produced by worker/scripts/export-fixtures.mjs and
-contains the upcoming fixtures as {id, home, away, league}. Features are
-computed by features.build_team_states() over the historical dataset — the
-SAME leakage-free computation used at training time (form, Elo strength,
-goals, shots, H2H). Current odds are NEVER part of the features.
+fixtures.json is produced by worker/scripts/export-fixtures.mjs and carries,
+per fixture: id, home, away, league, commenceTime (unix s) and the current
+best h2h odds {home, draw, away}. Team-level features come from real history
+(features.build_team_states); the market-implied odds features (odd_*) come
+from the fixture's own current odds (known before kickoff — leakage-free);
+rest features use the fixture kickoff time. The exact feature list is read
+from the trained model's model_meta.json, so predict always matches train.
 
 Outputs:
     model/output/predictions.json — shape POST /api/predictions/ingest expects.
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 
@@ -28,7 +31,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import numpy as np  # noqa: E402
 
-from features import FEATURES, build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
+from features import build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
 
 # Map The Odds API team names -> football-data.co.uk names.
 NAME_MAP = {
@@ -63,6 +66,22 @@ def normalize(name: str) -> str:
     return NAME_MAP.get(name, name)
 
 
+def logit(p: float) -> float:
+    return math.log(max(1e-6, min(1 - 1e-6, p)))
+
+
+def fill_odds_features(f: dict, features: dict, odds: dict) -> None:
+    """Market-implied odds features (odd_h/d/a) from the fixture's current
+    odds. These are the same features train.py computes from opening odds."""
+    inv = [1.0 / odds[s] for s in ("home", "draw", "away") if odds.get(s) and odds[s] > 0]
+    if len(inv) == 3:
+        s = sum(inv)
+        impl = {k: v / s for k, v in zip(("home", "draw", "away"), inv)}
+        features["odd_h"] = round(logit(impl["home"]), 4)
+        features["odd_d"] = round(logit(impl["draw"]), 4)
+        features["odd_a"] = round(logit(impl["away"]), 4)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["fixtures", "synthetic"], default="fixtures")
@@ -72,6 +91,7 @@ def main() -> int:
     model_path = os.path.join(ROOT, "models", "h2h_model.joblib")
     cal_path = os.path.join(ROOT, "models", "h2h_calibrator.joblib")
     hist_path = os.path.join(ROOT, "data", "historical.json")
+    meta_path = os.path.join(ROOT, "models", "model_meta.json")
     if not os.path.exists(model_path) or not os.path.exists(cal_path):
         print(f"[predict] no trained model — run train.py first", file=sys.stderr)
         return 1
@@ -82,8 +102,10 @@ def main() -> int:
     from joblib import load  # noqa: E402
 
     clf = load(model_path)
-    calibrators = load(cal_path)
-    meta = json.load(open(os.path.join(ROOT, "models", "model_meta.json")))
+    calibrated = load(cal_path)
+    meta = json.load(open(meta_path))
+    features_needed = meta.get("features", [])
+    print(f"[predict] model {meta.get('version')} | features: {len(features_needed)}")
 
     path = args.data or os.path.join(ROOT, "data", "fixtures.json")
     if not os.path.exists(path):
@@ -91,7 +113,6 @@ def main() -> int:
         return 1
     fixtures = json.load(open(path)).get("matches", [])
 
-    # Build team states from real history, then compute features per fixture.
     history = load_matches_dict(hist_path)
     states = build_team_states(history)
 
@@ -103,20 +124,19 @@ def main() -> int:
         if hs is None or as_ is None:
             print(f"[predict] unknown team(s) for '{f.get('home')}' vs '{f.get('away')}' — skipping", file=sys.stderr)
             continue
-        features = compute_pair_features(hs, as_, history, home, away)
+        ts = int(f.get("commenceTime") or 0)
+        features = compute_pair_features(hs, as_, history, home, away, ts)
+        fill_odds_features(f, features, f.get("odds") or {})
         rows.append((f, features))
 
     if not rows:
         print("[predict] no predictable fixtures", file=sys.stderr)
         return 1
 
-    X = np.array([[r[1][f] for f in FEATURES] for r in rows], dtype=float)
+    X = np.array([[r[1][fname] for fname in features_needed] for r in rows], dtype=float)
     raw = clf.predict_proba(X)
-    cal = np.column_stack([
-        calibrators["home"].predict(raw[:, 0]),
-        calibrators["draw"].predict(raw[:, 1]),
-        calibrators["away"].predict(raw[:, 2]),
-    ])
+    # Platt-calibrated probabilities (sigmoid per class, fitted on train)
+    cal = calibrated.predict_proba(X)
     s = cal.sum(axis=1, keepdims=True)
     s[s == 0] = 1
     cal = cal / s
@@ -136,7 +156,7 @@ def main() -> int:
                 "probability": round(p, 4),
                 "confidenceLow": round(max(0.0, p - hw), 4),
                 "confidenceHigh": round(min(1.0, p + hw), 4),
-                "modelVersion": meta.get("version", "h2h-xgb-v2"),
+                "modelVersion": meta.get("version", "h2h-xgb-v3"),
             })
 
     out_path = os.path.join(ROOT, "output", "predictions.json")

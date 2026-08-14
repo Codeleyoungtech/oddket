@@ -1,13 +1,77 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { marketLabel } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtSignedPct, pnlClass } from "../../lib/format";
 
 export default function BetsPage() {
-  const { bets, db } = useData();
+  const { bets, db, logBet, refresh } = useData();
   const [statusFilter, setStatusFilter] = useState<"all" | "won" | "lost" | "pending">("all");
+
+  // --- paper-trade log form state ---
+  const [formFixture, setFormFixture] = useState("");
+  const [formSelection, setFormSelection] = useState<"home" | "draw" | "away">("home");
+  const [formOdds, setFormOdds] = useState("");
+  const [formStake, setFormStake] = useState("");
+  const [formMsg, setFormMsg] = useState<string | null>(null);
+
+  const bettableFixtures = useMemo(() => {
+    if (!db) return [];
+    const scheduled = db.fixtures.filter((f) => f.status === "scheduled");
+    const live = scheduled.filter((f) => f.sport === "soccer_epl");
+    const pool = live.length > 0 ? live : scheduled;
+    const predicted = new Set(db.predictions.map((p) => p.fixtureId));
+    return pool.filter((f) => predicted.has(f.id));
+  }, [db]);
+
+  const bestOddsFor = (fixtureId: string, selection: string): number | null => {
+    if (!db) return null;
+    const snaps = db.odds.filter((o) => o.fixtureId === fixtureId && o.market === "h2h" && o.selection === selection);
+    const best = Math.max(...snaps.map((o) => o.odds), 0);
+    return best > 0 ? best : null;
+  };
+
+  const pickFixture = (id: string) => {
+    setFormFixture(id);
+    const best = bestOddsFor(id, "home");
+    setFormOdds(best ? String(best) : "");
+  };
+
+  const pickSelection = (sel: "home" | "draw" | "away") => {
+    setFormSelection(sel);
+    const best = bestOddsFor(formFixture, sel);
+    setFormOdds(best ? String(best) : "");
+  };
+
+  const submitBet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const odds = parseFloat(formOdds);
+    const stake = parseFloat(formStake);
+    if (!formFixture || !odds || odds <= 1 || !stake || stake <= 0) {
+      setFormMsg("Pick a fixture, fill odds (>1) and a stake.");
+      return;
+    }
+    const fixture = db?.fixtures.find((f) => f.id === formFixture);
+    const pred = db?.predictions.find(
+      (p) => p.fixtureId === formFixture && p.market === "h2h" && p.selection === formSelection,
+    );
+    await logBet({
+      fixtureId: formFixture,
+      market: "h2h",
+      selection: formSelection,
+      odds,
+      stake,
+      edge: pred ? pred.probability - 1 / odds : 0,
+      modelProbability: pred?.probability ?? 0,
+      placedAt: Math.floor(Date.now() / 1000),
+    });
+    setFormMsg(`Logged: ${fixture?.homeTeam ?? ""} vs ${fixture?.awayTeam ?? ""} — ${marketLabel("h2h", formSelection)} @ ${odds} for ₦${stake}`);
+    setFormOdds("");
+    setFormStake("");
+    refresh();
+  };
 
   const filtered = useMemo(
     () => (statusFilter === "all" ? bets : bets.filter((b) => b.status === statusFilter)),
@@ -34,6 +98,60 @@ export default function BetsPage() {
         </p>
       </div>
 
+      {/* Paper-trade: log the bets you actually place on SportyBet */}
+      <Card className="card-pad">
+        <SectionTitle sub="Logged bets get settled automatically and scored against closing odds (CLV)">
+          Log a bet you placed
+        </SectionTitle>
+        <form onSubmit={submitBet} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <select
+            value={formFixture}
+            onChange={(e) => pickFixture(e.target.value)}
+            className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 focus:border-sky-400/50 focus:outline-none lg:col-span-2"
+          >
+            <option value="">Pick a scheduled fixture…</option>
+            {bettableFixtures.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.homeTeam} vs {f.awayTeam}
+              </option>
+            ))}
+          </select>
+          <select
+            value={formSelection}
+            onChange={(e) => pickSelection(e.target.value as "home" | "draw" | "away")}
+            className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 focus:border-sky-400/50 focus:outline-none"
+          >
+            <option value="home">Home</option>
+            <option value="draw">Draw</option>
+            <option value="away">Away</option>
+          </select>
+          <input
+            type="number"
+            step="0.01"
+            min="1.01"
+            placeholder="Odds (e.g. 1.85)"
+            value={formOdds}
+            onChange={(e) => setFormOdds(e.target.value)}
+            className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-400/50 focus:outline-none"
+          />
+          <div className="flex gap-2">
+            <input
+              type="number"
+              step="50"
+              min="1"
+              placeholder="Stake ₦"
+              value={formStake}
+              onChange={(e) => setFormStake(e.target.value)}
+              className="w-full rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-400/50 focus:outline-none"
+            />
+            <button type="submit" className="btn-primary shrink-0 whitespace-nowrap">
+              Log bet
+            </button>
+          </div>
+        </form>
+        {formMsg && <p className="mt-2 text-xs text-emerald-300">{formMsg}</p>}
+      </Card>
+
       <div className="flex flex-wrap items-center gap-2">
         {(["all", "won", "lost", "pending"] as const).map((s) => (
           <button
@@ -54,7 +172,7 @@ export default function BetsPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState title="No bets match this filter" body="Log bets on the Overview or via the API (POST /api/bets) to build history." />
+        <EmptyState title="No bets match this filter" body="Use the form above to log the bets you place on SportyBet — every row feeds the CLV scoreboard." />
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">

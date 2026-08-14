@@ -9,6 +9,7 @@ import {
   enrichBets,
   flagSlips,
   runBacktest,
+  STRATEGY_MAX_ODDS,
   type BacktestResult,
   type Bet,
   type BetWithClv,
@@ -60,6 +61,7 @@ function computeViews(db: Database) {
     db.predictions,
     db.odds,
     db.settings,
+    { maxOdds: STRATEGY_MAX_ODDS },
   );
   const bets = enrichBets(
     db.bets,

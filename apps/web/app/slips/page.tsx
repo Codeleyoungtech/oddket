@@ -7,13 +7,35 @@ import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle } from "../.
 import { edgeClass, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
 
 export default function SlipsPage() {
-  const { slips, db } = useData();
+  const { slips, bets, db, logBet, refresh } = useData();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [justLogged, setJustLogged] = useState<Set<string>>(new Set());
 
   const selectedLegs = useMemo(
     () => slips.filter((l) => selected.has(legKey(l))),
     [slips, selected],
   );
+
+  // Bets already on the books (paper-trade log) for these legs.
+  const loggedKeys = useMemo(
+    () => new Set(bets.map((b) => `${b.fixtureId}:${b.market}:${b.selection}`)),
+    [bets],
+  );
+
+  const handleLogBet = async (leg: SlipLeg) => {
+    await logBet({
+      fixtureId: leg.fixture.id,
+      market: leg.market,
+      selection: leg.selection,
+      odds: leg.odds,
+      stake: Math.max(100, Math.round(leg.stake)),
+      edge: leg.edge,
+      modelProbability: leg.probability,
+      placedAt: Math.floor(Date.now() / 1000),
+    });
+    setJustLogged((prev) => new Set(prev).add(legKey(leg)));
+    refresh();
+  };
 
   if (!db) return <Loading />;
 
@@ -70,11 +92,15 @@ export default function SlipsPage() {
               {slips.map((leg) => {
                 const key = legKey(leg);
                 const checked = selected.has(key);
+                const isLogged = justLogged.has(key) || loggedKeys.has(key);
                 return (
-                  <button
+                  <div
                     key={key}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => toggle(key)}
-                    className={`card group flex w-full items-center gap-4 px-4 py-3 text-left transition-all duration-150 ${
+                    onKeyDown={(e) => e.key === "Enter" && toggle(key)}
+                    className={`card group flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left transition-all duration-150 ${
                       checked ? "border-emerald-400/50 bg-emerald-400/[0.04]" : "hover:border-ink-600 hover:bg-ink-800/40"
                     }`}
                   >
@@ -104,7 +130,21 @@ export default function SlipsPage() {
                       <p className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</p>
                       <p className="num mt-0.5 text-xs text-slate-400">₦{fmtMoney(leg.stake, 0)}</p>
                     </div>
-                  </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleLogBet(leg);
+                      }}
+                      disabled={isLogged}
+                      className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        isLogged
+                          ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                          : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
+                      }`}
+                    >
+                      {isLogged ? "✓ Logged" : "Log bet"}
+                    </button>
+                  </div>
                 );
               })}
             </div>

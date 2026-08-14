@@ -256,16 +256,21 @@ export default function SlipsPage() {
                               ✓
                             </span>
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-slate-200">{marketLabel(leg.market, leg.selection)}</p>
+                              <p className="truncate text-sm font-medium text-slate-200">
+                                {marketLabel(leg.market, leg.selection)}
+                                {displayStake(leg.stake).floored && (
+                                  <span
+                                    title="Thin edge — below the ₦10 min stake. Don't add this leg to a multiple."
+                                    className="ml-1.5 inline-flex h-4 w-4 translate-y-[-1px] items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10 text-[10px] leading-none text-amber-300"
+                                  >
+                                    ⚠
+                                  </span>
+                                )}
+                              </p>
                               <p className="mt-0.5 text-xs text-slate-500">
                                 prob <span className="num text-slate-300">{fmtPct(leg.probability)}</span>
                                 <span className="num text-slate-600"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
                               </p>
-                              {displayStake(leg.stake).floored && (
-                                <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
-                                  <span aria-hidden>⚠</span> Thin edge — below the ₦10 min stake. Don't add this leg to a multiple.
-                                </p>
-                              )}
                             </div>
                             <div className="hidden shrink-0 text-right sm:block">
                               <p className={`num text-sm font-semibold ${edgeClass(leg.edge)}`}>{fmtSignedPct(leg.edge)} edge</p>
@@ -334,9 +339,12 @@ export default function SlipsPage() {
                           <span className="num shrink-0 text-slate-300">@{fmtOdds(l.odds)}</span>
                         </div>
                         {displayStake(l.stake).floored && (
-                          <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-300">
-                            <span aria-hidden>⚠</span> Thin edge — don't include this leg in a multiple.
-                          </p>
+                          <span
+                            title="Thin edge — below the ₦10 min stake. Don't include this leg in a multiple."
+                            className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10 text-[10px] leading-none text-amber-300"
+                          >
+                            ⚠
+                          </span>
                         )}
                       </li>
                     ))}

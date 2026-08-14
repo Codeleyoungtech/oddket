@@ -13,6 +13,7 @@ export interface Env {
   DB: D1Database;
   ODDS_API_KEY?: string;
   ODDS_SPORT?: string;
+  ODDS_BOOKMAKERS?: string;
   ODDS_REGIONS?: string;
   ODDS_MARKETS?: string;
   ODDS_FETCH_LIMIT?: string;

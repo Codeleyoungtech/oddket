@@ -15,12 +15,17 @@ import type {
 import { stopLossViolation, suggestedStake } from "./kelly";
 
 /**
- * Shipped strategy band: only flag selections at best odds <= this.
- * Backtested on 4 leagues x 6 seasons (2019-2025, honest holdout): the
- * model's signal is real on favorites (<=2.5: ROI +4.9%, CLV +5.6%) but
- * bleeds on longshots where small calibration error x huge odds dominates.
+ * Shipped strategy bands per market: only flag selections at best odds <= the
+ * band. Backtested on 4 leagues x 6 seasons (2019-2025, honest holdout): the
+ * model's signal is real in the low-price region but bleeds on longshots
+ * where small calibration error x huge odds dominates.
+ *   h2h    <=2.5  (528 bets, ROI +4.9%, CLV +5.6%)
+ *   totals <=1.95 (366 bets, ROI +5.8%, CLV +3.5%)
  */
-export const STRATEGY_MAX_ODDS = 2.5;
+export const STRATEGY_MAX_ODDS: Partial<Record<Market, number>> = {
+  h2h: 2.5,
+  totals: 1.95,
+};
 
 export interface SlipLeg {
   fixture: Fixture;
@@ -118,8 +123,15 @@ export function flagSlips(
     const fixtureOdds = snapshots.filter((s) => s.fixtureId === fixture.id);
     for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
       const marketOdds = fixtureOdds.filter((s) => s.market === pred.market);
+      // One price per selection (BEST) — otherwise every bookmaker snapshot
+      // counts as a separate market outcome and implied collapses to ~0.
+      const bestPerSel = new Map<Selection, number>();
+      for (const s of marketOdds) {
+        const cur = bestPerSel.get(s.selection);
+        if (cur === undefined || s.odds > cur) bestPerSel.set(s.selection, s.odds);
+      }
       const implied = marginAdjustedImplied(
-        marketOdds.map((s) => ({ selection: s.selection, odds: s.odds })),
+        [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
         pred.selection,
       );
       if (implied <= 0) continue;
@@ -129,7 +141,7 @@ export function flagSlips(
 
       const odds = bestOddsFor(fixtureOdds, fixture.id, pred.market, pred.selection)?.odds ?? 0;
       if (odds <= 1) continue;
-      const maxOdds = opts.maxOdds ?? 0;
+      const maxOdds = opts.maxOdds ?? STRATEGY_MAX_ODDS[pred.market] ?? 0;
       if (maxOdds > 0 && odds > maxOdds) continue;
 
       legs.push({

@@ -39,6 +39,7 @@ ELO_SPLIT_FEATURES = ["home_elo_h", "away_elo_a"]
 EW_FORM_FEATURES = ["ew_home", "ew_away", "ew_diff"]
 REST_FEATURES = ["rest_home", "rest_away", "rest_diff", "short_rest_home", "short_rest_away"]
 ODDS_FEATURES = ["odd_h", "odd_d", "odd_a"]
+OU_ODDS_FEATURES = ["odd_over", "odd_under"]
 MOVE_FEATURES = ["move_h", "move_d", "move_a"]
 SPREAD_FEATURES = ["spread_h", "spread_d", "spread_a"]
 
@@ -48,6 +49,7 @@ FEATURE_GROUPS = {
     "ew_form": EW_FORM_FEATURES,
     "rest": REST_FEATURES,
     "odds": ODDS_FEATURES,
+    "ou_odds": OU_ODDS_FEATURES,
     "move": MOVE_FEATURES,
     "spread": SPREAD_FEATURES,
 }
@@ -212,6 +214,7 @@ def compute_pair_features(home_state: TeamState, away_state: TeamState,
         "short_rest_away": 1.0 if short_away else 0.0,
         # market features (filled in later from historical_odds.json)
         "odd_h": 0.0, "odd_d": 0.0, "odd_a": 0.0,
+        "odd_over": 0.0, "odd_under": 0.0,
         "move_h": 0.0, "move_d": 0.0, "move_a": 0.0,
         "spread_h": 0.0, "spread_d": 0.0, "spread_a": 0.0,
     }

@@ -12,6 +12,15 @@ const MARKET_OPTIONS = [
   { value: "btts", label: "Both teams to score" },
 ] as const;
 
+// Must match the seed LEAGUES names in packages/core/src/seed.ts and the
+// LEAGUE_SPORTS map in packages/core/src/types.ts.
+const LEAGUE_OPTIONS = [
+  { value: "English Premier League", label: "English Premier League" },
+  { value: "La Liga", label: "La Liga" },
+  { value: "Bundesliga", label: "Bundesliga" },
+  { value: "Serie A", label: "Serie A" },
+] as const;
+
 export default function SettingsPage() {
   const { db, saveSettings, mode } = useData();
   const [form, setForm] = useState<Settings | null>(null);
@@ -34,6 +43,16 @@ export default function SettingsPage() {
       const has = f.markets.includes(m);
       const markets = has ? f.markets.filter((x) => x !== m) : [...f.markets, m];
       return { ...f, markets };
+    });
+    setSaved(false);
+  };
+
+  const toggleLeague = (name: (typeof LEAGUE_OPTIONS)[number]["value"]) => {
+    setForm((f) => {
+      if (!f) return f;
+      const has = f.leagues.includes(name);
+      const leagues = has ? f.leagues.filter((x) => x !== name) : [...f.leagues, name];
+      return { ...f, leagues };
     });
     setSaved(false);
   };
@@ -145,6 +164,32 @@ export default function SettingsPage() {
           </label>
         </div>
         <p className="mt-3 text-xs text-slate-500">0 disables the cap — not recommended.</p>
+      </Card>
+
+      <Card className="card-pad">
+        <CardHeader
+          title="Leagues in play"
+          subtitle="Which leagues the live pulls cover (one API credit per league). The model is trained on these four — teams outside them are skipped honestly."
+        />
+        <div className="flex flex-wrap gap-2">
+          {LEAGUE_OPTIONS.map((l) => {
+            const on = form.leagues.includes(l.value);
+            return (
+              <button
+                key={l.value}
+                onClick={() => toggleLeague(l.value)}
+                className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  on
+                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                    : "border-ink-600/60 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {l.label}
+                <span className={`ml-2 text-[11px] ${on ? "text-emerald-400/70" : "text-slate-600"}`}>{on ? "on" : "off"}</span>
+              </button>
+            );
+          })}
+        </div>
       </Card>
 
       <Card className="card-pad">

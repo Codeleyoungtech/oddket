@@ -3,6 +3,18 @@
  * These mirror the D1 tables in `worker/src/db/schema.ts` 1:1.
  */
 
+/**
+ * The Odds API sport keys OddKet can pull live, keyed by the seed's league
+ * names (Settings.leagues uses these display names). The model is trained on
+ * these 4 leagues, so everything else gets skipped honestly at predict time.
+ */
+export const LEAGUE_SPORTS: Record<string, string> = {
+  "English Premier League": "soccer_epl",
+  "La Liga": "soccer_spain_la_liga",
+  "Bundesliga": "soccer_germany_bundesliga",
+  "Serie A": "soccer_italy_serie_a",
+};
+
 export type Market = "h2h" | "totals" | "btts" | "spreads";
 export type Selection = "home" | "draw" | "away" | "over" | "under" | "yes" | "no";
 export type FixtureStatus = "scheduled" | "live" | "finished";

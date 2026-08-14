@@ -9,7 +9,7 @@ import type {
   Selection,
 } from "./types";
 import { meanBrier, wilsonInterval, round } from "./math";
-import { flagSlips, STRATEGY_MAX_ODDS } from "./ev";
+import { flagSlips } from "./ev";
 
 /** Did the selection win, given the final score? */
 export function selectionWon(market: Market, selection: Selection, home: number, away: number): boolean {
@@ -207,7 +207,7 @@ export function buildDashboard(db: Database): Dashboard {
     settledClv.length > 0 ? settledClv.filter((b) => clvByBet.get(b.id)!.clv > 0).length / settledClv.length : 0;
 
   const scheduledFixtures = fixtures.filter((f) => f.status === "scheduled");
-  const flaggedSingles = flagSlips(scheduledFixtures, predictions, db.odds, settings, { maxOdds: STRATEGY_MAX_ODDS }).length;
+  const flaggedSingles = flagSlips(scheduledFixtures, predictions, db.odds, settings).length;
 
   const byMarket = buildByMarket(settled, clvByBet, totalStaked > 0 ? totalReturn / totalStaked : 0);
 

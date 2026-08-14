@@ -9,7 +9,6 @@ import {
   enrichBets,
   flagSlips,
   runBacktest,
-  STRATEGY_MAX_ODDS,
   type BacktestResult,
   type Bet,
   type BetWithClv,
@@ -50,18 +49,18 @@ function computeViews(db: Database) {
   const calibration = buildCalibration(db.predictions, db.outcomes, db.fixtures);
   const clvSeries = buildClvSeries(db.bets, db.clv);
   // In live mode the seeded demo fixtures (sport = 'soccer') also sit in the
-  // DB. Only surface slips for REAL fixtures (sport = 'soccer_epl', from The
-  // Odds API) so the demo seed's fabricated "edges" never reach the slip
-  // builder. Falls back to all scheduled fixtures in demo mode.
+  // DB. Only surface slips for REAL fixtures (anything pulled from The Odds
+  // API; the demo seed uses sport = 'soccer') so the demo seed's fabricated
+  // "edges" never reach the slip builder. Falls back to all scheduled
+  // fixtures in demo mode.
   const scheduled = db.fixtures.filter((f) => f.status === "scheduled");
-  const liveScheduled = scheduled.filter((f) => f.sport === "soccer_epl");
+  const liveScheduled = scheduled.filter((f) => f.sport !== "soccer");
   const slipFixtures = liveScheduled.length > 0 ? liveScheduled : scheduled;
   const slips = flagSlips(
     slipFixtures,
     db.predictions,
     db.odds,
     db.settings,
-    { maxOdds: STRATEGY_MAX_ODDS },
   );
   const bets = enrichBets(
     db.bets,

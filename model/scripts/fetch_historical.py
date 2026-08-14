@@ -73,6 +73,9 @@ def _market_extras(r: dict) -> dict:
     best  = MaxH/MaxD/MaxA — the best available price across books (what a
             sharp bettor actually gets for entry).
     close = AvgCH/AvgCD/AvgCA — the market's closing line (for CLV).
+
+    Also attaches the over/under 2.5 market ("ou") with the same shape
+    (open/best/close per over/under selection) for the totals model.
     """
     open_ = {"home": _f(r, "AvgH"), "draw": _f(r, "AvgD"), "away": _f(r, "AvgA")}
     best = {"home": _f(r, "MaxH"), "draw": _f(r, "MaxD"), "away": _f(r, "MaxA")}
@@ -85,6 +88,15 @@ def _market_extras(r: dict) -> dict:
             if v is not None:
                 books.append(v)
         out[sel] = {"open": open_[sel], "best": best[sel], "close": close[sel], "books": books}
+    # Over/Under 2.5 market (only where the CSV has the columns)
+    ou = {}
+    for sel, gt, lt in (("over", ">2.5", ">2.5"), ("under", "<2.5", "<2.5")):
+        ou[sel] = {
+            "open": _f(r, f"Avg{gt}"),
+            "best": _f(r, f"Max{gt}") or _f(r, f"Avg{gt}"),
+            "close": _f(r, f"AvgC{lt}"),
+        }
+    out["ou"] = ou
     return out
 
 
@@ -97,6 +109,11 @@ def _odds_summary(r: dict) -> dict:
         "close_home": _f(r, "AvgCH"),
         "close_draw": _f(r, "AvgCD"),
         "close_away": _f(r, "AvgCA"),
+        # totals: best (Max) entry price + closing avg for CLV
+        "over": _f(r, "Max>2.5") or _f(r, "Avg>2.5"),
+        "under": _f(r, "Max<2.5") or _f(r, "Avg<2.5"),
+        "close_over": _f(r, "AvgC>2.5"),
+        "close_under": _f(r, "AvgC<2.5"),
     }
 
 

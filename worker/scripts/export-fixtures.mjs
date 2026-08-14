@@ -28,18 +28,35 @@ const OUT = join(root, "..", "model", "data", "fixtures.json");
 
 const sqlite = new DatabaseSync(DB_FILE);
 
-// Live fixtures are the ones ingested from The Odds API (sport = soccer_epl);
-// seed fixtures use sport = 'soccer'.
-const fixtures = sqlite
-  .prepare("SELECT * FROM fixtures WHERE sport = 'soccer_epl' AND status = 'scheduled'")
-  .all();
+// Live fixtures are the ones ingested from The Odds API (any sport key — the
+// seed demo fixtures use sport = 'soccer'). Only export leagues the user has
+// selected in Settings (defaults to all when unset).
+const LEAGUE_SPORTS = {
+  "English Premier League": "soccer_epl",
+  "La Liga": "soccer_spain_la_liga",
+  "Bundesliga": "soccer_germany_bundesliga",
+  "Serie A": "soccer_italy_serie_a",
+};
+
+const settingsRow = sqlite.prepare("SELECT leagues FROM settings WHERE id = 1").get();
+let leagueNames = [];
+try {
+  leagueNames = JSON.parse(settingsRow?.leagues ?? "[]");
+} catch {
+  leagueNames = [];
+}
+const sports = leagueNames.map((n) => LEAGUE_SPORTS[n]).filter(Boolean);
+const where = sports.length > 0
+  ? `sport IN (${sports.map(() => "?").join(",")}) AND status = 'scheduled'`
+  : "sport != 'soccer' AND status = 'scheduled'";
+const fixtures = sqlite.prepare(`SELECT * FROM fixtures WHERE ${where}`).all(...sports);
 
 const odds = sqlite.prepare("SELECT * FROM odds_snapshots WHERE is_closing = 0").all();
 
-function bestOdds(fixtureId, selection) {
+function bestOdds(fixtureId, market, selection) {
   let best = null;
   for (const o of odds) {
-    if (o.fixture_id !== fixtureId || o.market !== "h2h" || o.selection !== selection) continue;
+    if (o.fixture_id !== fixtureId || o.market !== market || o.selection !== selection) continue;
     if (best === null || o.odds > best) best = o.odds;
   }
   return best;
@@ -52,9 +69,12 @@ const matches = fixtures.map((f) => ({
   away: f.away_team,
   commenceTime: Number(f.commence_time) || 0,
   odds: {
-    home: bestOdds(f.id, "home"),
-    draw: bestOdds(f.id, "draw"),
-    away: bestOdds(f.id, "away"),
+    home: bestOdds(f.id, "h2h", "home"),
+    draw: bestOdds(f.id, "h2h", "draw"),
+    away: bestOdds(f.id, "h2h", "away"),
+    // totals market (over/under 2.5) for the ou model
+    over: bestOdds(f.id, "totals", "over"),
+    under: bestOdds(f.id, "totals", "under"),
   },
 }));
 

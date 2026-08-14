@@ -66,7 +66,8 @@ export function mapEvent(event: ApiOddsEvent, bookmakerKeys: string[], capturedA
 
   const snapshots: OddsSnapshot[] = [];
   for (const book of event.bookmakers ?? []) {
-    if (!bookmakerKeys.includes(book.key)) continue;
+    // empty bookmakerKeys = keep ALL bookmakers (best-price + totals coverage)
+    if (bookmakerKeys.length > 0 && !bookmakerKeys.includes(book.key)) continue;
     for (const market of book.markets) {
       // Only h2h / totals-2.5 / btts are supported on the free tier budget.
       if (market.key === "totals") {
@@ -121,9 +122,8 @@ function push(
 
 export async function fetchOdds(
   apiKey: string,
-  opts: { sport?: string; regions?: string; markets?: string; fetchLimit?: number } = {},
+  opts: { sport?: string; sports?: string[]; regions?: string; markets?: string; fetchLimit?: number; bookmakers?: string } = {},
 ): Promise<ApiOddsEvent[]> {
-  const sport = opts.sport ?? "soccer_epl";
   const regions = opts.regions ?? "eu";
   const markets = opts.markets ?? "h2h,totals";
   const limit = opts.fetchLimit ?? 10;
@@ -131,21 +131,32 @@ export async function fetchOdds(
   // The Odds API wants strict YYYY-MM-DDTHH:MM:SSZ — toISOString() has milliseconds.
   const commenceTimeFrom = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
-  const url =
-    `${ODDS_API_BASE}/sports/${sport}/odds/` +
-    `?apiKey=${encodeURIComponent(apiKey)}` +
-    `&regions=${encodeURIComponent(regions)}` +
-    `&markets=${encodeURIComponent(markets)}` +
-    `&oddsFormat=decimal` +
-    `&bookmakers=bet365,sportybet,betway` +
-    `&commenceTimeFrom=${encodeURIComponent(commenceTimeFrom)}`;
+  // Multiple leagues: one API credit per sport key.
+  const sports = opts.sports && opts.sports.length > 0 ? opts.sports : [opts.sport ?? "soccer_epl"];
 
-  const res = await fetch(url);
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`The Odds API ${res.status}: ${body.slice(0, 300)}`);
+  // No bookmaker filter: limiting to bet365/sportybet/betway silently dropped
+  // the totals market (only some books carry it in the eu region). Pulling all
+  // books also gives better best-price entry, which is the strategy's lever.
+  const bookmakers = opts.bookmakers ? `&bookmakers=${encodeURIComponent(opts.bookmakers)}` : "";
+
+  const all: ApiOddsEvent[] = [];
+  for (const sport of sports) {
+    const url =
+      `${ODDS_API_BASE}/sports/${sport}/odds/` +
+      `?apiKey=${encodeURIComponent(apiKey)}` +
+      `&regions=${encodeURIComponent(regions)}` +
+      `&markets=${encodeURIComponent(markets)}` +
+      `&oddsFormat=decimal` +
+      `${bookmakers}` +
+      `&commenceTimeFrom=${encodeURIComponent(commenceTimeFrom)}`;
+
+    const res = await fetch(url);
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`The Odds API ${res.status} for ${sport}: ${body.slice(0, 300)}`);
+    }
+    const events = (await res.json()) as ApiOddsEvent[];
+    all.push(...events.slice(0, limit));
   }
-
-  const all = (await res.json()) as ApiOddsEvent[];
-  return all.slice(0, limit);
+  return all;
 }

@@ -8,7 +8,6 @@ import {
   enrichBets,
   flagSlips,
   runBacktest,
-  STRATEGY_MAX_ODDS,
   type Bet,
   type ClvResult,
   type Database,
@@ -88,11 +87,13 @@ app.post("/api/predictions/ingest", async (c) => {
     modelVersion: p.modelVersion ?? "sidecar",
     createdAt: p.createdAt ?? now,
   }));
-  // Delete any prior predictions for these fixtures (any model version, any id
-  // format) so only the latest ingest survives.
+  // Delete any prior predictions for THESE fixtures AND THIS MARKET (any model
+  // version, any id format) so only the latest ingest survives. Scoped to the
+  // market so pushing h2h doesn't wipe totals and vice versa.
   const fixtureIds = [...new Set(rows.map((r) => r.fixtureId))];
+  const market = rows[0]?.market;
   for (const fid of fixtureIds) {
-    await c.env.DB.prepare("DELETE FROM predictions WHERE fixture_id = ?1").bind(fid).run();
+    await c.env.DB.prepare("DELETE FROM predictions WHERE fixture_id = ?1 AND market = ?2").bind(fid, market).run();
   }
   await upsertPredictions(c.env.DB, rows);
   return c.json({ ok: true, ingested: rows.length });
@@ -100,18 +101,19 @@ app.post("/api/predictions/ingest", async (c) => {
 
 /* ---------------- slip builder ---------------- */
 
-/** Only flag slips for REAL fixtures (The Odds API, sport 'soccer_epl') so
- *  demo-seed fabricated predictions never reach the slip builder. Falls back
- *  to all scheduled fixtures only when no live fixtures exist (demo mode). */
+/** Only flag slips for REAL fixtures (anything pulled from The Odds API —
+ *  seed demo fixtures use sport 'soccer') so demo-seed fabricated predictions
+ *  never reach the slip builder. Falls back to all scheduled fixtures only
+ *  when no live fixtures exist (demo mode). */
 function slipFixtures(db: Database): Fixture[] {
   const scheduled = db.fixtures.filter((f) => f.status === "scheduled");
-  const live = scheduled.filter((f) => f.sport === "soccer_epl");
+  const live = scheduled.filter((f) => f.sport !== "soccer");
   return live.length > 0 ? live : scheduled;
 }
 
 app.get("/api/slips", async (c) => {
   const db = await loadDatabase(c.env.DB);
-  const legs = flagSlips(slipFixtures(db), db.predictions, db.odds, db.settings, { maxOdds: STRATEGY_MAX_ODDS });
+  const legs = flagSlips(slipFixtures(db), db.predictions, db.odds, db.settings);
   return c.json(legs);
 });
 
@@ -120,7 +122,7 @@ app.post("/api/slips/multiple", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const legIds: string[] = body.legIds ?? [];
   const db = await loadDatabase(c.env.DB);
-  const legs = flagSlips(slipFixtures(db), db.predictions, db.odds, db.settings, { maxOdds: STRATEGY_MAX_ODDS });
+  const legs = flagSlips(slipFixtures(db), db.predictions, db.odds, db.settings);
   const byKey = new Map(legs.map((l) => [`${l.fixture.id}:${l.market}:${l.selection}`, l]));
   const selected = legIds.map((k) => byKey.get(k)).filter((l): l is NonNullable<typeof l> => Boolean(l));
   if (selected.length === 0) {

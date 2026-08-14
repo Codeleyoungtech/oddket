@@ -77,20 +77,20 @@ export function buildSeedDatabase(): Database {
         status: finished ? "finished" : "scheduled",
       });
 
-      if (!finished) continue;
-
       // Simulated result. Home advantage + random Poisson-ish goals.
       const homeGoals = Math.floor(rand() * 4);
       const awayGoals = Math.floor(rand() * 3);
       const homeWin = homeGoals > awayGoals;
 
-      outcomes.push({
-        id: `out-${fixtureId}`,
-        fixtureId,
-        homeScore: homeGoals,
-        awayScore: awayGoals,
-        settledAt: commenceTime + 2 * 3600,
-      });
+      if (finished) {
+        outcomes.push({
+          id: `out-${fixtureId}`,
+          fixtureId,
+          homeScore: homeGoals,
+          awayScore: awayGoals,
+          settledAt: commenceTime + 2 * 3600,
+        });
+      }
 
       // Predictions: model probability centered on the true outcome, with
       // a healthy spread so calibration is honest, not perfect.
@@ -151,7 +151,7 @@ export function buildSeedDatabase(): Database {
       }
 
       // About 60% of finished fixtures carry a recorded bet (singles).
-      if (rand() < 0.62) {
+      if (finished && rand() < 0.62) {
         const isHomeBet = rand() < 0.6;
         const sel: Selection = isHomeBet ? "home" : "draw";
         const pred = predictions.find((p) => p.fixtureId === fixtureId && p.selection === sel)!;

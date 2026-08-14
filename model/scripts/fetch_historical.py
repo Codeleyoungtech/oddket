@@ -1,90 +1,116 @@
-#!/usr/bin/env python3
-"""Fetch historical match data from the football-data.org free tier.
-
-Free tier gives you one competition (e.g. EPL) of recent results without a
-token; a free token lifts rate limits. Output is converted into the same
-synthetic JSON shape so train.py --source historical just works.
+"""Fetch real historical match data from football-data.co.uk (free, no
+signup, no token) and build a leakage-free feature dataset.
 
 Usage:
-    FD_TOKEN=your_token python3 scripts/fetch_historical.py [--competition PL]
+    python3 scripts/fetch_historical.py
+    python3 scripts/fetch_historical.py --seasons 2021,2022,2023,2024 --leagues E0,D1,SP1,I1
+
+football-data.co.uk per-season CSVs use 2-digit season codes (e.g. 2425).
+League codes: E0=EPL, D1=Bundesliga, SP1=La Liga, I1=Serie A.
+
+Outputs:
+    model/data/historical.json        — matches with team-level features
+    model/data/historical_odds.json   — the CSV's average closing odds
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 import os
 import sys
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BASE = "https://api.football-data.org/v4"
+BASE = "https://www.football-data.co.uk/mmz4281"
+
+LEAGUES = {"E0": "EPL", "D1": "Bundesliga", "SP1": "La Liga", "I1": "Serie A"}
+
+from features import build_league_matches, matches_to_dict, parse_csv  # noqa: E402
 
 
-def fetch(competition: str, token: str | None) -> list[dict]:
-    url = f"{BASE}/competitions/{competition}/matches?status=FINISHED&limit=300"
-    req = urllib.request.Request(url)
-    if token:
-        req.add_header("X-Auth-Token", token)
-    req.add_header("User-Agent", "OddKet/0.1")
-    with urllib.request.urlopen(req, timeout=30) as res:
-        data = json.loads(res.read().decode())
-    return data.get("matches", [])
+def fetch_csv(url: str) -> list[dict]:
+    req = urllib.request.Request(url, headers={"User-Agent": "OddKet/0.1"})
+    with urllib.request.urlopen(req, timeout=60) as res:
+        data = res.read()
+    reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
+    return list(reader)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--competition", default="PL")
+    ap.add_argument("--seasons", default="2021,2022,2023,2024",
+                    help="calendar-year season starts, comma-separated")
+    ap.add_argument("--leagues", default="E0,D1,SP1,I1",
+                    help="league codes, comma-separated (E0,D1,SP1,I1)")
     args = ap.parse_args()
 
-    token = os.environ.get("FD_TOKEN")
-    try:
-        matches = fetch(args.competition, token)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[fetch] failed: {exc}", file=sys.stderr)
-        print("[fetch] the free tier may block anonymous calls — set FD_TOKEN for a free token", file=sys.stderr)
-        return 1
+    seasons = [f"{int(s) % 100:02d}{(int(s) + 1) % 100:02d}" for s in args.seasons.split(",") if s.strip()]
+    leagues = [l.strip().upper() for l in args.leagues.split(",") if l.strip()]
+    meta = {"source": "football-data.co.uk", "seasons": seasons, "leagues": leagues}
 
-    if not matches:
-        print("[fetch] no matches returned", file=sys.stderr)
-        return 1
+    all_rows: dict[str, list[dict]] = {code: [] for code in leagues}
+    for season in seasons:
+        for code in leagues:
+            url = f"{BASE}/{season}/{code}.csv"
+            try:
+                rows = fetch_csv(url)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[fetch] {season}/{code}: failed: {exc}", file=sys.stderr)
+                continue
+            if not rows:
+                print(f"[fetch] {season}/{code}: empty", file=sys.stderr)
+                continue
+            all_rows[code].extend(rows)
+            print(f"[fetch] {season}/{code}: {len(rows)} rows")
 
-    out = {
-        "meta": {
-            "source": f"football-data.org {args.competition}",
-            "n_matches": len(matches),
-            "description": "Real historical results; features are simplified strength estimates.",
-        },
-        "matches": [],
-    }
-    for m in matches:
-        home, away = m["homeTeam"]["name"], m["awayTeam"]["name"]
-        hs, as_ = m["score"].get("fullTime", {}).get("home"), m["score"].get("fullTime", {}).get("away")
-        if hs is None or as_ is None:
+    all_matches = []
+    odds_by_id: dict[str, dict] = {}
+    for code, rows in all_rows.items():
+        if not rows:
             continue
-        # Simplified strength proxy from recent form is out of scope here; use
-        # a neutral prior so train.py runs, then improve with real features.
-        out["matches"].append({
-            "id": m["id"],
-            "league": m["competition"]["name"],
-            "home": home,
-            "away": away,
-            "home_goals": hs,
-            "away_goals": as_,
-            "features": {
-                "home_strength": 0.5, "away_strength": 0.5, "home_adv": 1.0,
-                "form_diff": 0.0, "exp_home": 1.35, "exp_away": 1.15,
-            },
-            "outcome": 0 if hs > as_ else (1 if hs == as_ else 2),
-            "probs": {"home": 0.4, "draw": 0.27, "away": 0.33},
-            "odds": {"home": 2.5, "draw": 3.4, "away": 2.9},
-        })
+        matches = build_league_matches(rows, league=LEAGUES.get(code, code), season=code.lower())
+        print(f"[fetch] {LEAGUES.get(code, code)}: {len(matches)} feature rows")
+        all_matches.extend(matches)
+        for m in matches:
+            odds_by_id[m.id] = {"home": None, "draw": None, "away": None}
+
+    if not all_matches:
+        print("[fetch] no data fetched", file=sys.stderr)
+        return 1
 
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
+
     path = os.path.join(ROOT, "data", "historical.json")
     with open(path, "w") as fh:
-        json.dump(out, fh, indent=2)
-    print(f"[fetch] wrote {len(out['matches'])} matches -> {path}")
+        json.dump(matches_to_dict(all_matches), fh, indent=2)
+
+    # Average closing odds from the CSV (AvgH/AvgD/AvgA) — for backtest only.
+    for code, rows in all_rows.items():
+        for r in rows:
+            try:
+                hg, ag = int(r.get("FTHG")), int(r.get("FTAG"))
+            except (TypeError, ValueError):
+                continue
+            from datetime import datetime as _dt
+            try:
+                day = _dt.strptime(r.get("Date", ""), "%d/%m/%Y").strftime("%Y-%m-%d")
+            except ValueError:
+                continue
+            mid = f"{code.lower()}-{day}-{r['HomeTeam']}-{r['AwayTeam']}"
+            if mid in odds_by_id:
+                odds_by_id[mid] = {
+                    "home": float(r["AvgH"]) if r.get("AvgH") else None,
+                    "draw": float(r["AvgD"]) if r.get("AvgD") else None,
+                    "away": float(r["AvgA"]) if r.get("AvgA") else None,
+                }
+
+    with open(os.path.join(ROOT, "data", "historical_odds.json"), "w") as fh:
+        json.dump(odds_by_id, fh, indent=2)
+
+    print(f"[fetch] wrote {len(all_matches)} matches -> {path}")
     return 0
 
 

@@ -48,8 +48,15 @@ function computeViews(db: Database) {
   const dashboard = buildDashboard(db);
   const calibration = buildCalibration(db.predictions, db.outcomes, db.fixtures);
   const clvSeries = buildClvSeries(db.bets, db.clv);
+  // In live mode the seeded demo fixtures (sport = 'soccer') also sit in the
+  // DB. Only surface slips for REAL fixtures (sport = 'soccer_epl', from The
+  // Odds API) so the demo seed's fabricated "edges" never reach the slip
+  // builder. Falls back to all scheduled fixtures in demo mode.
+  const scheduled = db.fixtures.filter((f) => f.status === "scheduled");
+  const liveScheduled = scheduled.filter((f) => f.sport === "soccer_epl");
+  const slipFixtures = liveScheduled.length > 0 ? liveScheduled : scheduled;
   const slips = flagSlips(
-    db.fixtures.filter((f) => f.status === "scheduled"),
+    slipFixtures,
     db.predictions,
     db.odds,
     db.settings,

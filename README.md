@@ -70,3 +70,7 @@ pnpm --filter @oddket/web build   # production Next.js build
 - You place every slip yourself in the SportyBet app. OddKet never touches your bookmaker account.
 - No chase mechanics, no stake escalation after losses. Daily/weekly stop-losses are enforced in the UI.
 - Gambling involves risk. Nothing here is financial advice, and no win rate is promised or implied.
+
+## Contributors
+
+- **Eleazar Ogoyemi** ([eleazarogoyemi2020@gmail.com](mailto:eleazarogoyemi2020@gmail.com)) — author

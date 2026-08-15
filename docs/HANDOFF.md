@@ -132,6 +132,13 @@ model probability + margin-adjusted implied.
   per cron run even when empty, so UNCAPT it ~21 keys × 3 runs/day ≈ 63
   credits/day — enough to blow the ~500/mo free tier in ~8 days. Add/remove
   keys as tournaments come and go (add Shanghai ~Oct, remove Cincinnati ~Aug 23).
+- **Multi-key rotation (Aug 15, 2026):** `ODDS_API_KEY` holds a comma-separated
+  list of **5 keys** (~2,500 credits/month combined; full football+tennis config
+  burns ~720/mo, so one key alone exhausts mid-month). `fetchOdds` round-robins
+  across keys per sport pull and falls back on 401/429 — an exhausted key never
+  kills the pipeline. Verified live: cron run spread credits across 4/5 keys.
+  Same list is set as the GitHub Actions `ODDS_API_KEY` secret. Rotation cursor
+  is random-seeded per call, so keys spread evenly over time.
 - **Spread capture is automatic:** every ingest stores one snapshot per
   (fixture, selection, bookmaker) — verified live with 22 bookmakers on
   Cincinnati (Coolbet, GTbets, Winamax, Betfair, Matchbook, Pinnacle, ...).

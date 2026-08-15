@@ -11,6 +11,10 @@ import type {
 
 export interface Env {
   DB: D1Database;
+  /** May be a single key or a comma-separated list of keys. Each free-tier
+   *  key carries its own ~500 credits/month quota; the client round-robins
+   *  across them and falls back on 401/429 so one exhausted key never kills
+   *  the pipeline (see worker/src/odds/client.ts). */
   ODDS_API_KEY?: string;
   /** Shared secret required by POST /api/predictions/ingest when set —
    *  protects the deployed worker from anyone pushing fake predictions. */

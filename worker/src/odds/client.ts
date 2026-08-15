@@ -120,10 +120,33 @@ function push(
   });
 }
 
+/**
+ * Parse ODDS_API_KEY into a list. The env var may hold a comma-separated
+ * list of keys (e.g. "key1,key2,key3,key4"); each free-tier key carries its
+ * own ~500 credits/month quota, so rotation multiplies the monthly budget
+ * (~720 credits/month needed for the full football+tennis config — one key
+ * alone exhausts mid-month).
+ */
+export function parseApiKeys(apiKey: string): string[] {
+  return apiKey
+    .split(",")
+    .map((k) => k.trim())
+    .filter((k) => k.length > 0);
+}
+
+/**
+ * Round-robin fetch across multiple API keys with automatic fallback.
+ * Each sport pull uses the next key in the rotation; on 401 (bad/revoked key)
+ * or 429 (quota exhausted) it retries that sport with the next key, so one
+ * exhausted key never kills the whole pipeline. Only throws if ALL keys fail.
+ */
 export async function fetchOdds(
   apiKey: string,
   opts: { sport?: string; sports?: string[]; regions?: string; markets?: string; fetchLimit?: number; bookmakers?: string } = {},
 ): Promise<ApiOddsEvent[]> {
+  const keys = parseApiKeys(apiKey);
+  if (keys.length === 0) return [];
+
   const regions = opts.regions ?? "eu";
   const markets = opts.markets ?? "h2h,totals";
   const limit = opts.fetchLimit ?? 10;
@@ -139,24 +162,47 @@ export async function fetchOdds(
   // books also gives better best-price entry, which is the strategy's lever.
   const bookmakers = opts.bookmakers ? `&bookmakers=${encodeURIComponent(opts.bookmakers)}` : "";
 
+  // Module-level rotation cursor so consecutive pulls spread across keys
+  // rather than always starting on key 1.
+  let cursor = Math.floor(Math.random() * keys.length);
+
   const all: ApiOddsEvent[] = [];
   for (const sport of sports) {
-    const url =
-      `${ODDS_API_BASE}/sports/${sport}/odds/` +
-      `?apiKey=${encodeURIComponent(apiKey)}` +
-      `&regions=${encodeURIComponent(regions)}` +
-      `&markets=${encodeURIComponent(markets)}` +
-      `&oddsFormat=decimal` +
-      `${bookmakers}` +
-      `&commenceTimeFrom=${encodeURIComponent(commenceTimeFrom)}`;
+    let lastError: Error | null = null;
+    let got = false;
+    for (let attempt = 0; attempt < keys.length && !got; attempt++) {
+      const key = keys[cursor % keys.length]!;
+      cursor++;
+      const url =
+        `${ODDS_API_BASE}/sports/${sport}/odds/` +
+        `?apiKey=${encodeURIComponent(key)}` +
+        `&regions=${encodeURIComponent(regions)}` +
+        `&markets=${encodeURIComponent(markets)}` +
+        `&oddsFormat=decimal` +
+        `${bookmakers}` +
+        `&commenceTimeFrom=${encodeURIComponent(commenceTimeFrom)}`;
 
-    const res = await fetch(url);
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`The Odds API ${res.status} for ${sport}: ${body.slice(0, 300)}`);
+      try {
+        const res = await fetch(url);
+        if (res.status === 401 || res.status === 429) {
+          const body = await res.text();
+          lastError = new Error(`The Odds API ${res.status} for ${sport} (key ${attempt + 1}/${keys.length}): ${body.slice(0, 200)}`);
+          console.error(`[odds] ${sport}: key ${attempt + 1} failed (${res.status}) — trying next key`);
+          continue; // fall back to the next key
+        }
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`The Odds API ${res.status} for ${sport}: ${body.slice(0, 300)}`);
+        }
+        const events = (await res.json()) as ApiOddsEvent[];
+        all.push(...events.slice(0, limit));
+        got = true;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.error(`[odds] ${sport}: fetch error — trying next key`);
+      }
     }
-    const events = (await res.json()) as ApiOddsEvent[];
-    all.push(...events.slice(0, limit));
+    if (!got) throw lastError ?? new Error(`The Odds API failed for ${sport} (all ${keys.length} keys)`);
   }
   return all;
 }

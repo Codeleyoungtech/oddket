@@ -21,7 +21,7 @@ import { D1Adapter } from "../test/d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
-const MIGRATION = join(root, "migrations", "0000_init.sql");
+const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql"];
 const BUNDLE = join(root, "dist", "worker.mjs");
 const DB_DIR = join(root, ".local");
 const DB_FILE = join(DB_DIR, "oddket.db");
@@ -35,7 +35,7 @@ if (!existsSync(BUNDLE)) {
 mkdirSync(DB_DIR, { recursive: true });
 
 const sqlite = new DatabaseSync(DB_FILE);
-sqlite.exec(readFileSync(MIGRATION, "utf8"));
+for (const m of MIGRATIONS) sqlite.exec(readFileSync(join(root, "migrations", m), "utf8"));
 const DB = new D1Adapter(sqlite);
 
 const worker = (await import(BUNDLE)).default;
@@ -43,7 +43,7 @@ const worker = (await import(BUNDLE)).default;
 // Forward worker env bindings from the shell so live mode works locally:
 //   export ODDS_API_KEY=your_key && npm run serve:local
 const bindings = { DB };
-for (const k of ["ODDS_API_KEY", "ODDS_SPORT", "ODDS_REGIONS", "ODDS_MARKETS", "ODDS_FETCH_LIMIT", "PREDICT_SECRET", "DASHBOARD_ORIGIN"]) {
+for (const k of ["ODDS_API_KEY", "ODDS_SPORT", "ODDS_REGIONS", "ODDS_MARKETS", "ODDS_FETCH_LIMIT", "TENNIS_SPORTS", "PREDICT_SECRET", "DASHBOARD_ORIGIN"]) {
   if (process.env[k]) bindings[k] = process.env[k];
 }
 

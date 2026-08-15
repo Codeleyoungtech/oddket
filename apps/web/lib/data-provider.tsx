@@ -6,6 +6,7 @@ import {
   buildClvSeries,
   buildDashboard,
   buildSeedDatabase,
+  buildTennisSeedDatabase,
   enrichBets,
   flagSlips,
   runBacktest,
@@ -21,12 +22,14 @@ import {
   type Settings,
   type SlipLeg,
 } from "@oddket/core";
-import { api, apiBase } from "./api";
+import { api, type SportApi } from "./api";
 
 export type Mode = "live" | "demo" | "loading";
+export type Sport = "football" | "tennis";
 
 export interface DataContextValue {
   mode: Mode;
+  sport: Sport;
   /** LIVE mode: whether the worker is reachable. Demo mode: always false. */
   workerError: string | null;
   db: Database | null;
@@ -37,10 +40,13 @@ export interface DataContextValue {
   bets: BetWithClv[];
   backtest: BacktestResult | null;
   refresh: () => void;
+  setSport: (s: Sport) => void;
   saveSettings: (s: Settings) => Promise<void>;
   logBet: (bet: Omit<Bet, "id" | "status" | "bankrollAtBet">) => Promise<void>;
   deleteBet: (id: string) => Promise<void>;
   recordOutcome: (fixtureId: string, homeScore: number, awayScore: number) => Promise<void>;
+  /** Tennis result: winner is 'home' | 'away' (no draws in tennis). */
+  recordTennisOutcome: (fixtureId: string, winner: "home" | "away") => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -74,11 +80,14 @@ function computeViews(db: Database) {
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>("loading");
+  const [sport, setSport] = useState<Sport>("football");
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [db, setDb] = useState<Database | null>(null);
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+
+  const sportApi: SportApi = sport === "tennis" ? api.tennis : api.football;
 
   useEffect(() => {
     let cancelled = false;
@@ -88,14 +97,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       try {
         const health = await api.health();
         if (!health.ok) throw new Error("worker unhealthy");
-        const liveDb = await api.db();
+        const liveDb = await sportApi.db();
         if (cancelled) return;
         setDb(liveDb);
         setMode("live");
         setWorkerError(null);
       } catch {
         if (cancelled) return;
-        setDb(buildSeedDatabase());
+        setDb(sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
         setMode("demo");
         setWorkerError(null);
       }
@@ -105,13 +114,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [tick]);
+  }, [tick, sport, sportApi]);
 
   const views = useMemo(() => (db ? computeViews(db) : null), [db]);
 
   const saveSettings = useCallback(async (s: Settings) => {
     try {
-      await api.saveSettings(s);
+      await api.football.saveSettings(s);
     } catch {
       // demo mode: nothing to persist — provider re-derives from seed.
     }
@@ -126,34 +135,34 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       bankrollAtBet: 0,
     };
     try {
-      await api.logBet(withMeta);
+      await sportApi.logBet(withMeta);
     } catch (err) {
       // LIVE mode: surface the real error (e.g. stake cap) — never pretend a
       // rejected bet was logged. Demo mode only: apply locally.
       if (mode === "live") throw err;
-      const prev = db ?? buildSeedDatabase();
+      const prev = db ?? (sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
       setDb({ ...prev, bets: [...prev.bets, withMeta as Bet] });
     }
     setTick((t) => t + 1);
-  }, [db, mode]);
+  }, [db, mode, sport, sportApi]);
 
   const deleteBet = useCallback(async (id: string) => {
     try {
-      await api.deleteBet(id);
+      await sportApi.deleteBet(id);
     } catch {
       // demo mode: apply locally.
-      const prev = db ?? buildSeedDatabase();
+      const prev = db ?? (sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
       setDb({ ...prev, bets: prev.bets.filter((b) => b.id !== id) });
     }
     setTick((t) => t + 1);
-  }, [db]);
+  }, [db, sport, sportApi]);
 
   const recordOutcome = useCallback(async (fixtureId: string, homeScore: number, awayScore: number) => {
     try {
-      await api.recordOutcome({ fixtureId, homeScore, awayScore });
+      await sportApi.recordOutcome({ fixtureId, homeScore, awayScore });
     } catch {
       // demo mode: apply locally.
-      const prev = db ?? buildSeedDatabase();
+      const prev = db ?? (sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
       const outcome = {
         id: `out-${fixtureId}`,
         fixtureId,
@@ -170,11 +179,36 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
     }
     setTick((t) => t + 1);
+  }, [db, sport, sportApi]);
+
+  const recordTennisOutcome = useCallback(async (fixtureId: string, winner: "home" | "away") => {
+    try {
+      await api.tennis.recordOutcome({ fixtureId, winner });
+    } catch {
+      // demo mode: apply locally (encode winner as score for shared math).
+      const prev = db ?? buildTennisSeedDatabase();
+      const outcome = {
+        id: `out-${fixtureId}`,
+        fixtureId,
+        homeScore: winner === "home" ? 1 : 0,
+        awayScore: winner === "home" ? 0 : 1,
+        settledAt: Math.floor(Date.now() / 1000),
+      };
+      setDb({
+        ...prev,
+        outcomes: [...prev.outcomes.filter((o) => o.fixtureId !== fixtureId), outcome],
+        fixtures: prev.fixtures.map((f) =>
+          f.id === fixtureId ? { ...f, status: "finished" as const } : f,
+        ),
+      });
+    }
+    setTick((t) => t + 1);
   }, [db]);
 
   const value = useMemo<DataContextValue>(
     () => ({
       mode,
+      sport,
       workerError,
       db,
       dashboard: views?.dashboard ?? null,
@@ -184,12 +218,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       bets: views?.bets ?? [],
       backtest: views?.backtest ?? null,
       refresh,
+      setSport,
       saveSettings,
       logBet,
       deleteBet,
       recordOutcome,
+      recordTennisOutcome,
     }),
-    [mode, workerError, db, views, refresh, saveSettings, logBet, deleteBet, recordOutcome],
+    [mode, sport, workerError, db, views, refresh, saveSettings, logBet, deleteBet, recordOutcome, recordTennisOutcome],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
@@ -201,4 +237,3 @@ export function useData(): DataContextValue {
   return ctx;
 }
 
-export { apiBase };

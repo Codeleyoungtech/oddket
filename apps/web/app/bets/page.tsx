@@ -11,11 +11,13 @@ import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtSignedPct, pnlClass } from "../../lib/format";
 
 export default function BetsPage() {
-  const { bets, db, logBet, deleteBet, refresh } = useData();
+  const { bets, db, sport, logBet, deleteBet, refresh } = useData();
   const [undoMsg, setUndoMsg] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "won" | "lost" | "pending">("all");
 
   // --- paper-trade log form state ---
+  // Tennis has no draw — the form's selection set is sport-scoped.
+  const selections: Array<"home" | "draw" | "away"> = sport === "tennis" ? ["home", "away"] : ["home", "draw", "away"];
   const [formFixture, setFormFixture] = useState("");
   const [formSelection, setFormSelection] = useState<"home" | "draw" | "away">("home");
   const [formOdds, setFormOdds] = useState("");
@@ -23,14 +25,24 @@ export default function BetsPage() {
   const [formMsg, setFormMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // If the active sport can't have the current selection (e.g. draw on tennis),
+  // coerce back to a valid one when the sport switches.
+  const [prevSport, setPrevSport] = useState(sport);
+  if (prevSport !== sport) {
+    setPrevSport(sport);
+    if (sport === "tennis" && formSelection === "draw") setFormSelection("home");
+  }
+
   const bettableFixtures = useMemo(() => {
     if (!db) return [];
     const scheduled = db.fixtures.filter((f) => f.status === "scheduled");
-    const live = scheduled.filter((f) => f.sport === "soccer_epl");
+    // In live mode, only surface fixtures for the ACTIVE sport (football seeds
+    // use sport 'soccer', live football uses 'soccer_*'; tennis always 'tennis').
+    const live = scheduled.filter((f) => (sport === "tennis" ? f.sport === "tennis" : f.sport !== "tennis"));
     const pool = live.length > 0 ? live : scheduled;
     const predicted = new Set(db.predictions.map((p) => p.fixtureId));
     return pool.filter((f) => predicted.has(f.id));
-  }, [db]);
+  }, [db, sport]);
 
   const bestOddsFor = (fixtureId: string, selection: string): number | null => {
     if (!db) return null;
@@ -141,12 +153,18 @@ export default function BetsPage() {
           </select>
           <select
             value={formSelection}
-            onChange={(e) => pickSelection(e.target.value as "home" | "draw" | "away")}
+            onChange={(e) => {
+              const sel = e.target.value as "home" | "draw" | "away";
+              setFormSelection(sel);
+              pickSelection(sel);
+            }}
             className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 focus:border-sky-400/50 focus:outline-none"
           >
-            <option value="home">Home</option>
-            <option value="draw">Draw</option>
-            <option value="away">Away</option>
+            {selections.map((s) => (
+              <option key={s} value={s} className="capitalize">
+                {s}
+              </option>
+            ))}
           </select>
           <input
             type="number"

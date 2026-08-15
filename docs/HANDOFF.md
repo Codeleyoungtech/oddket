@@ -4,7 +4,139 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 1c — **LIVE RUN with a real The Odds API key** ✅
+**Last updated:** Pass 2 — **TENNIS MAIN-TOUR PIVOT** (ATP Challenger scope hard-blocked; Betfair geo-blocked from Nigeria; main-tour tennis build in progress).
+
+---
+
+## 11. Tennis build — scope blockers + pivot (Pass 2)
+
+The Tennis PRD/Build-Prompt called for **ATP Challenger** tennis with CLV
+validation. Two hard blockers surfaced during the pre-build spike and were
+confirmed with the owner:
+
+1. **The Odds API has NO Challenger coverage.** Their tennis coverage is
+   exclusively Grand Slams + ATP 1000/500 + WTA equivalents (verified on
+   `the-odds-api.com/sports/tennis-odds.html` + `sports-apis.html` — there is
+   no `tennis_atp_challenger` sport key). No free-tier odds source covers
+   Challenger, so CLV could not be measured at all.
+2. **Betfair Exchange is geo-blocked from Nigeria.** The free delayed app
+   key would cover Challenger (their tennis rules list Challenger/ITF/UTR),
+   but Betfair does not accept Nigerian customers — the site returns
+   "country not accepted" even without a VPN, and VPN circumvention violates
+   their ToS (accounts closed on detection; KYC flags residence). A coverage
+   probe script was written (`model/scripts/betfair_coverage_probe.py`) and
+   is ready to run if legitimate Betfair access ever exists, but as of today
+   the route is dead.
+
+**Owner decision:** pivot to **ATP main tour (Grand Slams + ATP 1000/500) via
+The Odds API** on the existing $0 pipeline, same discipline as football
+(Platt calibration, time-ordered backtest, odds-as-feature, odds-band sweep
+from day one). This is the one path with real odds + closing lines available
+on $0 from Nigeria. The PRD warns main tour is heavily modeled (sharper
+pricing, thinner edges) — that honest expectation stands; the build's job is
+to measure whatever edge is actually there.
+
+**Additional findings from the spike (all recorded for later):**
+- JeffSackmann's `tennis_atp` GitHub repo is **gone** (account lists only
+  `tennis_MatchChartingProject`; July 2026 Reddit threads confirm people are
+  looking for backups). Mirrors are stale or missing Challenger rows
+  (`Kadantte/tennis_atp` — no Challenger, ends May 2026; TML-Database — ends
+  Jan 2026). Do NOT rely on tennis_atp for training data.
+- **Training data instead:** `tennis-data.co.uk` — free, updated daily,
+  ATP main tour results + odds back to 2001, and critically **multiple
+  bookmakers per match including Pinnacle (`PSW/PSL`) and Bet365
+  (`B365W/B365L`)** → cross-bookmaker spread is computable for training
+  (the football-analog feature).
+- BALLDONTLIE ATP API: free tier excludes match/odds endpoints (paid tiers
+  only) — not usable on $0.
+- Tennis sport keys on The Odds API are **per-tournament** (e.g.
+  `tennis_atp_french_open`), not one `tennis_atp` key — ingest must loop
+  active tournament keys, each costing one API credit.
+
+---
+
+## 12. Tennis main-tour build (Pass 2) — what shipped + honest model results
+
+Full tennis pipeline built mirroring the football architecture, isolated so the
+live football paper-trade is untouched:
+
+- **Schema:** `worker/migrations/0001_tennis.sql` — 5 isolated tables
+  (`tennis_matches`, `tennis_odds_snapshots`, `tennis_predictions`, `tennis_bets`,
+  `tennis_clv_results`). `tennis_matches` has a `winner` column so outcomes are
+  synthesized without a fork in the shared aggregate/calibration code (h2h
+  selection = player name; tennis has no draw).
+- **Core:** `TENNIS_SPORTS` map (per-tournament The Odds API sport keys), tennis
+  helpers, `buildTennisSeedDatabase` demo seed → all existing dashboard views
+  (calibration, CLV, slips, bets, backtest) work in demo mode with zero forks.
+- **Worker:** `odds/tennis-client.ts` + `odds/tennis-ingest.ts` (h2h only,
+  per-tournament loop, env-gated by `TENNIS_SPORTS`), `/api/tennis/*` endpoints
+  (fixtures, snapshots, predictions/ingest, bets, clv, backtest, ingest/closing
+  manual triggers), outcomes synthesized from `winner`.
+- **Web:** sport selector (⚽/🎾) in the nav — switches the data-provider between
+  `/api/*` and `/api/tennis/*` (LIVE mode) or between the two demo seeds. Bets
+  page hides the Draw selection in tennis mode.
+- **Model:** `tennis_fetch.py` (tennis-data.co.uk, 9,224 ATP main-tour matches
+  2019–2026, multi-book B365+Pinnacle per match) → `tennis_features.py`
+  (surface Elo, H2H, exponentially-weighted form, rest days, rank gap, odds
+  implied + cross-book spread — name-resolved, leakage-free) →
+  `train_tennis.py` (XGBoost, Platt sigmoid calibration on TRAIN, time-ordered
+  80/20 split, odds-band sweep in the artifact) → `predict_tennis.py`
+  (surface/best-of/tour-level derived from tournament name, ATP rankings absent
+  on $0 so rank features go neutral at predict time).
+
+**Honest model results (holdout 2025-04-25 → 2026-08-14, 1,845 matches):**
+
+- Accuracy 0.683, Brier 0.2147 raw → **0.2022 calibrated** (well-calibrated bins).
+- Backtest (edge > 0, quarter-Kelly, 5% cap, best-price entry): **1,347 bets,
+  ROI −3.52%, win 40.8%, avg edge +5.68%**.
+- Odds-band sweep: 1.00–1.50 → −5.42%; 1.50–2.00 → −2.88%; 2.00–2.50 → **+5.89%**
+  (206 bets); 2.50–3.50 → −1.47%; 3.50+ → −2.19%.
+- **Reading: no proven edge on the holdout.** The 2.00–2.50 band is positive but
+  small-sample and cherry-picked post-hoc — do NOT treat it as a real edge.
+  This matches the PRD's honest expectation (main tour is sharply priced) and
+  the football model's own early baseline. Edge/CLV must be measured live via
+  the worker's closing-odds pull before any conclusion.
+
+**Two real bugs found + fixed during this pass (worth remembering):**
+
+1. **Odds-as-feature leaked the outcome.** tennis-data.co.uk stores odds keyed
+   to Winner/Loser columns (outcome-labeled), so routing odds by `m.p1_won`
+   gave 100% accuracy / 0 Brier on the holdout (classic leakage). Fixed by
+   name-resolving each player's odds at build time (`p1 == Winner` etc.) —
+   name + price is pre-match info, outcome slot is not.
+2. **Stale `r` reference in `build_tennis_matches`.** The second loop iterated
+   parsed tuples but resolved odds from `r` — the last row of the first loop —
+   so books resolved for only 344/9,224 matches. Fixed by carrying the raw row
+   through the parsed tuple; now 8,114/9,224 have both sides with B365+Pinnacle
+   (88% spread coverage).
+
+**Live feed multi-book question — ANSWERED (Aug 15, 2026, live run):** The
+Odds API's live tennis feed has **22 distinct bookmakers per event set**;
+Pinnacle present on all matches, 16–22 books per match typically, with real
+sharp-vs-soft spreads (e.g. Cincinnati Open h2h: Pinnacle 1.18 / Betfair 1.16 /
+Winamax 1.10 on Djokovic). Cross-book spread is therefore computable in the
+live loop too — the feature stays available end-to-end. The full live pipeline
+was verified with a real key: 25 Cincinnati fixtures ingested, 1,042 odds
+snapshots stored, model predictions exported→predicted→ingested (50 rows), and
+`GET /api/tennis/slips` flags 14 edge-positive legs with real player names +
+model probability + margin-adjusted implied.
+
+**Tennis runbook (local):**
+
+```bash
+cd model && .venv/bin/python scripts/tennis_fetch.py    # rebuild 9,224-match dataset
+.venv/bin/python scripts/train_tennis.py                # train + honest backtest
+# live: export fixtures -> predict -> ingest
+cd worker && npm run serve:local
+curl -s -X POST 'http://localhost:8787/api/seed?force=1'
+# (set TENNIS_SPORTS + ODDS_API_KEY, then) curl -s -X POST http://localhost:8787/api/tennis/ingest
+# model: export -> .venv/bin/python scripts/predict_tennis.py -> POST /api/tennis/predictions/ingest
+```
+
+**Verification (Pass 2):** `pnpm -r` typecheck green · worker e2e **69/69**
+(10 new tennis checks) · `next build` green.
+
+---
 - Fixed a real bug: `mapEvent` only stored `draw` h2h outcomes — home/away were
   dead code (a `toSelection()` null-check `continue`d before team-name matching).
   Now all 3 outcomes land. Caught by running against live data, not the seed.

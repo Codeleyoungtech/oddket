@@ -16,7 +16,10 @@
     "test:worker": "pnpm --filter @oddket/worker test:local",
     "seed:worker": "curl -s -X POST http://localhost:8787/api/seed?force=1 | head -c 200",
     "model:train": "cd model && python3 scripts/train.py --source synthetic",
-    "model:predict": "cd model && python3 scripts/predict.py --source synthetic"
+    "model:predict": "cd model && python3 scripts/predict.py --source synthetic",
+    "model:tennis:fetch": "cd model && python3 scripts/tennis_fetch.py",
+    "model:tennis:train": "cd model && python3 scripts/train_tennis.py",
+    "model:tennis:predict": "cd model && python3 scripts/predict_tennis.py"
   },
   "devDependencies": {
     "esbuild": "0.17.19"

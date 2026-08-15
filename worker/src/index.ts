@@ -27,7 +27,15 @@ import {
 } from "./db";
 import { ingestOdds } from "./odds/ingest";
 import { pullClosingOdds } from "./odds/closing";
+import { ingestTennisOdds, pullTennisClosingOdds } from "./odds/tennis-ingest";
 import { seedDatabase } from "./seed";
+import {
+  insertTennisBet,
+  insertTennisClv,
+  loadTennisDatabase,
+  settleTennisBets,
+  upsertTennisPredictions,
+} from "./db";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -332,6 +340,211 @@ app.post("/api/closing", async (c) => {
   if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
   try {
     return c.json(await pullClosingOdds(c.env));
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
+/* ---------------- TENNIS (isolated from football) ---------------- */
+
+/** Tennis fixtures are always "real" (sport = 'tennis') — no demo-seed blurring. */
+function tennisSlipFixtures(db: Database): Fixture[] {
+  return db.fixtures.filter((f) => f.status === "scheduled");
+}
+
+app.get("/api/tennis/dashboard", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  return c.json(buildDashboard(db));
+});
+
+app.get("/api/tennis/db", async (c) => c.json(await loadTennisDatabase(c.env.DB)));
+
+app.get("/api/tennis/slips", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  return c.json(flagSlips(tennisSlipFixtures(db), db.predictions, db.odds, db.settings));
+});
+
+/**
+ * Export UPCOMING tennis fixtures + best current h2h odds in the shape the
+ * tennis model consumes (model/data/tennis_fixtures.json). GitHub Actions
+ * predict job calls this, runs predict_tennis.py, then pushes predictions
+ * back via /api/tennis/predictions/ingest.
+ */
+app.get("/api/tennis/fixtures/export", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  const now = Math.floor(Date.now() / 1000);
+  const scheduled = db.fixtures
+    .filter((f) => f.status === "scheduled" && f.commenceTime > now)
+    .sort((a, b) => a.commenceTime - b.commenceTime);
+  const matches = scheduled.map((f) => {
+    const best = (selection: string): number | null => {
+      let b: number | null = null;
+      for (const o of db.odds) {
+        if (o.fixtureId !== f.id || o.market !== "h2h" || o.selection !== selection) continue;
+        if (b === null || o.odds > b) b = o.odds;
+      }
+      return b;
+    };
+    return {
+      id: f.id,
+      league: f.league,
+      home: f.homeTeam,
+      away: f.awayTeam,
+      commenceTime: f.commenceTime,
+      odds: { home: best("home"), away: best("away") },
+    };
+  });
+  return c.json({ meta: { source: "live-odds", n_matches: matches.length }, matches });
+});
+
+app.get("/api/tennis/bets", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  const enriched = enrichBets(db.bets, db.fixtures, db.clv.map((r) => ({ betId: r.betId, clv: r.clv, closingOdds: r.closingOdds })));
+  return c.json(enriched.sort((a, b) => b.placedAt - a.placedAt));
+});
+
+app.delete("/api/tennis/bets/:id", async (c) => {
+  const id = c.req.param("id");
+  await c.env.DB.prepare("DELETE FROM tennis_clv_results WHERE bet_id = ?1").bind(id).run();
+  const res = await c.env.DB.prepare("DELETE FROM tennis_bets WHERE id = ?1").bind(id).run();
+  if (!res.meta.changes) return c.json({ ok: false, error: "Tennis bet not found." }, 404);
+  return c.json({ ok: true, deleted: id });
+});
+
+app.post("/api/tennis/bets", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { fixtureId, market, selection, odds, stake, edge, modelProbability, placedAt } = body as Partial<Bet>;
+  if (!fixtureId || !selection || !odds || !stake) {
+    return c.json({ ok: false, error: "fixtureId, selection, odds and stake are required." }, 400);
+  }
+
+  const db = await loadTennisDatabase(c.env.DB);
+  const fixture = db.fixtures.find((f) => f.id === fixtureId);
+  if (!fixture) return c.json({ ok: false, error: "Unknown tennis fixture." }, 404);
+
+  const settings = await getSettings(c.env.DB);
+  if (stake > settings.bankroll * settings.defaultStakeCapPct) {
+    return c.json({ ok: false, error: `Stake exceeds the ${(settings.defaultStakeCapPct * 100).toFixed(0)}% single-bet cap.` }, 400);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const bet: Bet = {
+    id: `tbet-${now}-${Math.floor(Math.random() * 1e6)}`,
+    fixtureId,
+    market: market ?? "h2h",
+    selection,
+    odds,
+    stake,
+    bankrollAtBet: settings.bankroll,
+    edge: edge ?? 0,
+    modelProbability: modelProbability ?? 0,
+    status: "pending",
+    placedAt: placedAt ?? now,
+  };
+  await insertTennisBet(c.env.DB, bet);
+  return c.json({ ok: true, bet }, 201);
+});
+
+app.get("/api/tennis/clv", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  return c.json({
+    records: db.clv.sort((a, b) => b.capturedAt - a.capturedAt),
+    series: buildClvSeries(db.bets, db.clv),
+  });
+});
+
+app.post("/api/tennis/clv", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const { betId, openingOdds, closingOdds, capturedAt } = body as Partial<ClvResult>;
+  if (!betId || !openingOdds || !closingOdds) {
+    return c.json({ ok: false, error: "betId, openingOdds, closingOdds required." }, 400);
+  }
+  const record: ClvResult = {
+    id: `tclv-${betId}-${capturedAt ?? Date.now()}`,
+    betId,
+    openingOdds,
+    closingOdds,
+    clv: Math.round(((openingOdds - closingOdds) / closingOdds) * 10000) / 10000,
+    capturedAt: capturedAt ?? Math.floor(Date.now() / 1000),
+  };
+  await insertTennisClv(c.env.DB, record);
+  return c.json({ ok: true, clv: record }, 201);
+});
+
+/** Record a tennis match result: [{fixtureId, winner: 'home'|'away'}] → settles bets. */
+app.post("/api/tennis/outcomes", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const list = Array.isArray(body) ? body : [body];
+  const rows = list.filter((o) => o?.fixtureId && (o.winner === "home" || o.winner === "away"));
+  if (rows.length === 0) return c.json({ ok: false, error: "Expected [{fixtureId, winner: 'home'|'away'}]." }, 400);
+
+  for (const o of rows) {
+    await c.env.DB.prepare(
+      "UPDATE tennis_matches SET status = 'finished', winner = ?1 WHERE id = ?2",
+    ).bind(o.winner, o.fixtureId).run();
+  }
+  const settled = await settleTennisBets(c.env.DB);
+  return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled });
+});
+
+app.get("/api/tennis/calibration", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  return c.json(buildCalibration(db.predictions, db.outcomes, db.fixtures));
+});
+
+app.get("/api/tennis/backtest", async (c) => {
+  const db = await loadTennisDatabase(c.env.DB);
+  return c.json(runBacktest(db));
+});
+
+app.post("/api/tennis/predictions/ingest", async (c) => {
+  const secret = c.env.PREDICT_SECRET;
+  if (secret) {
+    const provided = c.req.header("x-predict-key") ?? "";
+    if (provided !== secret) {
+      return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
+    }
+  }
+  const body = (await c.req.json()) as Array<Partial<Prediction> & { fixtureId: string; selection: Prediction["selection"]; probability: number }>;
+  if (!Array.isArray(body) || body.length === 0) {
+    return c.json({ ok: false, error: "Expected a non-empty array of predictions." }, 400);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const rows: Prediction[] = body.map((p) => ({
+    id: p.id ?? `${p.fixtureId}:${p.market ?? "h2h"}:${p.selection}`,
+    fixtureId: p.fixtureId,
+    market: p.market ?? "h2h",
+    selection: p.selection,
+    probability: p.probability,
+    confidenceLow: p.confidenceLow ?? 0,
+    confidenceHigh: p.confidenceHigh ?? 1,
+    modelVersion: p.modelVersion ?? "tennis-sidecar",
+    createdAt: p.createdAt ?? now,
+  }));
+  const fixtureIds = [...new Set(rows.map((r) => r.fixtureId))];
+  const market = rows[0]?.market ?? "h2h";
+  for (const fid of fixtureIds) {
+    await c.env.DB.prepare("DELETE FROM tennis_predictions WHERE fixture_id = ?1 AND market = ?2").bind(fid, market).run();
+  }
+  await upsertTennisPredictions(c.env.DB, rows);
+  return c.json({ ok: true, ingested: rows.length });
+});
+
+/** Tennis odds pull — GitHub Actions fires this (or cron). Demo no-op without key. */
+app.post("/api/tennis/ingest", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
+  try {
+    return c.json(await ingestTennisOdds(c.env));
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
+/** Tennis closing-odds pull for CLV. Demo no-op without key. */
+app.post("/api/tennis/closing", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
+  try {
+    return c.json(await pullTennisClosingOdds(c.env));
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 502);
   }

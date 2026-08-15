@@ -22,6 +22,8 @@ export interface Env {
   ODDS_REGIONS?: string;
   ODDS_MARKETS?: string;
   ODDS_FETCH_LIMIT?: string;
+  /** Comma-separated tennis tournament sport keys (overrides settings.leagues). */
+  TENNIS_SPORTS?: string;
 }
 
 /* ---------------- row mappers ---------------- */
@@ -268,6 +270,160 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       JSON.stringify(s.markets),
     )
     .run();
+}
+
+/* ---------------- TENNIS (isolated from football) ---------------- */
+
+interface TennisFixtureRow {
+  id: string;
+  sport: string;
+  league: string;
+  home_team: string;
+  away_team: string;
+  commence_time: number;
+  status: string;
+  winner: string | null;
+}
+
+function toTennisFixture(r: TennisFixtureRow): Fixture {
+  return {
+    id: r.id,
+    sport: r.sport,
+    league: r.league,
+    homeTeam: r.home_team,
+    awayTeam: r.away_team,
+    commenceTime: r.commence_time,
+    status: r.status as Fixture["status"],
+  };
+}
+
+/**
+ * Load the TENNIS database into the shared Database shape. Tennis outcomes
+ * are synthesized from the match `winner` column as winner-scores (1-0 / 0-1)
+ * so the SHARED selectionWon / calibration / aggregate code works unchanged.
+ */
+export async function loadTennisDatabase(db: D1Database): Promise<Database> {
+  const [fixtures, odds, predictions, bets, clv, settingsRows] = await Promise.all([
+    db.prepare("SELECT * FROM tennis_matches").all<TennisFixtureRow>(),
+    db.prepare("SELECT * FROM tennis_odds_snapshots").all<OddsRow>(),
+    db.prepare("SELECT * FROM tennis_predictions").all<PredictionRow>(),
+    db.prepare("SELECT * FROM tennis_bets").all<BetRow>(),
+    db.prepare("SELECT * FROM tennis_clv_results").all<ClvRow>(),
+    db.prepare("SELECT * FROM settings WHERE id = 1").first<SettingsRow>(),
+  ]);
+
+  const settings = settingsRows ? rowToSettings(settingsRows) : defaultSettings();
+  const rawMatches = fixtures.results ?? [];
+  const matchRows = rawMatches.map(toTennisFixture);
+
+  // Outcomes come from the RAW rows' winner column (the mapped Fixture shape
+  // has no winner field) — encoded as winner-scores so the shared
+  // selectionWon("h2h") logic resolves them without any tennis fork.
+  const outcomes: Outcome[] = [];
+  for (const r of rawMatches) {
+    if (r.status !== "finished" || !r.winner) continue;
+    outcomes.push({
+      id: `tout-${r.id}`,
+      fixtureId: r.id,
+      homeScore: r.winner === "home" ? 1 : 0,
+      awayScore: r.winner === "home" ? 0 : 1,
+      settledAt: 0,
+    });
+  }
+
+  return {
+    fixtures: matchRows,
+    odds: (odds.results ?? []).map(toOdds),
+    predictions: (predictions.results ?? []).map(toPrediction),
+    bets: (bets.results ?? []).map(toBet),
+    clv: (clv.results ?? []).map(toClv),
+    outcomes,
+    settings,
+  };
+}
+
+export async function upsertTennisFixtures(db: D1Database, fixtures: Fixture[]): Promise<void> {
+  const stmt = db.prepare(
+    `INSERT INTO tennis_matches (id, sport, league, home_team, away_team, commence_time, status, winner)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+     ON CONFLICT(id) DO UPDATE SET
+       sport = excluded.sport, league = excluded.league, home_team = excluded.home_team,
+       away_team = excluded.away_team, commence_time = excluded.commence_time,
+       status = excluded.status, winner = excluded.winner`,
+  );
+  const batch = fixtures.map((f) =>
+    stmt.bind(f.id, "tennis", f.league, f.homeTeam, f.awayTeam, f.commenceTime, f.status, null),
+  );
+  await db.batch(batch);
+}
+
+export async function upsertTennisOdds(db: D1Database, rows: OddsSnapshot[]): Promise<void> {
+  const stmt = db.prepare(
+    `INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+     ON CONFLICT(id) DO UPDATE SET odds = excluded.odds, captured_at = excluded.captured_at`,
+  );
+  const batch = rows.map((o) =>
+    stmt.bind(o.id, o.fixtureId, o.market, o.selection, o.odds, o.bookmaker, o.capturedAt, o.isClosing ? 1 : 0),
+  );
+  if (batch.length) await db.batch(batch);
+}
+
+export async function upsertTennisPredictions(db: D1Database, rows: Prediction[]): Promise<void> {
+  const stmt = db.prepare(
+    `INSERT INTO tennis_predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+     ON CONFLICT(id) DO UPDATE SET
+       probability = excluded.probability, confidence_low = excluded.confidence_low,
+       confidence_high = excluded.confidence_high, model_version = excluded.model_version,
+       created_at = excluded.created_at`,
+  );
+  const batch = rows.map((p) =>
+    stmt.bind(p.id, p.fixtureId, p.market, p.selection, p.probability, p.confidenceLow, p.confidenceHigh, p.modelVersion, p.createdAt),
+  );
+  if (batch.length) await db.batch(batch);
+}
+
+export async function insertTennisBet(db: D1Database, b: Bet): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO tennis_bets (id, fixture_id, market, selection, odds, stake, bankroll_at_bet, edge, model_probability, status, outcome_amount, placed_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+    )
+    .bind(b.id, b.fixtureId, b.market, b.selection, b.odds, b.stake, b.bankrollAtBet, b.edge, b.modelProbability, b.status, b.outcomeAmount ?? null, b.placedAt)
+    .run();
+}
+
+export async function insertTennisClv(db: D1Database, c: ClvResult): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO tennis_clv_results (id, bet_id, opening_odds, closing_odds, clv, captured_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
+    )
+    .bind(c.id, c.betId, c.openingOdds, c.closingOdds, c.clv, c.capturedAt)
+    .run();
+}
+
+/** Settle pending TENNIS bets whose match now has a winner. Returns # settled. */
+export async function settleTennisBets(db: D1Database): Promise<number> {
+  const rows = await db.prepare("SELECT * FROM tennis_bets WHERE status = 'pending'").all<BetRow>();
+  const pending = (rows.results ?? []).map(toBet);
+  let settled = 0;
+
+  for (const bet of pending) {
+    const match = await db.prepare("SELECT * FROM tennis_matches WHERE id = ?1").bind(bet.fixtureId).first<TennisFixtureRow>();
+    if (!match || match.status !== "finished" || !match.winner) continue;
+
+    const won = bet.selection === match.winner;
+    const amount = won ? Math.round(bet.stake * (bet.odds - 1) * 100) / 100 : -bet.stake;
+
+    await db
+      .prepare("UPDATE tennis_bets SET status = ?1, outcome_amount = ?2 WHERE id = ?3")
+      .bind(won ? "won" : "lost", amount, bet.id)
+      .run();
+    settled++;
+  }
+  return settled;
 }
 
 /* ---------------- writes ---------------- */

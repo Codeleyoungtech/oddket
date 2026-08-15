@@ -6,3 +6,4 @@ export * from "./correlation";
 export * from "./aggregates";
 export * from "./backtest";
 export * from "./seed";
+export * from "./seed-tennis";

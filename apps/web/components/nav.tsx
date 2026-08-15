@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useData } from "../lib/data-provider";
+import { useData, type Sport } from "../lib/data-provider";
 
 const LINKS = [
   { href: "/", label: "Overview" },
@@ -15,7 +15,7 @@ const LINKS = [
 
 export function Nav() {
   const pathname = usePathname();
-  const { mode } = useData();
+  const { mode, sport, setSport } = useData();
 
   return (
     <header className="sticky top-0 z-50 border-b border-ink-700/60 bg-ink-950/85 backdrop-blur-md">
@@ -48,7 +48,8 @@ export function Nav() {
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-3">
+          <SportSelector sport={sport} setSport={setSport} />
           <ModeBadge mode={mode} />
         </div>
       </div>
@@ -71,6 +72,29 @@ export function Nav() {
         })}
       </nav>
     </header>
+  );
+}
+
+function SportSelector({ sport, setSport }: { sport: Sport; setSport: (s: Sport) => void }) {
+  return (
+    <div className="flex rounded-lg border border-ink-600/60 bg-ink-800/40 p-0.5">
+      {(
+        [
+          ["football", "⚽ Football"],
+          ["tennis", "🎾 Tennis"],
+        ] as const
+      ).map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => setSport(key)}
+          className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+            sport === key ? "bg-emerald-400 text-ink-950" : "text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   );
 }
 

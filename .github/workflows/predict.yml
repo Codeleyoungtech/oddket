@@ -68,3 +68,64 @@ jobs:
               --data-binary @"$f"
             echo
           done
+
+  predict-tennis:
+    runs-on: ubuntu-latest
+    # Tennis runs after the football job so a tennis-model failure never
+    # blocks the football slips. Skips gracefully when the live feed has no
+    # ATP main-tour fixtures (off-season, or TENNIS_SPORTS not configured).
+    needs: predict
+    steps:
+      - name: Check out repo (models + data are committed)
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: model/requirements.txt
+
+      - name: Install model dependencies
+        working-directory: model
+        run: pip install -r requirements.txt
+
+      - name: Fetch tennis fixtures + best odds from the worker
+        env:
+          WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
+        run: |
+          curl -sS -m 60 "$WORKER_URL/api/tennis/fixtures/export" \
+            -o model/data/tennis_fixtures.json || true
+          python3 - <<'PY'
+          import json, os, sys
+          n = 0
+          if os.path.exists('model/data/tennis_fixtures.json'):
+              try:
+                  n = len(json.load(open('model/data/tennis_fixtures.json')).get('matches', []))
+              except Exception:
+                  n = 0
+          print(f'fetched {n} tennis fixtures')
+          if n == 0:
+              print('no tennis fixtures — skipping predict')
+              sys.exit(0)
+          PY
+
+      - name: Predict tennis h2h
+        # The fetch step above already exits when there are no fixtures, so a
+        # failure here is a REAL model error — fail the job rather than
+        # silently pushing stale predictions.
+        working-directory: model
+        run: python3 scripts/predict_tennis.py --data data/tennis_fixtures.json
+
+      - name: Push tennis predictions to the worker
+        env:
+          WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
+          PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}
+        run: |
+          if [ -f model/output/tennis_predictions.json ]; then
+            curl -sS -m 60 -X POST "$WORKER_URL/api/tennis/predictions/ingest" \
+              -H "Content-Type: application/json" \
+              -H "x-predict-key: $PREDICT_SECRET" \
+              --data-binary @model/output/tennis_predictions.json
+            echo
+          fi

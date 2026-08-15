@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATION = join(__dirname, "..", "migrations", "0000_init.sql");
+const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -43,7 +43,7 @@ if (!existsSync(BUNDLE)) {
 }
 
 const sqlite = new DatabaseSync(":memory:");
-sqlite.exec(readFileSync(MIGRATION, "utf8"));
+for (const m of MIGRATIONS) sqlite.exec(readFileSync(join(__dirname, "..", "migrations", m), "utf8"));
 const DB = new D1Adapter(sqlite);
 
 const worker = (await import(BUNDLE)).default;
@@ -234,6 +234,80 @@ console.log("\n[12] scheduled (demo no-op)");
   check("closing cron demo no-op", r2?.mode === "demo" && r2?.pendingBets === 0, JSON.stringify(r2));
   const r3 = await worker.scheduled({ cron: "* * * * *" }, env, ctx);
   check("unknown cron handled", r3?.ok === false, JSON.stringify(r3));
+}
+
+console.log("\n[13] TENNIS (isolated tables + endpoints)");
+{
+  // Insert a tennis match + odds + predictions directly into tennis tables.
+  const now = Math.floor(Date.now() / 1000);
+  sqlite.prepare("INSERT INTO tennis_matches (id, sport, league, home_team, away_team, commence_time, status) VALUES (?,?,?,?,?,?,?)")
+    .run("t1", "tennis", "ATP Wimbledon", "Alcaraz", "Sinner", now - 2 * 86400, "finished");
+  sqlite.prepare("INSERT INTO tennis_matches (id, sport, league, home_team, away_team, commence_time, status) VALUES (?,?,?,?,?,?,?)")
+    .run("t2", "tennis", "ATP Wimbledon", "Djokovic", "Medvedev", now + 86400, "scheduled");
+  sqlite.prepare("UPDATE tennis_matches SET winner = 'home' WHERE id = 't1'").run();
+  sqlite.prepare("INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+    .run("to1", "t1", "h2h", "home", 1.5, "Bet365", now - 86400, 1);
+  sqlite.prepare("INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+    .run("to2", "t1", "h2h", "away", 2.6, "Bet365", now - 86400, 1);
+  sqlite.prepare("INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+    .run("to3", "t2", "h2h", "home", 1.8, "Pinnacle", now - 3600, 0);
+  sqlite.prepare("INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+    .run("to4", "t2", "h2h", "away", 2.1, "Pinnacle", now - 3600, 0);
+  sqlite.prepare("INSERT INTO tennis_predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+    .run("tp1", "t2", "h2h", "home", 0.62, 0.55, 0.69, "tennis-test", now - 3600);
+
+  const db = await api("GET", "/api/tennis/db");
+  check("tennis db has matches", Array.isArray(db.json?.fixtures) && db.json.fixtures.length === 2, JSON.stringify(db.json?.fixtures?.length));
+  check("tennis outcomes synthesized from winner", db.json?.outcomes?.length === 1 && db.json.outcomes[0].homeScore === 1, JSON.stringify(db.json?.outcomes));
+  check("tennis db isolated from football bets", Array.isArray(db.json?.bets) && db.json.bets.length === 0, `tennis bets=${db.json?.bets?.length}`);
+
+  const dash = await api("GET", "/api/tennis/dashboard");
+  check("tennis dashboard 200", dash.status === 200 && typeof dash.json?.summary?.bankrollNow === "number");
+
+  // Log a tennis bet, settle it, check payout + CLV.
+  const bet = { fixtureId: "t1", selection: "home", odds: 1.5, stake: 100, edge: 0.05, modelProbability: 0.62 };
+  const placed = await api("POST", "/api/tennis/bets", bet);
+  check("tennis bet placed (201)", placed.status === 201 && placed.json?.ok === true, JSON.stringify(placed.json));
+  const betId = placed.json?.bet?.id;
+  const list = await api("GET", "/api/tennis/bets");
+  check("tennis bet appears", list.json?.some((b) => b.id === betId));
+  // Settlement runs on the outcomes POST — re-record t1's result to settle it.
+  const settle = await api("POST", "/api/tennis/outcomes", [{ fixtureId: "t1", winner: "home" }]);
+  check("tennis settlement triggered", settle.status === 200 && settle.json?.betsSettled >= 1, JSON.stringify(settle.json));
+  const list2 = await api("GET", "/api/tennis/bets");
+  const settledBet = list2.json?.find((b) => b.id === betId);
+  check("tennis bet settled won (winner=home)", settledBet?.status === "won", JSON.stringify(settledBet));
+  check("tennis payout correct", Math.abs((settledBet?.outcomeAmount ?? 0) - 50) < 0.001, `payout=${settledBet?.outcomeAmount}`);
+
+  const clv = await api("POST", "/api/tennis/clv", { betId, openingOdds: 1.6, closingOdds: 1.5 });
+  check("tennis clv stored (201)", clv.status === 201 && clv.json?.ok === true, JSON.stringify(clv.json));
+  const clvSeries = await api("GET", "/api/tennis/clv");
+  check("tennis clv series", Array.isArray(clvSeries.json?.series) && clvSeries.json.series.length > 0);
+
+  // Slips: t2 has a prediction + odds above the edge threshold.
+  const slips = await api("GET", "/api/tennis/slips");
+  check("tennis slips flag h2h home", slips.status === 200 && slips.json?.some((l) => l.fixture.id === "t2" && l.selection === "home"), JSON.stringify(slips.json?.map((l) => `${l.fixture.id}:${l.selection}`)));
+
+  // Record an outcome on the scheduled match → settles any pending bets.
+  const out = await api("POST", "/api/tennis/outcomes", [{ fixtureId: "t2", winner: "away" }]);
+  check("tennis outcome stored", out.status === 200 && out.json?.outcomesStored === 1, JSON.stringify(out.json));
+  const db2 = await api("GET", "/api/tennis/db");
+  check("tennis outcome synthesized", db2.json?.outcomes?.length === 2, `outcomes=${db2.json?.outcomes?.length}`);
+
+  // Predictions ingest + calibration.
+  const pi = await api("POST", "/api/tennis/predictions/ingest", [{ fixtureId: "t1", selection: "home", probability: 0.7, confidenceLow: 0.6, confidenceHigh: 0.8, modelVersion: "e2e-tennis" }]);
+  check("tennis predictions ingest", pi.status === 200 && pi.json?.ingested === 1, JSON.stringify(pi.json));
+  const cal = await api("GET", "/api/tennis/calibration");
+  check("tennis calibration bins", cal.status === 200 && Array.isArray(cal.json?.bins) && cal.json.bins.length === 10);
+
+  // Manual triggers demo no-op (no ODDS_API_KEY).
+  const ti = await api("POST", "/api/tennis/ingest");
+  check("tennis ingest demo no-op", ti.status === 200 && ti.json?.mode === "demo" && ti.json?.eventsPulled === 0, JSON.stringify(ti.json));
+  const tc = await api("POST", "/api/tennis/closing");
+  check("tennis closing demo no-op", tc.status === 200 && tc.json?.mode === "demo" && tc.json?.pendingBets === 0, JSON.stringify(tc.json));
+
+  const back = await api("GET", "/api/tennis/backtest");
+  check("tennis backtest 200", back.status === 200, JSON.stringify(back.json));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

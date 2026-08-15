@@ -34,4 +34,15 @@ migrations_dir = "migrations"
 ODDS_SPORT = "soccer_epl"
 ODDS_REGIONS = "eu"
 ODDS_MARKETS = "h2h,totals"
-ODDS_FETCH_LIMIT = "10"
+# Client-side slice per sport key (the API charges per REQUEST, not per event),
+# so raising this is free — it just stores more fixtures per pull. 200 covers
+# a full US Open main draw (~128) comfortably.
+ODDS_FETCH_LIMIT = "200"
+# Tennis tournament keys to pull. IMPORTANT: each key costs 1 API credit per
+# cron run even when it returns empty (out of season), so ONLY list in-season
+# tournaments here. The default (unset) tries ALL of TENNIS_SPORTS — ~21 keys
+# × 3 runs/day ≈ 63 credits/day, which blows the ~500/month free tier in ~8
+# days. Keep this list to what's actually on the calendar:
+#   Cincinnati (now) + US Open (Aug 24–Sep 13) + Shanghai (Oct 7–18)
+#   → add/remove keys as tournaments come and go.
+TENNIS_SPORTS = "tennis_atp_cincinnati_open,tennis_atp_us_open"

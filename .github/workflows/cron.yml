@@ -29,13 +29,18 @@ jobs:
             *)     echo "endpoint=ingest" >> "$GITHUB_OUTPUT" ;;
           esac
 
-      - name: Call worker endpoint
+      - name: Call worker endpoints (football + tennis)
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
           PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}
           ENDPOINT: ${{ steps.which.outputs.endpoint }}
         run: |
-          echo "firing /api/$ENDPOINT"
-          curl -sS -m 120 -X POST "$WORKER_URL/api/$ENDPOINT" \
-            -H "x-predict-key: $PREDICT_SECRET"
-          echo
+          # Fire the same code path the old crons would for BOTH sports.
+          # Football (football fixtures + logged-bet CLV) and tennis (ATP
+          # main tour — ingest + closing). Tennis is a demo no-op off-season.
+          for sport in "" tennis; do
+            echo "firing /api/${sport}${ENDPOINT}"
+            curl -sS -m 120 -X POST "$WORKER_URL/api/${sport}${ENDPOINT}" \
+              -H "x-predict-key: $PREDICT_SECRET"
+            echo
+          done

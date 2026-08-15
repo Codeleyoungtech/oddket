@@ -28,12 +28,22 @@ export interface Health {
   time: number;
 }
 
+/** Sport-scoped API client. Football hits /api/*, tennis /api/tennis/*. */
+function makeClient(prefix: string) {
+  return {
+    db: () => req<Database>(`${prefix}/db`),
+    settings: () => req<Settings>("/api/settings"),
+    saveSettings: (s: Settings) => req<{ ok: boolean; settings: Settings }>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
+    logBet: (b: unknown) => req<{ ok: boolean; bet: unknown }>(`${prefix}/bets`, { method: "POST", body: JSON.stringify(b) }),
+    deleteBet: (id: string) => req<{ ok: boolean; deleted: string }>(`${prefix}/bets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    recordOutcome: (o: unknown) => req<{ ok: boolean }>(`${prefix}/outcomes`, { method: "POST", body: JSON.stringify(o) }),
+  };
+}
+
+export type SportApi = ReturnType<typeof makeClient>;
+
 export const api = {
   health: () => req<Health>("/api/health"),
-  db: () => req<Database>("/api/db"),
-  settings: () => req<Settings>("/api/settings"),
-  saveSettings: (s: Settings) => req<{ ok: boolean; settings: Settings }>("/api/settings", { method: "PUT", body: JSON.stringify(s) }),
-  logBet: (b: unknown) => req<{ ok: boolean; bet: unknown }>("/api/bets", { method: "POST", body: JSON.stringify(b) }),
-  deleteBet: (id: string) => req<{ ok: boolean; deleted: string }>(`/api/bets/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  recordOutcome: (o: unknown) => req<{ ok: boolean }>("/api/outcomes", { method: "POST", body: JSON.stringify(o) }),
+  football: makeClient("/api"),
+  tennis: makeClient("/api/tennis"),
 };

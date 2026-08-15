@@ -91,6 +91,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Fetch tennis fixtures + best odds from the worker
+        id: fetch-tennis
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
         run: |
@@ -105,19 +106,25 @@ jobs:
               except Exception:
                   n = 0
           print(f'fetched {n} tennis fixtures')
+          # Set an output so later steps can skip cleanly when off-season.
+          # (Writing "true" only when fixtures exist; absent otherwise.)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+              if n > 0:
+                  fh.write('has_fixtures=true\n')
           if n == 0:
               print('no tennis fixtures — skipping predict')
-              sys.exit(0)
           PY
 
       - name: Predict tennis h2h
-        # The fetch step above already exits when there are no fixtures, so a
-        # failure here is a REAL model error — fail the job rather than
-        # silently pushing stale predictions.
+        # Skipped cleanly when off-season (no fixtures). When fixtures DO
+        # exist, a failure here is a REAL model error — fail the job rather
+        # than silently pushing stale predictions.
+        if: steps.fetch-tennis.outputs.has_fixtures == 'true'
         working-directory: model
         run: python3 scripts/predict_tennis.py --data data/tennis_fixtures.json
 
       - name: Push tennis predictions to the worker
+        if: steps.fetch-tennis.outputs.has_fixtures == 'true'
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
           PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}

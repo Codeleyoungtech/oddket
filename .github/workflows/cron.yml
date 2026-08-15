@@ -38,9 +38,11 @@ jobs:
           # Fire the same code path the old crons would for BOTH sports.
           # Football (football fixtures + logged-bet CLV) and tennis (ATP
           # main tour — ingest + closing). Tennis is a demo no-op off-season.
-          for sport in "" tennis; do
-            echo "firing /api/${sport}${ENDPOINT}"
-            curl -sS -m 120 -X POST "$WORKER_URL/api/${sport}${ENDPOINT}" \
+          # NB: the empty prefix yields /api/ingest, "tennis/" yields
+          # /api/tennis/ingest — keep the trailing slash on the prefix.
+          for prefix in "" "tennis/"; do
+            echo "firing /api/${prefix}${ENDPOINT}"
+            curl -sS -m 120 -X POST "$WORKER_URL/api/${prefix}${ENDPOINT}" \
               -H "x-predict-key: $PREDICT_SECRET"
             echo
           done

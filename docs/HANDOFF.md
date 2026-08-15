@@ -121,6 +121,25 @@ snapshots stored, model predictions exported→predicted→ingested (50 rows), a
 `GET /api/tennis/slips` flags 14 edge-positive legs with real player names +
 model probability + margin-adjusted implied.
 
+**DEPLOYED (Aug 15, 2026)** — tennis runs continuously in production:
+
+- Worker: `https://oddket-worker.olivia-eleyoungtech-io.workers.dev` (D1 `oddket`,
+  migration 0001 applied). GitHub Actions fires `/api/tennis/ingest` +
+  `/api/tennis/closing` alongside the football endpoints (cron.yml) and runs
+  `predict-tennis` twice daily (predict.yml) — no laptop needed.
+- **Budget guard:** `TENNIS_SPORTS` in wrangler.toml is capped to in-season
+  tournaments only (currently Cincinnati + US Open). Each key = 1 API credit
+  per cron run even when empty, so UNCAPT it ~21 keys × 3 runs/day ≈ 63
+  credits/day — enough to blow the ~500/mo free tier in ~8 days. Add/remove
+  keys as tournaments come and go (add Shanghai ~Oct, remove Cincinnati ~Aug 23).
+- **Spread capture is automatic:** every ingest stores one snapshot per
+  (fixture, selection, bookmaker) — verified live with 22 bookmakers on
+  Cincinnati (Coolbet, GTbets, Winamax, Betfair, Matchbook, Pinnacle, ...).
+  Spread history accumulates in D1 for the mid-Oct retrain; no code change
+  needed to "start" it.
+- Verified end-to-end in prod: cron → 19 fixtures/788 snapshots →
+  predict-tennis → 38 predictions → 9 flagged slips with model P + edge.
+
 **Tennis runbook (local):**
 
 ```bash

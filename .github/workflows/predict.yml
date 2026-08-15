@@ -15,11 +15,14 @@ name: Predict (cloud model run)
 
 on:
   schedule:
-    # Twice daily — before each odds pull (09:00/18:00) so the slips always
-    # have fresh predictions. Bookmakers release fixtures gradually, so the
-    # afternoon run catches fixtures that appeared after the morning run.
-    - cron: "5 8 * * *"
-    - cron: "5 16 * * *"
+    # 4x daily — 5 minutes before each odds pull (00:00/06:00/12:00/18:00 UTC)
+    # so the slips always have fresh predictions. Costs no API credits (reads
+    # from the worker); bookmakers release fixtures gradually, so more runs
+    # catch fixtures that appear between pulls.
+    - cron: "55 23 * * *"
+    - cron: "55 5 * * *"
+    - cron: "55 11 * * *"
+    - cron: "55 17 * * *"
   workflow_dispatch: # manual "Run workflow" button for testing
 
 jobs:

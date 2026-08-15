@@ -127,11 +127,13 @@ model probability + margin-adjusted implied.
   migration 0001 applied). GitHub Actions fires `/api/tennis/ingest` +
   `/api/tennis/closing` alongside the football endpoints (cron.yml) and runs
   `predict-tennis` twice daily (predict.yml) — no laptop needed.
-- **Budget guard:** `TENNIS_SPORTS` in wrangler.toml is capped to in-season
-  tournaments only (currently Cincinnati + US Open). Each key = 1 API credit
-  per cron run even when empty, so UNCAPT it ~21 keys × 3 runs/day ≈ 63
-  credits/day — enough to blow the ~500/mo free tier in ~8 days. Add/remove
-  keys as tournaments come and go (add Shanghai ~Oct, remove Cincinnati ~Aug 23).
+- **Budget guard — corrected (Aug 15, 2026):** measured reality is that
+  out-of-season keys returning empty cost **0 credits** (`x-requests-last: 0`);
+  only in-season keys cost 1/pull. So it's safe to list upcoming tournaments in
+  advance (free until they go in-season) and no redeploy is needed when
+  fixtures post. `TENNIS_SPORTS` currently tracks Cincinnati + US Open +
+  **Shanghai Masters** (added early; costs 0 until Oct 7). Remove Cincinnati
+  after ~Aug 23 (it'll still cost 0 once out of season, so this is optional).
 - **Multi-key rotation (Aug 15, 2026):** `ODDS_API_KEY` holds a comma-separated
   list of **5 keys** (~2,500 credits/month combined; full football+tennis config
   burns ~720/mo, so one key alone exhausts mid-month). `fetchOdds` round-robins

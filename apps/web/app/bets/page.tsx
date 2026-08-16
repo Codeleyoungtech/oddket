@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { marketLabel } from "@oddket/core";
+import { marketLabel, type Parlay } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 
 // Bets logged in the last 24h can be undone (mistaken logs). Older rows are
 // kept immutable — undoing settled/CLV-scored history would corrupt the scoreboard.
 const UNDO_WINDOW_SEC = 24 * 3600;
 import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
-import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtSignedPct, pnlClass } from "../../lib/format";
+import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../../lib/format";
 
 export default function BetsPage() {
   const { bets, db, sport, logBet, deleteBet, refresh } = useData();
@@ -276,6 +276,80 @@ export default function BetsPage() {
           </div>
         </Card>
       )}
+
+      {/* True parlays — logged as ONE unit, settle all-or-nothing. Cross-sport,
+          so they show regardless of the active sport toggle. */}
+      <ParlaysSection parlays={db.parlayBets} />
+    </div>
+  );
+}
+
+function ParlaysSection({ parlays }: { parlays: Parlay[] }) {
+  const pnl = (p: Parlay) =>
+    p.outcomeAmount !== undefined ? `${p.outcomeAmount > 0 ? "+" : ""}${fmtMoney(p.outcomeAmount)}` : <span className="text-slate-600">pending</span>;
+
+  if (parlays.length === 0) {
+    return (
+      <div>
+        <SectionTitle sub="One unit, settles all-or-nothing — every leg must win">Parlays</SectionTitle>
+        <EmptyState
+          title="No parlays logged yet"
+          body="Build one in the Slip Builder (Settings → Multiples must be ON) — or log a suggested parlay from the EV-ranked panel."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <SectionTitle sub="One unit, settles all-or-nothing — any leg loses and the whole slip is gone">Parlays</SectionTitle>
+      <Card className="overflow-hidden">
+        <div className="divide-y divide-ink-700/30">
+          {parlays.map((p) => (
+            <div key={p.id} className="px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-slate-500">
+                    {fmtDate(p.placedAt)}
+                    <span className="mx-1.5 text-slate-700">·</span>
+                    <span className="capitalize">{p.sport}</span>
+                    <span className="mx-1.5 text-slate-700">·</span>
+                    <span className="num">{p.legs.length} legs</span>
+                  </p>
+                  <div className="mt-1.5 space-y-1">
+                    {p.legs.map((l, i) => (
+                      <p key={i} className="truncate text-sm text-slate-300">
+                        <span className="text-slate-500">{i + 1}.</span> {l.homeTeam} vs {l.awayTeam}{" "}
+                        <span className="text-slate-500">—</span> {marketLabel(l.market, l.selection)}{" "}
+                        <span className="num text-slate-300">@{fmtOdds(l.odds)}</span>
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-5">
+                  <div className="text-right">
+                    <p className="text-[11px] text-slate-500">Combined odds</p>
+                    <p className="num text-sm font-semibold text-slate-100">{p.combinedOdds.toFixed(2)}x</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-slate-500">True prob</p>
+                    <p className="num text-sm font-semibold text-sky-300">{fmtPct(p.combinedProbability)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-slate-500">Stake</p>
+                    <p className="num text-sm font-semibold text-slate-300">{fmtMoney(p.stake)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[11px] text-slate-500">P&L</p>
+                    <p className={`num text-sm font-semibold ${pnlClass(p.outcomeAmount)}`}>{pnl(p)}</p>
+                  </div>
+                  <Badge tone={p.status === "won" ? "green" : p.status === "lost" ? "red" : "sky"}>{p.status}</Badge>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

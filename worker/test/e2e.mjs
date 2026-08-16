@@ -411,6 +411,41 @@ console.log("\n[13] TENNIS (isolated tables + endpoints)");
 
   const back = await api("GET", "/api/tennis/backtest");
   check("tennis backtest 200", back.status === 200, JSON.stringify(back.json));
+
+  // Tennis parlays resolve from the tennis slips pool through the SAME
+  // /api/parlays endpoint (cross-sport leg pools merged). Fresh scheduled
+  // matches t3/t4 (t2 was finished above, so no scheduled tennis slips left).
+  const later = now + 2 * 86400;
+  sqlite.prepare("INSERT INTO tennis_matches (id, sport, league, home_team, away_team, commence_time, status) VALUES (?,?,?,?,?,?,?)")
+    .run("t3", "tennis", "ATP Cincinnati", "Zverev", "Ruud", later, "scheduled");
+  sqlite.prepare("INSERT INTO tennis_matches (id, sport, league, home_team, away_team, commence_time, status) VALUES (?,?,?,?,?,?,?)")
+    .run("t4", "tennis", "ATP US Open", "Alcaraz", "Sinner", later + 5 * 86400, "scheduled");
+  for (const [id, home, away] of [["t3", 1.7, 2.1], ["t4", 1.8, 2.0]]) {
+    sqlite.prepare("INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+      .run(`to-${id}-home`, id, "h2h", "home", home, "Pinnacle", now - 1800, 0);
+    sqlite.prepare("INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+      .run(`to-${id}-away`, id, "h2h", "away", away, "Pinnacle", now - 1800, 0);
+    sqlite.prepare("INSERT INTO tennis_predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+      .run(`tp-${id}-home`, id, "h2h", "home", 0.66, 0.58, 0.74, "tennis-test", now - 1800);
+  }
+  const tSlips = (await api("GET", "/api/tennis/slips")).json;
+  check("tennis slips include t3+t4", tSlips.some((l) => l.fixture.id === "t3") && tSlips.some((l) => l.fixture.id === "t4"), JSON.stringify(tSlips?.map((l) => l.fixture.id)));
+  await api("PUT", "/api/settings", { multiplesEnabled: true, maxMultipleLegs: 3 });
+  const tP = await api("POST", "/api/parlays", { legIds: ["t3:h2h:home", "t4:h2h:home"], stake: 100 });
+  check("tennis parlay placed (201)", tP.status === 201, JSON.stringify(tP.json));
+  const tpAfter = await api("GET", "/api/parlays");
+  const tp = tpAfter.json.find((x) => x.id === tP.json?.parlay?.id);
+  check("tennis parlay pending until all legs finish", tp?.status === "pending", JSON.stringify(tp));
+  // Both legs finish with home winning → parlay pays out at combined odds.
+  await api("POST", "/api/tennis/outcomes", [
+    { fixtureId: "t3", winner: "home" },
+    { fixtureId: "t4", winner: "home" },
+  ]);
+  const tpAfter2 = await api("GET", "/api/parlays");
+  const tp2 = tpAfter2.json.find((x) => x.id === tP.json?.parlay?.id);
+  const expectTp = Math.round(100 * (tp2?.combinedOdds - 1) * 100) / 100;
+  check("tennis parlay won all-or-nothing", tp2?.status === "won" && Math.abs((tp2?.outcomeAmount ?? 0) - expectTp) < 0.001, JSON.stringify(tp2));
+  await api("PUT", "/api/settings", { multiplesEnabled: false, maxMultipleLegs: 3 });
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -291,8 +291,9 @@ export default function SlipsPage() {
                             </div>
                             <div className="shrink-0 text-right">
                               <p className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</p>
-                              <div className="mt-0.5 flex items-center justify-end gap-1">
-                                <span className="text-xs text-slate-500">₦</span>
+                              <div className="relative mt-0.5 inline-block">
+                                {/* ₦ sits INSIDE the field: absolutely positioned over the input's left padding. */}
+                                <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-slate-500">₦</span>
                                 <input
                                   type="number"
                                   min={MIN_STAKE}
@@ -304,7 +305,7 @@ export default function SlipsPage() {
                                   }}
                                   onClick={(e) => e.stopPropagation()}
                                   onKeyDown={(e) => e.stopPropagation()}
-                                  className="num w-16 rounded-md border border-ink-600/60 bg-ink-800/60 px-1.5 py-0.5 text-right text-xs text-slate-200 focus:border-sky-400/50 focus:outline-none"
+                                  className="num no-spinner w-16 rounded-none border border-ink-600/60 bg-ink-800/60 py-0.5 pl-5 pr-1.5 text-right text-xs text-slate-200 focus:border-sky-400/50 focus:outline-none"
                                   title="Stake to log — defaults to the Kelly suggestion, edit to match what you actually staked."
                                 />
                               </div>

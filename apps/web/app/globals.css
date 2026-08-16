@@ -29,6 +29,18 @@ body {
   background: #2a3444;
 }
 
+/* Number inputs without the browser up/down spinner (used by the stake
+   override fields — a spinner is useless for a quick edit). */
+input[type="number"].no-spinner::-webkit-outer-spin-button,
+input[type="number"].no-spinner::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"].no-spinner {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 @layer components {
   .card {
     @apply rounded-xl border border-ink-700/60 bg-ink-900/80 shadow-card backdrop-blur-sm;

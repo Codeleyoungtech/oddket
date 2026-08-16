@@ -28,6 +28,7 @@ import {
 import { ingestOdds } from "./odds/ingest";
 import { pullClosingOdds } from "./odds/closing";
 import { ingestTennisOdds, pullTennisClosingOdds } from "./odds/tennis-ingest";
+import { settleFinishedMatches } from "./odds/settle";
 import { seedDatabase } from "./seed";
 import {
   insertTennisBet,
@@ -545,6 +546,16 @@ app.post("/api/tennis/closing", async (c) => {
   if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
   try {
     return c.json(await pullTennisClosingOdds(c.env));
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
+/** Auto-settle: pull live scores for football + tennis, settle pending bets. */
+app.post("/api/settle", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
+  try {
+    return c.json(await settleFinishedMatches(c.env));
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 502);
   }

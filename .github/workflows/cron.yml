@@ -22,6 +22,10 @@ on:
     # shortly before evening kickoffs so the closing line is as close to
     # match start as possible.
     - cron: "30 18 * * *"
+    # Auto-settlement — pull live scores + settle finished bets. Runs twice
+    # daily (morning + evening) so overnight/afternoon results settle promptly.
+    - cron: "15 8 * * *"
+    - cron: "15 21 * * *"
   workflow_dispatch: # manual "Run workflow" button for testing
 
 jobs:
@@ -36,11 +40,11 @@ jobs:
         # silently fired ingest instead of the 18:30 closing pull — CLV was
         # never computed for either sport.
         run: |
-          if [ "${{ github.event.schedule }}" = "30 18 * * *" ]; then
-            echo "endpoint=closing" >> "$GITHUB_OUTPUT"
-          else
-            echo "endpoint=ingest" >> "$GITHUB_OUTPUT"
-          fi
+          case "${{ github.event.schedule }}" in
+            30\ 18\ *\ *\ *) echo "endpoint=closing" >> "$GITHUB_OUTPUT" ;;
+            15\ 8\ *\ *\ *|15\ 21\ *\ *\ *) echo "endpoint=settle" >> "$GITHUB_OUTPUT" ;;
+            *) echo "endpoint=ingest" >> "$GITHUB_OUTPUT" ;;
+          esac
 
       - name: Call worker endpoints (football + tennis)
         env:
@@ -53,9 +57,17 @@ jobs:
           # main tour — ingest + closing). Tennis is a demo no-op off-season.
           # NB: the empty prefix yields /api/ingest, "tennis/" yields
           # /api/tennis/ingest — keep the trailing slash on the prefix.
-          for prefix in "" "tennis/"; do
-            echo "firing /api/${prefix}${ENDPOINT}"
-            curl -sS -m 120 -X POST "$WORKER_URL/api/${prefix}${ENDPOINT}" \
+          # /api/settle settles BOTH sports in one call (no prefix loop).
+          if [ "$ENDPOINT" = "settle" ]; then
+            echo "firing /api/settle"
+            curl -sS -m 180 -X POST "$WORKER_URL/api/settle" \
               -H "x-predict-key: $PREDICT_SECRET"
             echo
-          done
+          else
+            for prefix in "" "tennis/"; do
+              echo "firing /api/${prefix}${ENDPOINT}"
+              curl -sS -m 120 -X POST "$WORKER_URL/api/${prefix}${ENDPOINT}" \
+                -H "x-predict-key: $PREDICT_SECRET"
+              echo
+            done
+          fi

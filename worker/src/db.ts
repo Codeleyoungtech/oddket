@@ -496,6 +496,23 @@ export async function insertClv(db: D1Database, c: ClvResult): Promise<void> {
     .run();
 }
 
+/** Mark football fixtures as finished (auto-settlement from live scores). */
+export async function markFixturesFinished(db: D1Database, ids: string[]): Promise<void> {
+  const stmt = db.prepare("UPDATE fixtures SET status = 'finished' WHERE id = ?1");
+  const batch = ids.map((id) => stmt.bind(id));
+  if (batch.length) await db.batch(batch);
+}
+
+/** Mark tennis matches finished + record the winner (auto-settlement). */
+export async function markTennisFinished(
+  db: D1Database,
+  results: Array<{ id: string; winner: "home" | "away" }>,
+): Promise<void> {
+  const stmt = db.prepare("UPDATE tennis_matches SET status = 'finished', winner = ?1 WHERE id = ?2");
+  const batch = results.map((r) => stmt.bind(r.winner, r.id));
+  if (batch.length) await db.batch(batch);
+}
+
 export async function upsertOutcomes(db: D1Database, rows: Outcome[]): Promise<void> {
   const stmt = db.prepare(
     `INSERT INTO outcomes (id, fixture_id, home_score, away_score, settled_at)

@@ -16,6 +16,10 @@ export default function SlipsPage() {
   const [logError, setLogError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
+  // Per-leg stake override (₦). Defaults to the Kelly suggestion; lets the
+  // user log what they ACTUALLY staked on SportyBet instead of what the
+  // model suggested. Keyed by legKey.
+  const [stakeOverrides, setStakeOverrides] = useState<Record<string, string>>({});
 
   const selectedLegs = useMemo(
     () => slips.filter((l) => selected.has(legKey(l))),
@@ -62,7 +66,7 @@ export default function SlipsPage() {
         market: leg.market,
         selection: leg.selection,
         odds: leg.odds,
-        stake: displayStake(leg.stake).amount,
+        stake: stakeFor(leg),
         edge: leg.edge,
         modelProbability: leg.probability,
         placedAt: Math.floor(Date.now() / 1000),
@@ -94,7 +98,7 @@ export default function SlipsPage() {
           market: leg.market,
           selection: leg.selection,
           odds: leg.odds,
-          stake: displayStake(leg.stake).amount,
+          stake: stakeFor(leg),
           edge: leg.edge,
           modelProbability: leg.probability,
           placedAt: Math.floor(Date.now() / 1000),
@@ -142,10 +146,20 @@ export default function SlipsPage() {
   const MIN_STAKE = 10;
   const displayStake = (s: number) => ({ amount: Math.max(MIN_STAKE, Math.round(s)), floored: s < MIN_STAKE });
 
+  /** Effective stake for a leg: user override if set (and sane), else the Kelly suggestion. */
+  const stakeFor = (leg: SlipLeg): number => {
+    const raw = stakeOverrides[legKey(leg)];
+    if (raw !== undefined && raw !== "") {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) return Math.round(n);
+    }
+    return displayStake(leg.stake).amount;
+  };
+
   const copySlip = async () => {
     const lines = selectedLegs.map(
       (l, i) =>
-        `${i + 1}. ${l.fixture.homeTeam} vs ${l.fixture.awayTeam} — ${marketLabel(l.market, l.selection)} @ ${fmtOdds(l.odds)} (stake ₦${fmtMoney(displayStake(l.stake).amount, 0)}${displayStake(l.stake).floored ? " · min" : ""})`,
+        `${i + 1}. ${l.fixture.homeTeam} vs ${l.fixture.awayTeam} — ${marketLabel(l.market, l.selection)} @ ${fmtOdds(l.odds)} (stake ₦${fmtMoney(stakeFor(l), 0)})`,
     );
     const combined = multiple
       ? `\nCombined ${multiple.advertisedOdds.toFixed(2)}x | true prob ${fmtPct(multiple.compoundProbability)} | fair odds ${multiple.compoundFairOdds.toFixed(2)}x`
@@ -277,10 +291,23 @@ export default function SlipsPage() {
                             </div>
                             <div className="shrink-0 text-right">
                               <p className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</p>
-                              <p className="num mt-0.5 text-xs text-slate-400">
-                                ₦{fmtMoney(displayStake(leg.stake).amount, 0)}
-                                {displayStake(leg.stake).floored && <span className="text-slate-600"> · min</span>}
-                              </p>
+                              <div className="mt-0.5 flex items-center justify-end gap-1">
+                                <span className="text-xs text-slate-500">₦</span>
+                                <input
+                                  type="number"
+                                  min={MIN_STAKE}
+                                  step={10}
+                                  value={stakeOverrides[legKey(leg)] ?? String(displayStake(leg.stake).amount)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    setStakeOverrides((prev) => ({ ...prev, [legKey(leg)]: e.target.value }));
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => e.stopPropagation()}
+                                  className="num w-16 rounded-md border border-ink-600/60 bg-ink-800/60 px-1.5 py-0.5 text-right text-xs text-slate-200 focus:border-sky-400/50 focus:outline-none"
+                                  title="Stake to log — defaults to the Kelly suggestion, edit to match what you actually staked."
+                                />
+                              </div>
                             </div>
                             <button
                               onClick={(e) => {

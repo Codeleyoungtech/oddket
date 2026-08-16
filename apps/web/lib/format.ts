@@ -25,6 +25,7 @@ export function fmtOdds(x: number | undefined | null): string {
 export function fmtDate(epochSec: number | undefined | null): string {
   if (!epochSec) return "—";
   return new Date(epochSec * 1000).toLocaleString("en-GB", {
+    weekday: "short", // Sun, Mon, … — instant day-of-week at a glance
     day: "2-digit",
     month: "short",
     hour: "2-digit",
@@ -34,7 +35,11 @@ export function fmtDate(epochSec: number | undefined | null): string {
 
 export function fmtDateShort(epochSec: number | undefined | null): string {
   if (!epochSec) return "—";
-  return new Date(epochSec * 1000).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+  return new Date(epochSec * 1000).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+  });
 }
 
 export function pnlClass(x: number | undefined | null): string {

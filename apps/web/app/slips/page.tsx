@@ -252,8 +252,10 @@ export default function SlipsPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Singles list */}
-        <div className="lg:col-span-2">
+        {/* Singles list — min-w-0 lets the column shrink below its content's
+            min-content on narrow screens (grid items default to min-width:auto,
+            which blows the page sideways when a card's content is wide). */}
+        <div className="min-w-0 lg:col-span-2">
           {/* Filters — time range + league. League list is derived from the data,
               so when other sports are added the options grow automatically. */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -423,8 +425,9 @@ export default function SlipsPage() {
           )}
         </div>
 
-        {/* Multiple panel */}
-        <div className="lg:col-span-1">
+        {/* Multiple panel — min-w-0 (see note above) so the parlay suggestions
+            never force a horizontal scroll on mobile. */}
+        <div className="min-w-0 lg:col-span-1">
           <SectionTitle sub="Opt-in only — the true math always shown">Multiple builder</SectionTitle>
           <Card className="card-pad lg:sticky lg:top-20">
             {!multiplesOn ? (
@@ -533,7 +536,7 @@ export default function SlipsPage() {
                     {selectedLegs.map((l) => (
                       <li key={legKey(l)} className="text-xs">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-slate-400">
+                          <span className="min-w-0 truncate text-slate-400">
                             {l.fixture.homeTeam} vs {l.fixture.awayTeam} — {marketLabel(l.market, l.selection)}
                           </span>
                           <span className="num shrink-0 text-slate-300">@{fmtOdds(l.odds)}</span>

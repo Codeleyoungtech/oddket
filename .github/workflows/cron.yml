@@ -30,11 +30,17 @@ jobs:
     steps:
       - name: Determine which trigger to fire
         id: which
+        # github.event.schedule holds the cron expression that triggered THIS
+        # run (empty for workflow_dispatch). Never match wall-clock time here:
+        # GH Actions runs schedules late (often 15-30+ min), so a time match
+        # silently fired ingest instead of the 18:30 closing pull — CLV was
+        # never computed for either sport.
         run: |
-          case "$(TZ=UTC date +%H:%M)" in
-            18:30) echo "endpoint=closing" >> "$GITHUB_OUTPUT" ;;
-            *)     echo "endpoint=ingest" >> "$GITHUB_OUTPUT" ;;
-          esac
+          if [ "${{ github.event.schedule }}" = "30 18 * * *" ]; then
+            echo "endpoint=closing" >> "$GITHUB_OUTPUT"
+          else
+            echo "endpoint=ingest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Call worker endpoints (football + tennis)
         env:

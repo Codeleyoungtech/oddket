@@ -1,6 +1,6 @@
-import type { Bet, ClvResult, OddsSnapshot } from "@oddket/core";
+import { LEAGUE_SPORTS, type Bet, type ClvResult, type OddsSnapshot } from "@oddket/core";
 import type { Env } from "../db";
-import { insertClv, upsertFixtures, upsertOdds } from "../db";
+import { getSettings, insertClv, upsertFixtures, upsertOdds } from "../db";
 import { fetchOdds, mapEvent } from "./client";
 
 export interface ClosingResult {
@@ -39,15 +39,28 @@ export async function pullClosingOdds(env: Env): Promise<ClosingResult> {
     return { mode: "live", pendingBets: 0, clvComputed: 0, note: "No pending bets with upcoming fixtures." };
   }
 
+  // Pull closing odds for the SAME leagues the ingest uses (settings.leagues),
+  // not just the env default — otherwise La Liga/Serie A/Bundesliga bets
+  // would never get a closing line and CLV would stay 0 forever.
+  const settings = await getSettings(env.DB);
+  const selected = (settings.leagues ?? [])
+    .map((name) => LEAGUE_SPORTS[name])
+    .filter((k): k is string => Boolean(k));
+  const sports =
+    selected.length > 0 ? selected : [env.ODDS_SPORT ?? "soccer_epl"];
+
   const events = await fetchOdds(apiKey, {
-    sport: env.ODDS_SPORT ?? "soccer_epl",
+    sports,
     regions: env.ODDS_REGIONS ?? "eu",
     markets: env.ODDS_MARKETS ?? "h2h,totals",
-    fetchLimit: 25,
+    fetchLimit: Number(env.ODDS_FETCH_LIMIT ?? 200),
   });
 
   const capturedAt = Math.floor(Date.now() / 1000);
-  const bookmakerKeys = ["bet365", "sportybet", "betway"];
+  // Keep ALL bookmakers (same as ingest): filtering to bet365/sportybet/betway
+  // drops these fixtures entirely in the eu region — none of those books carry
+  // them — leaving zero closing rows and CLV stuck at 0.
+  const bookmakerKeys: string[] = [];
   const mapped = events.map((e) => mapEvent(e, bookmakerKeys, capturedAt));
 
   const fixturesToStore = mapped.map((m) => m.fixture);

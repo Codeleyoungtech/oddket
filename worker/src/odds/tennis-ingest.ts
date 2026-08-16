@@ -94,7 +94,9 @@ export async function pullTennisClosingOdds(env: Env): Promise<TennisClosingResu
     .map((name) => TENNIS_SPORTS[name])
     .filter((k): k is string => Boolean(k));
   const envKeys = (env.TENNIS_SPORTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const sportKeys = envKeys.length > 0 ? envKeys : selected.length > 0 ? selected : Object.values(TENNIS_SPORTS);
+  // Settings (UI toggles) take precedence — same rule as ingest, so closing
+  // tracks exactly the tournaments the tenant enabled.
+  const sportKeys = selected.length > 0 ? selected : envKeys.length > 0 ? envKeys : Object.values(TENNIS_SPORTS);
 
   const { events } = await fetchTennisOdds(apiKey, sportKeys, {
     regions: env.ODDS_REGIONS ?? "eu",

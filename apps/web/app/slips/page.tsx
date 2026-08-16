@@ -139,6 +139,20 @@ export default function SlipsPage() {
     return [...groups.entries()];
   }, [filteredSlips]);
 
+  /**
+   * Auto-suggest rule-compliant parlays (EV-ranked, independent legs only,
+   * within the Settings leg cap) from the flagged singles pool. Selection +
+   * logging stays MANUAL — this only surfaces candidate groupings.
+   *
+   * NOTE: this useMemo MUST live before the `if (!db) return <Loading />`
+   * guard — a hook after a conditional early-return makes React throw #310
+   * (more hooks than the previous render) once db loads.
+   */
+  const suggestions = useMemo(() => {
+    if (!db || !db.settings.multiplesEnabled) return [];
+    return suggestParlays(slips, db.settings, sport, 5);
+  }, [db, slips, sport]);
+
   if (!db) return <Loading />;
 
   // Gated behind Settings → Multiples. OFF = the builder is completely hidden;
@@ -164,16 +178,6 @@ export default function SlipsPage() {
       return next;
     });
   };
-
-  /**
-   * Auto-suggest rule-compliant parlays (EV-ranked, independent legs only,
-   * within the Settings leg cap) from the flagged singles pool. Selection +
-   * logging stays MANUAL — this only surfaces candidate groupings.
-   */
-  const suggestions = useMemo(() => {
-    if (!multiplesOn) return [];
-    return suggestParlays(slips, db.settings, sport, 5);
-  }, [multiplesOn, slips, db, sport]);
 
   /** Log a suggested parlay as ONE unit — settles all-or-nothing. */
   const handleLogParlay = async (s: ParlaySuggestion) => {

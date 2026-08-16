@@ -1,0 +1,52 @@
+{
+  "name": "OddKet — Decision Support for SportyBet",
+  "short_name": "OddKet",
+  "description": "Probability + confidence per pick, Kelly staking, and closing line value as the scoreboard. Truth over excitement.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait-primary",
+  "background_color": "#070a0f",
+  "theme_color": "#070a0f",
+  "categories": ["sports", "utilities", "finance"],
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Slips",
+      "url": "/slips",
+      "description": "Top edge-flagged picks with stake suggestions"
+    },
+    {
+      "name": "Bet Log",
+      "url": "/bets",
+      "description": "Logged bets, settlement and CLV"
+    },
+    {
+      "name": "Calibration",
+      "url": "/calibration",
+      "description": "Is the model's confidence honest?"
+    }
+  ]
+}

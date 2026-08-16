@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { TENNIS_SPORTS, type Settings } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Badge, Card, CardHeader, Loading, SectionTitle } from "../../components/ui";
+import { InstallApp } from "../../components/install-app";
 import { fmtMoney, fmtPct } from "../../lib/format";
 
 const MARKET_OPTIONS = [
@@ -236,6 +237,11 @@ export default function SettingsPage() {
         <p className="mt-3 text-xs text-slate-500">
           Toggling a tournament on/off here takes effect on the next odds pull — no redeploy needed.
         </p>
+      </Card>
+
+      <Card className="card-pad">
+        <CardHeader title="App" subtitle="Install OddKet for a standalone app experience on your phone or desktop." />
+        <InstallApp />
       </Card>
 
       <Card className="card-pad">

@@ -259,7 +259,7 @@ export default function SlipsPage() {
                             tabIndex={0}
                             onClick={() => toggle(key)}
                             onKeyDown={(e) => e.key === "Enter" && toggle(key)}
-                            className={`group flex w-full cursor-pointer items-center gap-4 px-4 py-3 text-left transition-all duration-150 ${
+                            className={`group flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-left transition-all duration-150 ${
                               checked ? "bg-emerald-400/[0.05]" : "hover:bg-ink-800/40"
                             }`}
                           >
@@ -285,14 +285,22 @@ export default function SlipsPage() {
                               <p className="mt-0.5 text-xs text-slate-500">
                                 prob <span className="num text-slate-300">{fmtPct(leg.probability)}</span>
                                 <span className="num text-slate-600"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
+                                {/* Edge shown inline on mobile (it's in its own column on desktop) */}
+                                <span className={`num ml-1.5 font-semibold sm:hidden ${edgeClass(leg.edge)}`}>
+                                  {fmtSignedPct(leg.edge)}
+                                </span>
                               </p>
                             </div>
                             <div className="hidden shrink-0 text-right sm:block">
                               <p className={`num text-sm font-semibold ${edgeClass(leg.edge)}`}>{fmtSignedPct(leg.edge)} edge</p>
                             </div>
-                            <div className="shrink-0 text-right">
-                              <p className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</p>
-                              <div className="relative mt-0.5 inline-block">
+                            {/* Action row — on mobile this is forced onto its own
+                                full-width line (w-full + flex-wrap on the parent) so
+                                odds, stake and the button never get squished next to
+                                the selection text. Desktop stays single-line. */}
+                            <div className="ml-auto flex w-full shrink-0 items-center justify-end gap-2.5 sm:w-auto sm:justify-start">
+                              <span className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</span>
+                              <div className="relative inline-block">
                                 {/* ₦ sits INSIDE the field: absolutely positioned over the input's left padding. */}
                                 <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-slate-500">₦</span>
                                 <input
@@ -310,30 +318,30 @@ export default function SlipsPage() {
                                   title="Stake to log — defaults to the Kelly suggestion, edit to match what you actually staked."
                                 />
                               </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleLogBet(leg);
+                                }}
+                                disabled={isLogged || loggingKeys.has(key)}
+                                className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
+                                  isLogged
+                                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                                    : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
+                                }`}
+                              >
+                                {loggingKeys.has(key) ? (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-300/40 border-t-sky-300" />
+                                    Logging…
+                                  </span>
+                                ) : isLogged ? (
+                                  "✓ Logged"
+                                ) : (
+                                  "Log bet"
+                                )}
+                              </button>
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleLogBet(leg);
-                              }}
-                              disabled={isLogged || loggingKeys.has(key)}
-                              className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
-                                isLogged
-                                  ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                                  : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
-                              }`}
-                            >
-                              {loggingKeys.has(key) ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-300/40 border-t-sky-300" />
-                                  Logging…
-                                </span>
-                              ) : isLogged ? (
-                                "✓ Logged"
-                              ) : (
-                                "Log bet"
-                              )}
-                            </button>
                           </div>
                         );
                       })}
@@ -348,7 +356,7 @@ export default function SlipsPage() {
         {/* Multiple panel */}
         <div className="lg:col-span-1">
           <SectionTitle sub="Opt-in only — the true math always shown">Multiple builder</SectionTitle>
-          <Card className="card-pad sticky top-20">
+          <Card className="card-pad lg:sticky lg:top-20">
             {selectedLegs.length === 0 ? (
               <p className="text-sm text-slate-500">
                 Select <span className="font-semibold text-emerald-400">2+ singles</span> to combine. Singles are always the

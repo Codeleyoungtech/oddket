@@ -1,6 +1,6 @@
 import { LEAGUE_SPORTS, type Bet, type ClvResult, type OddsSnapshot } from "@oddket/core";
 import type { Env } from "../db";
-import { getSettings, insertClv, upsertFixtures, upsertOdds } from "../db";
+import { getSettings, insertClv, toBet, upsertFixtures, upsertOdds } from "../db";
 import { fetchOdds, mapEvent } from "./client";
 
 export interface ClosingResult {
@@ -32,9 +32,15 @@ export async function pullClosingOdds(env: Env): Promise<ClosingResult> {
       WHERE b.status = 'pending' AND f.commence_time > ?1`,
   )
     .bind(Math.floor(Date.now() / 1000))
-    .all<Record<string, unknown> & { id: string; ct: number }>();
+    .all<Record<string, unknown> & { ct: number }>();
 
-  const pending = (pendingRows.results ?? []) as unknown as Array<Bet & { ct: number }>;
+  // Map snake_case rows → camelCase Bet objects (fixture_id → fixtureId).
+  // Reading bet.fixtureId straight off the raw row is undefined, so the
+  // closing-odds lookup always missed and CLV stayed 0.
+  const pending = (pendingRows.results ?? []).map((r) => ({
+    ...toBet(r as unknown as Parameters<typeof toBet>[0]),
+    ct: (r as { ct: number }).ct,
+  }));
   if (pending.length === 0) {
     return { mode: "live", pendingBets: 0, clvComputed: 0, note: "No pending bets with upcoming fixtures." };
   }

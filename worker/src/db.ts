@@ -123,7 +123,7 @@ interface BetRow {
   placed_at: number;
 }
 
-function toBet(r: BetRow): Bet {
+export function toBet(r: BetRow): Bet {
   return {
     id: r.id,
     fixtureId: r.fixture_id,
@@ -365,7 +365,8 @@ export async function upsertTennisOdds(db: D1Database, rows: OddsSnapshot[]): Pr
   const stmt = db.prepare(
     `INSERT INTO tennis_odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-     ON CONFLICT(id) DO UPDATE SET odds = excluded.odds, captured_at = excluded.captured_at`,
+     ON CONFLICT(id) DO UPDATE SET odds = excluded.odds, captured_at = excluded.captured_at,
+       is_closing = excluded.is_closing`,
   );
   const batch = rows.map((o) =>
     stmt.bind(o.id, o.fixtureId, o.market, o.selection, o.odds, o.bookmaker, o.capturedAt, o.isClosing ? 1 : 0),
@@ -451,7 +452,8 @@ export async function upsertOdds(db: D1Database, rows: OddsSnapshot[]): Promise<
   const stmt = db.prepare(
     `INSERT INTO odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
-     ON CONFLICT(id) DO UPDATE SET odds = excluded.odds, captured_at = excluded.captured_at`,
+     ON CONFLICT(id) DO UPDATE SET odds = excluded.odds, captured_at = excluded.captured_at,
+       is_closing = excluded.is_closing`,
   );
   const batch = rows.map((o) =>
     stmt.bind(o.id, o.fixtureId, o.market, o.selection, o.odds, o.bookmaker, o.capturedAt, o.isClosing ? 1 : 0),

@@ -5,6 +5,8 @@ import {
   buildClvSeries,
   buildDashboard,
   buildMultiple,
+  buildParlay,
+  checkLegIndependence,
   enrichBets,
   flagSlips,
   runBacktest,
@@ -12,6 +14,7 @@ import {
   type ClvResult,
   type Database,
   type Fixture,
+  type Parlay,
   type Prediction,
 } from "@oddket/core";
 import type { Env } from "./db";
@@ -19,8 +22,11 @@ import {
   getSettings,
   insertBet,
   insertClv,
+  insertParlay,
   loadDatabase,
+  loadParlays,
   putSettings,
+  settleParlayBets,
   settlePendingBets,
   upsertOutcomes,
   upsertPredictions,
@@ -289,7 +295,8 @@ app.post("/api/outcomes", async (c) => {
 
   await upsertOutcomes(c.env.DB, rows);
   const settled = await settlePendingBets(c.env.DB);
-  return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled });
+  const parlaysSettled = await settleParlayBets(c.env.DB);
+  return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled, parlaysSettled });
 });
 
 app.get("/api/calibration", async (c) => {
@@ -321,6 +328,7 @@ app.put("/api/settings", async (c) => {
     leagues: Array.isArray(body.leagues) ? body.leagues : current.leagues,
     markets: Array.isArray(body.markets) ? body.markets : current.markets,
     multiplesEnabled: typeof body.multiplesEnabled === "boolean" ? body.multiplesEnabled : current.multiplesEnabled,
+    maxMultipleLegs: typeof body.maxMultipleLegs === "number" ? Math.min(6, Math.max(2, body.maxMultipleLegs)) : current.maxMultipleLegs,
   };
   await putSettings(c.env.DB, next);
   return c.json({ ok: true, settings: next });
@@ -494,7 +502,8 @@ app.post("/api/tennis/outcomes", async (c) => {
     ).bind(o.winner, o.fixtureId).run();
   }
   const settled = await settleTennisBets(c.env.DB);
-  return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled });
+  const parlaysSettled = await settleParlayBets(c.env.DB);
+  return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled, parlaysSettled });
 });
 
 app.get("/api/tennis/calibration", async (c) => {
@@ -564,10 +573,76 @@ app.post("/api/tennis/closing", async (c) => {
 app.post("/api/settle", async (c) => {
   if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized: missing or wrong x-predict-key." }, 401);
   try {
-    return c.json(await settleFinishedMatches(c.env));
+    const result = await settleFinishedMatches(c.env);
+    // True parlays settle all-or-nothing from the same outcomes.
+    const parlaysSettled = await settleParlayBets(c.env.DB);
+    return c.json({ ...result, parlaysSettled });
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 502);
   }
+});
+
+/** List logged parlays (true parlay units, settled all-or-nothing). */
+app.get("/api/parlays", async (c) => {
+  const db = await loadParlays(c.env.DB);
+  return c.json(db.sort((a, b) => b.placedAt - a.placedAt));
+});
+
+/**
+ * Log a parlay as ONE unit: [{legIds, stake}]. All-or-nothing settlement.
+ * Validates the gate, the max-legs cap, and correlation independence.
+ */
+app.post("/api/parlays", async (c) => {
+  const db = await loadDatabase(c.env.DB);
+  if (!db.settings.multiplesEnabled) {
+    return c.json({ ok: false, error: "Multiples are disabled in Settings." }, 403);
+  }
+  const body = await c.req.json().catch(() => ({}));
+  const legIds: string[] = body.legIds ?? [];
+  const stake = Number(body.stake ?? 0);
+  if (!Array.isArray(legIds) || legIds.length < 2) {
+    return c.json({ ok: false, error: "A parlay needs at least 2 legs." }, 400);
+  }
+  if (legIds.length > db.settings.maxMultipleLegs) {
+    return c.json({ ok: false, error: `Max ${db.settings.maxMultipleLegs} legs per parlay (set in Settings).` }, 400);
+  }
+  if (!(stake > 0)) {
+    return c.json({ ok: false, error: "Stake is required and must be > 0." }, 400);
+  }
+
+  // Resolve legs from the flagged-singles pool — football + tennis, so
+  // cross-sport parlays work too (sport = 'mixed').
+  const football = flagSlips(slipFixtures(db), db.predictions, db.odds, db.settings);
+  const tdb = await loadTennisDatabase(c.env.DB);
+  const tennis = flagSlips(tennisSlipFixtures(tdb), tdb.predictions, tdb.odds, tdb.settings);
+  const legs = [...football, ...tennis];
+  const byKey = new Map(legs.map((l) => [`${l.fixture.id}:${l.market}:${l.selection}`, l]));
+  const selected = legIds.map((k) => byKey.get(k)).filter((l): l is NonNullable<typeof l> => Boolean(l));
+  if (selected.length !== legIds.length) {
+    return c.json({ ok: false, error: "Some legs aren't flagged singles — every leg must clear the EV threshold on its own." }, 400);
+  }
+
+  // Correlation: same-match or same-kickoff-window legs are NOT independent.
+  const corr = checkLegIndependence(selected.map((l) => ({ fixture: l.fixture, market: l.market, selection: l.selection, probability: l.probability })));
+  if (!corr.independent) {
+    return c.json({ ok: false, error: `Correlated legs rejected: ${corr.warnings[0] ?? "legs are not independent."}` }, 400);
+  }
+
+  const sport = selected.every((l) => l.fixture.sport === "tennis")
+    ? "tennis"
+    : selected.every((l) => l.fixture.sport !== "tennis")
+      ? "football"
+      : "mixed";
+  const parlay: Parlay = {
+    id: `parlay-${Math.floor(Date.now() / 1000)}-${Math.floor(Math.random() * 1e6)}`,
+    ...buildParlay(selected, sport),
+    stake,
+    bankrollAtBet: db.settings.bankroll,
+    status: "pending",
+    placedAt: Math.floor(Date.now() / 1000),
+  };
+  await insertParlay(c.env.DB, parlay);
+  return c.json({ ok: true, parlay }, 201);
 });
 
 /* ---------------- seed (demo / local dev) ---------------- */

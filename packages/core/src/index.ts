@@ -4,6 +4,7 @@ export * from "./kelly";
 export * from "./ev";
 export * from "./correlation";
 export * from "./aggregates";
+export * from "./parlay";
 export * from "./backtest";
 export * from "./seed";
 export * from "./seed-tennis";

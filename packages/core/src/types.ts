@@ -150,6 +150,42 @@ export interface Settings {
    * CLV, CI not straddling zero). OFF hides the builder everywhere.
    */
   multiplesEnabled: boolean;
+  /**
+   * Max legs per parlay (default 3). Configurable, but the honest note stays:
+   * calibration error compounds with each leg, so longer parlays are worse
+   * than their advertised math, not better.
+   */
+  maxMultipleLegs: number;
+}
+
+export interface ParlayLeg {
+  fixtureId: string;
+  market: Market;
+  selection: Selection;
+  /** decimal odds logged for this leg */
+  odds: number;
+  /** model probability for this leg */
+  probability: number;
+  sport: "football" | "tennis";
+  /** display context (from the slip) */
+  homeTeam: string;
+  awayTeam: string;
+}
+
+export interface Parlay {
+  id: string;
+  sport: "football" | "tennis" | "mixed";
+  legs: ParlayLeg[];
+  /** product of leg odds */
+  combinedOdds: number;
+  /** product of leg probabilities (true compounded) */
+  combinedProbability: number;
+  stake: number;
+  bankrollAtBet: number;
+  status: BetStatus;
+  /** net P&L: stake×(combinedOdds−1) on a win, −stake on a loss */
+  outcomeAmount?: number;
+  placedAt: number;
 }
 
 /** A bet enriched with fixture + CLV context for UI tables. */
@@ -168,4 +204,5 @@ export interface Database {
   clv: ClvResult[];
   outcomes: Outcome[];
   settings: Settings;
+  parlayBets: Parlay[];
 }

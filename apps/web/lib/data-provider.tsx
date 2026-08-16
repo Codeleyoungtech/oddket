@@ -43,6 +43,8 @@ export interface DataContextValue {
   setSport: (s: Sport) => void;
   saveSettings: (s: Settings) => Promise<void>;
   logBet: (bet: Omit<Bet, "id" | "status" | "bankrollAtBet">) => Promise<void>;
+  /** Log a true parlay as ONE unit (all-or-nothing settlement). Cross-sport. */
+  logParlay: (p: { legIds: string[]; stake: number }) => Promise<void>;
   deleteBet: (id: string) => Promise<void>;
   recordOutcome: (fixtureId: string, homeScore: number, awayScore: number) => Promise<void>;
   /** Tennis result: winner is 'home' | 'away' (no draws in tennis). */
@@ -146,6 +148,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setTick((t) => t + 1);
   }, [db, mode, sport, sportApi]);
 
+  const logParlay = useCallback(async (p: { legIds: string[]; stake: number }) => {
+    try {
+      await api.logParlay(p);
+    } catch (err) {
+      // LIVE mode: surface the real error (gate/cap/correlation) — never
+      // pretend a rejected parlay was logged. Demo mode only: apply locally.
+      if (mode === "live") throw err;
+      const prev = db ?? (sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
+      setDb({
+        ...prev,
+        parlayBets: [
+          {
+            id: `parlay-${Date.now()}`,
+            sport: "mixed" as const,
+            legs: [],
+            combinedOdds: 0,
+            combinedProbability: 0,
+            stake: p.stake,
+            bankrollAtBet: prev.settings.bankroll,
+            status: "pending" as const,
+            placedAt: Math.floor(Date.now() / 1000),
+          },
+          ...prev.parlayBets,
+        ],
+      });
+    }
+    setTick((t) => t + 1);
+  }, [db, mode, sport]);
+
   const deleteBet = useCallback(async (id: string) => {
     try {
       await sportApi.deleteBet(id);
@@ -221,11 +252,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setSport,
       saveSettings,
       logBet,
+      logParlay,
       deleteBet,
       recordOutcome,
       recordTennisOutcome,
     }),
-    [mode, sport, workerError, db, views, refresh, saveSettings, logBet, deleteBet, recordOutcome, recordTennisOutcome],
+    [mode, sport, workerError, db, views, refresh, saveSettings, logBet, logParlay, deleteBet, recordOutcome, recordTennisOutcome],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

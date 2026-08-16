@@ -189,6 +189,8 @@ export function buildTennisSeedDatabase(): Database {
       leagues: TOURNAMENTS.map((t) => t.name),
       markets: ["h2h"],
       multiplesEnabled: false,
+      maxMultipleLegs: 3,
     },
+    parlayBets: [],
   };
 }

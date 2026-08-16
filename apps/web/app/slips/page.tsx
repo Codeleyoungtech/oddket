@@ -1,13 +1,21 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { buildMultiple, checkLegIndependence, legRefs, marketLabel, type SlipLeg } from "@oddket/core";
+import {
+  buildMultiple,
+  checkLegIndependence,
+  legRefs,
+  marketLabel,
+  suggestParlays,
+  type ParlaySuggestion,
+  type SlipLeg,
+} from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle } from "../../components/ui";
 import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
 
 export default function SlipsPage() {
-  const { slips, bets, db, logBet, refresh } = useData();
+  const { slips, bets, db, logBet, logParlay, refresh, sport } = useData();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [justLogged, setJustLogged] = useState<Set<string>>(new Set());
   // Legs currently being logged — the button shows a spinner and disables so
@@ -20,8 +28,12 @@ export default function SlipsPage() {
   // user log what they ACTUALLY staked on SportyBet instead of what the
   // model suggested. Keyed by legKey.
   const [stakeOverrides, setStakeOverrides] = useState<Record<string, string>>({});
-  // Shown when the 3-leg cap blocks a 4th selection.
+  // Shown when the leg cap blocks an extra selection.
   const [capNotice, setCapNotice] = useState<string | null>(null);
+  // True parlay logging (one unit, settles all-or-nothing).
+  const [loggingParlay, setLoggingParlay] = useState<string | null>(null);
+  const [parlayError, setParlayError] = useState<string | null>(null);
+  const [loggedParlays, setLoggedParlays] = useState<Set<string>>(new Set());
 
   const selectedLegs = useMemo(
     () => slips.filter((l) => selected.has(legKey(l))),
@@ -130,10 +142,11 @@ export default function SlipsPage() {
   if (!db) return <Loading />;
 
   // Gated behind Settings → Multiples. OFF = the builder is completely hidden;
-  // ON = opt-in selection with a hard 3-leg cap (calibration error compounds
-  // badly beyond 3 legs at longer combined odds — the longshot-bleed pattern).
+  // ON = opt-in selection with a configurable leg cap (Settings → max legs,
+  // default 3). Calibration error compounds badly beyond a few legs at longer
+  // combined odds — the longshot-bleed pattern.
   const multiplesOn = db.settings.multiplesEnabled === true;
-  const MAX_LEGS = 3;
+  const MAX_LEGS = Math.max(2, Math.min(db.settings.maxMultipleLegs ?? 3, 6));
 
   const toggle = (key: string) => {
     if (!multiplesOn) return; // selection is hidden when multiples are OFF
@@ -150,6 +163,41 @@ export default function SlipsPage() {
       }
       return next;
     });
+  };
+
+  /**
+   * Auto-suggest rule-compliant parlays (EV-ranked, independent legs only,
+   * within the Settings leg cap) from the flagged singles pool. Selection +
+   * logging stays MANUAL — this only surfaces candidate groupings.
+   */
+  const suggestions = useMemo(() => {
+    if (!multiplesOn) return [];
+    return suggestParlays(slips, db.settings, sport, 5);
+  }, [multiplesOn, slips, db, sport]);
+
+  /** Log a suggested parlay as ONE unit — settles all-or-nothing. */
+  const handleLogParlay = async (s: ParlaySuggestion) => {
+    const key = parlayKey(s);
+    if (loggedParlays.has(key)) return;
+    setParlayError(null);
+    setLoggingParlay(key);
+    try {
+      await logParlay({
+        legIds: s.legs.map((l) => legKey(l)),
+        stake: Math.max(MIN_STAKE, Math.round(s.stake)),
+      });
+      setLoggedParlays((prev) => new Set(prev).add(key));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        s.legs.forEach((l) => next.delete(legKey(l))); // clear consumed legs from the manual builder
+        return next;
+      });
+    } catch (err) {
+      setParlayError(err instanceof Error ? err.message : "Couldn't log the parlay — please try again.");
+    } finally {
+      setLoggingParlay(null);
+      refresh();
+    }
   };
 
   const multiple = selectedLegs.length >= 2 ? buildMultiple(selectedLegs, db.settings) : null;
@@ -390,12 +438,83 @@ export default function SlipsPage() {
                   must clear the single-bet EV threshold on its own.
                 </p>
               </div>
-            ) : selectedLegs.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Select <span className="font-semibold text-emerald-400">2+ singles</span> to combine. Singles are always the
-                default — a multiple is only worth it when the correlation is understood.
-              </p>
             ) : (
+              <div className="space-y-4">
+                {parlayError && (
+                  <div className="rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-300">
+                    ⚠ {parlayError}
+                  </div>
+                )}
+
+                {/* Auto-suggest: EV-ranked, rule-compliant groupings. Selection
+                    stays manual — these are candidates, not auto-bets. */}
+                {suggestions.length > 0 && (
+                  <div>
+                    <p className="label mb-2">
+                      Suggested parlays <span className="font-normal text-slate-600">· independent legs only, ranked by EV</span>
+                    </p>
+                    <ul className="space-y-2">
+                      {suggestions.map((s) => {
+                        const key = parlayKey(s);
+                        const done = loggedParlays.has(key);
+                        return (
+                          <li key={key} className="rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
+                            <div className="mb-2 space-y-1">
+                              {s.legs.map((l) => (
+                                <p key={legKey(l)} className="truncate text-xs text-slate-400">
+                                  <span className="text-slate-300">{l.fixture.homeTeam} vs {l.fixture.awayTeam}</span> —{" "}
+                                  {marketLabel(l.market, l.selection)} @ <span className="num text-slate-300">{fmtOdds(l.odds)}</span>
+                                </p>
+                              ))}
+                            </div>
+                            <div className="mb-2 grid grid-cols-3 gap-1 text-[11px]">
+                              <div>
+                                <p className="text-slate-600">Combined odds</p>
+                                <p className="num font-semibold text-slate-200">{s.combinedOdds.toFixed(2)}x</p>
+                              </div>
+                              <div>
+                                <p className="text-slate-600">True prob</p>
+                                <p className="num font-semibold text-sky-300">{fmtPct(s.combinedProbability)}</p>
+                              </div>
+                              <div>
+                                <p className="text-slate-600">EV</p>
+                                <p className={`num font-semibold ${edgeClass(s.ev)}`}>{fmtSignedPct(s.ev)}</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => void handleLogParlay(s)}
+                              disabled={done || loggingParlay === key}
+                              className={`w-full rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
+                                done
+                                  ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                                  : "border-emerald-400/40 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
+                              }`}
+                            >
+                              {loggingParlay === key ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-300/40 border-t-emerald-300" />
+                                  Logging…
+                                </span>
+                              ) : done ? (
+                                "✓ Parlay logged"
+                              ) : (
+                                `Log parlay · ₦${fmtMoney(Math.max(MIN_STAKE, Math.round(s.stake)), 0)}`
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Manual builder */}
+                {selectedLegs.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    Select <span className="font-semibold text-emerald-400">2+ singles</span> to combine manually — or log a
+                    suggested parlay above. Singles are always the default.
+                  </p>
+                ) : (
               <div className="space-y-4">
                 {capNotice && (
                   <div className="rounded-lg border border-amber-400/30 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200/80">
@@ -487,6 +606,8 @@ export default function SlipsPage() {
                   Output is a text slip for manual entry. No bets are placed by OddKet.
                 </p>
               </div>
+                )}
+              </div>
             )}
           </Card>
         </div>
@@ -497,4 +618,9 @@ export default function SlipsPage() {
 
 function legKey(l: SlipLeg): string {
   return `${l.fixture.id}:${l.market}:${l.selection}`;
+}
+
+/** Stable id for a suggestion = sorted leg keys, so the same combo dedupes. */
+function parlayKey(s: ParlaySuggestion): string {
+  return s.legs.map(legKey).sort().join("+");
 }

@@ -279,6 +279,25 @@ export default function SettingsPage() {
             ? "ON — the slip builder will offer multiples. Remember: variance is higher, not lower."
             : "OFF (default) — the slip builder shows singles only until you prove the edge."}
         </p>
+        <div className="mt-4 flex items-center justify-between gap-4 border-t border-ink-700/40 pt-4">
+          <div>
+            <p className="label mb-1 block">Max legs per multiple ({form.maxMultipleLegs})</p>
+            <p className="max-w-md text-xs leading-relaxed text-slate-500">
+              Default 3. More legs multiply the payout when it hits — but they also multiply variance and shrink the hit
+              rate, and model calibration error compounds with each leg. Raising this rarely helps ROI; it mostly adds
+              longshot risk.
+            </p>
+          </div>
+          <input
+            className="input w-24"
+            type="range"
+            min={2}
+            max={6}
+            step={1}
+            value={form.maxMultipleLegs}
+            onChange={(e) => update({ maxMultipleLegs: Number(e.target.value) })}
+          />
+        </div>
       </Card>
 
       <Card className="card-pad">

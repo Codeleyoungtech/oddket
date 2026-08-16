@@ -42,8 +42,18 @@ function makeClient(prefix: string) {
 
 export type SportApi = ReturnType<typeof makeClient>;
 
+/** Parlay payload: leg ids ("fixtureId:market:selection") + total stake. */
+export interface ParlayInput {
+  legIds: string[];
+  stake: number;
+}
+
 export const api = {
   health: () => req<Health>("/api/health"),
   football: makeClient("/api"),
   tennis: makeClient("/api/tennis"),
+  /** True parlays are cross-sport — one shared endpoint, not sport-scoped. */
+  logParlay: (p: ParlayInput) =>
+    req<{ ok: boolean; parlay: unknown }>("/api/parlays", { method: "POST", body: JSON.stringify(p) }),
+  parlays: () => req<unknown[]>("/api/parlays"),
 };

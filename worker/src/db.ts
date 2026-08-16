@@ -5,6 +5,8 @@ import type {
   Fixture,
   OddsSnapshot,
   Outcome,
+  Parlay,
+  ParlayLeg,
   Prediction,
   Settings,
 } from "@oddket/core";
@@ -181,7 +183,7 @@ function toOutcome(r: OutcomeRow): Outcome {
 /* ---------------- queries ---------------- */
 
 export async function loadDatabase(db: D1Database): Promise<Database> {
-  const [fixtures, odds, predictions, bets, clv, outcomes, settingsRows] = await Promise.all([
+  const [fixtures, odds, predictions, bets, clv, outcomes, settingsRows, parlayRows] = await Promise.all([
     db.prepare("SELECT * FROM fixtures").all<FixtureRow>(),
     db.prepare("SELECT * FROM odds_snapshots").all<OddsRow>(),
     db.prepare("SELECT * FROM predictions").all<PredictionRow>(),
@@ -189,6 +191,7 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     db.prepare("SELECT * FROM clv_results").all<ClvRow>(),
     db.prepare("SELECT * FROM outcomes").all<OutcomeRow>(),
     db.prepare("SELECT * FROM settings WHERE id = 1").first<SettingsRow>(),
+    db.prepare("SELECT * FROM parlay_bets").all<ParlayRow>(),
   ]);
 
   const settings = settingsRows ? rowToSettings(settingsRows) : defaultSettings();
@@ -201,6 +204,7 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     clv: (clv.results ?? []).map(toClv),
     outcomes: (outcomes.results ?? []).map(toOutcome),
     settings,
+    parlayBets: (parlayRows.results ?? []).map(toParlay),
   };
 }
 
@@ -215,6 +219,7 @@ function defaultSettings(): Settings {
     leagues: [],
     markets: ["h2h", "totals"],
     multiplesEnabled: false,
+    maxMultipleLegs: 3,
   };
 }
 
@@ -228,6 +233,7 @@ interface SettingsRow {
   leagues: string;
   markets: string;
   multiples_enabled: number | null;
+  max_multiple_legs: number | null;
 }
 
 function rowToSettings(r: SettingsRow): Settings {
@@ -240,8 +246,10 @@ function rowToSettings(r: SettingsRow): Settings {
     defaultStakeCapPct: r.default_stake_cap_pct,
     leagues: safeParseJson(r.leagues, []),
     markets: safeParseJson(r.markets, ["h2h", "totals"]),
-    // Column added in 0002 — null-safe so pre-migration rows read as OFF.
+    // Columns added in 0002/0003 — null-safe so pre-migration rows read as
+    // OFF (multiples gated) with the default 3-leg cap.
     multiplesEnabled: r.multiples_enabled === 1,
+    maxMultipleLegs: r.max_multiple_legs ?? 3,
   };
 }
 
@@ -264,7 +272,7 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       `UPDATE settings SET
         bankroll = ?1, kelly_fraction = ?2, edge_threshold = ?3,
         daily_stop_loss = ?4, weekly_stop_loss = ?5, default_stake_cap_pct = ?6,
-        leagues = ?7, markets = ?8, multiples_enabled = ?9
+        leagues = ?7, markets = ?8, multiples_enabled = ?9, max_multiple_legs = ?10
        WHERE id = 1`,
     )
     .bind(
@@ -277,6 +285,7 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       JSON.stringify(s.leagues),
       JSON.stringify(s.markets),
       s.multiplesEnabled ? 1 : 0,
+      s.maxMultipleLegs ?? 3,
     )
     .run();
 }
@@ -312,13 +321,14 @@ function toTennisFixture(r: TennisFixtureRow): Fixture {
  * so the SHARED selectionWon / calibration / aggregate code works unchanged.
  */
 export async function loadTennisDatabase(db: D1Database): Promise<Database> {
-  const [fixtures, odds, predictions, bets, clv, settingsRows] = await Promise.all([
+  const [fixtures, odds, predictions, bets, clv, settingsRows, parlayRows] = await Promise.all([
     db.prepare("SELECT * FROM tennis_matches").all<TennisFixtureRow>(),
     db.prepare("SELECT * FROM tennis_odds_snapshots").all<OddsRow>(),
     db.prepare("SELECT * FROM tennis_predictions").all<PredictionRow>(),
     db.prepare("SELECT * FROM tennis_bets").all<BetRow>(),
     db.prepare("SELECT * FROM tennis_clv_results").all<ClvRow>(),
     db.prepare("SELECT * FROM settings WHERE id = 1").first<SettingsRow>(),
+    db.prepare("SELECT * FROM parlay_bets").all<ParlayRow>(),
   ]);
 
   const settings = settingsRows ? rowToSettings(settingsRows) : defaultSettings();
@@ -348,6 +358,7 @@ export async function loadTennisDatabase(db: D1Database): Promise<Database> {
     clv: (clv.results ?? []).map(toClv),
     outcomes,
     settings,
+    parlayBets: (parlayRows.results ?? []).map(toParlay),
   };
 }
 
@@ -546,6 +557,99 @@ export async function settlePendingBets(db: D1Database): Promise<number> {
     await db
       .prepare("UPDATE bets SET status = ?1, outcome_amount = ?2 WHERE id = ?3")
       .bind(won ? "won" : "lost", amount, bet.id)
+      .run();
+    settled++;
+  }
+  return settled;
+}
+
+/* ---------------- parlays (true parlay settlement) ---------------- */
+
+interface ParlayRow {
+  id: string;
+  sport: string;
+  legs: string;
+  combined_odds: number;
+  combined_probability: number;
+  stake: number;
+  bankroll_at_bet: number;
+  status: string;
+  outcome_amount: number | null;
+  placed_at: number;
+}
+
+function toParlay(r: ParlayRow): Parlay {
+  return {
+    id: r.id,
+    sport: r.sport as Parlay["sport"],
+    legs: safeParseJson<ParlayLeg[]>(r.legs, []),
+    combinedOdds: r.combined_odds,
+    combinedProbability: r.combined_probability,
+    stake: r.stake,
+    bankrollAtBet: r.bankroll_at_bet,
+    status: r.status as Parlay["status"],
+    outcomeAmount: r.outcome_amount ?? undefined,
+    placedAt: r.placed_at,
+  };
+}
+
+export async function loadParlays(db: D1Database): Promise<Parlay[]> {
+  const rows = await db.prepare("SELECT * FROM parlay_bets").all<ParlayRow>();
+  return (rows.results ?? []).map(toParlay);
+}
+
+export async function insertParlay(db: D1Database, p: Parlay): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO parlay_bets (id, sport, legs, combined_odds, combined_probability, stake, bankroll_at_bet, status, outcome_amount, placed_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+    )
+    .bind(
+      p.id,
+      p.sport,
+      JSON.stringify(p.legs),
+      p.combinedOdds,
+      p.combinedProbability,
+      p.stake,
+      p.bankrollAtBet,
+      p.status,
+      p.outcomeAmount ?? null,
+      p.placedAt,
+    )
+    .run();
+}
+
+/**
+ * Settle pending parlays — ALL-OR-NOTHING: every leg must win for the parlay
+ * to win (payout at the combined multiplier); any leg losing kills the whole
+ * slip (−stake). Skips parlays with legs whose fixtures are still pending.
+ * Returns # settled.
+ */
+export async function settleParlayBets(db: D1Database): Promise<number> {
+  const rows = await db.prepare("SELECT * FROM parlay_bets WHERE status = 'pending'").all<ParlayRow>();
+  const pending = (rows.results ?? []).map(toParlay);
+  if (pending.length === 0) return 0;
+
+  const { resolveParlay } = await import("@oddket/core");
+
+  // Preload outcomes + tennis winners so resolution is one pass. Rows must
+  // be mapped to camelCase (toOutcome) — resolveParlay reads homeScore/
+  // awayScore, and raw rows only have home_score/away_score (same trap as
+  // the old CLV bug: bet.fixtureId on raw rows was always undefined).
+  const outcomes = (await db.prepare("SELECT * FROM outcomes").all<OutcomeRow>()).results ?? [];
+  const outcomeByFixture = new Map(outcomes.map((o) => [o.fixture_id, toOutcome(o)]));
+  const tennis = (await db.prepare("SELECT id, winner FROM tennis_matches WHERE winner IS NOT NULL").all<{ id: string; winner: string }>()).results ?? [];
+  const tennisWinner = new Map<string, "home" | "away">(
+    tennis.filter((t) => t.winner === "home" || t.winner === "away").map((t) => [t.id, t.winner as "home" | "away"]),
+  );
+
+  let settled = 0;
+  for (const parlay of pending) {
+    const result = resolveParlay(parlay, outcomeByFixture, tennisWinner);
+    if (!result) continue; // some leg still pending
+    await db
+      .prepare("UPDATE parlay_bets SET status = ?1, outcome_amount = ?2 WHERE id = ?3")
+      .bind(result.status, result.amount, parlay.id)
       .run();
     settled++;
   }

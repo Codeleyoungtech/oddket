@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -177,6 +177,95 @@ console.log("\n[6] bets + settlement");
 
   const bad = await api("POST", "/api/outcomes", [{ fixtureId: fixture.id }]);
   check("bad outcome rejected (400)", bad.status === 400);
+}
+
+console.log("\n[6b] parlays (true all-or-nothing units)");
+{
+  // Enable multiples + a configurable leg cap for the parlay endpoint.
+  await api("PUT", "/api/settings", { multiplesEnabled: true, maxMultipleLegs: 3 });
+
+  // Pick 3 legs from 3 DIFFERENT scheduled fixtures (independent by construction).
+  const slips = (await api("GET", "/api/slips")).json;
+  const distinct = [];
+  const seen = new Set();
+  for (const l of slips) {
+    if (seen.has(l.fixture.id)) continue;
+    if (l.fixture.status !== "scheduled") continue;
+    seen.add(l.fixture.id);
+    distinct.push(l);
+    if (distinct.length === 3) break;
+  }
+  check("found 3 distinct fixtures for parlay test", distinct.length === 3, `got ${distinct.length}`);
+  const [l1, l2, l3] = distinct;
+  const key = (l) => `${l.fixture.id}:${l.market}:${l.selection}`;
+
+  // Gate: parlay endpoint 403 while multiples OFF.
+  await api("PUT", "/api/settings", { multiplesEnabled: false });
+  const gated = await api("POST", "/api/parlays", { legIds: [key(l1), key(l2)], stake: 50 });
+  check("parlay gated by default (403)", gated.status === 403, JSON.stringify(gated.json));
+  await api("PUT", "/api/settings", { multiplesEnabled: true, maxMultipleLegs: 3 });
+
+  // Happy path: 2-leg parlay logs as ONE unit.
+  const placed = await api("POST", "/api/parlays", { legIds: [key(l1), key(l2)], stake: 50 });
+  check("parlay placed (201)", placed.status === 201 && placed.json?.ok === true, JSON.stringify(placed.json));
+  const p = placed.json?.parlay;
+  check("combined odds = product of legs", Math.abs((p?.combinedOdds ?? 0) - l1.odds * l2.odds) < 0.001, `combined=${p?.combinedOdds}`);
+  check("parlay pending", p?.status === "pending");
+  check("parlay has 2 legs", p?.legs?.length === 2);
+  const lostParlayId = p?.id;
+
+  // Cap: 4 legs with maxMultipleLegs=3 → 400.
+  const four = await api("POST", "/api/parlays", { legIds: [key(l1), key(l2), key(l3), key(distinct[0])], stake: 50 });
+  check("4-leg parlay rejected (400)", four.status === 400, JSON.stringify(four.json));
+
+  // Correlation: two legs on the SAME fixture are not independent → 400.
+  const sameFixture = await api("POST", "/api/parlays", { legIds: [key(l1), `${l1.fixture.id}:totals:over`], stake: 50 });
+  check("same-fixture parlay rejected (400)", sameFixture.status === 400, JSON.stringify(sameFixture.json));
+
+  // Settlement — ALL-OR-NOTHING: make l1 win and l2 lose → whole parlay lost.
+  const losingScore = (l) => {
+    if (l.selection === "home") return { homeScore: 0, awayScore: 1 };
+    if (l.selection === "away") return { homeScore: 1, awayScore: 0 };
+    if (l.selection === "draw") return { homeScore: 1, awayScore: 1 };
+    if (l.selection === "under") return { homeScore: 0, awayScore: 1 };
+    return { homeScore: 2, awayScore: 2 }; // over loses
+  };
+  const winningScore = (l) => {
+    if (l.selection === "home") return { homeScore: 2, awayScore: 0 };
+    if (l.selection === "away") return { homeScore: 0, awayScore: 2 };
+    if (l.selection === "draw") return { homeScore: 1, awayScore: 1 };
+    if (l.selection === "under") return { homeScore: 1, awayScore: 0 };
+    return { homeScore: 3, awayScore: 0 }; // over wins
+  };
+  const s1 = await api("POST", "/api/outcomes", [
+    { fixtureId: l1.fixture.id, ...winningScore(l1) },
+    { fixtureId: l2.fixture.id, ...losingScore(l2) },
+  ]);
+  check("outcomes stored", s1.status === 200 && s1.json?.outcomesStored === 2, JSON.stringify(s1.json));
+
+  const after1 = await api("GET", "/api/parlays");
+  const settledLost = after1.json.find((x) => x.id === lostParlayId);
+  check("parlay lost when any leg loses", settledLost?.status === "lost", JSON.stringify(settledLost));
+  check("loss = −stake", settledLost?.outcomeAmount === -50, `amount=${settledLost?.outcomeAmount}`);
+
+  // Winning parlay: both legs win → payout at the combined multiplier.
+  const placed2 = await api("POST", "/api/parlays", { legIds: [key(l1), key(l3)], stake: 100 });
+  check("second parlay placed (201)", placed2.status === 201, JSON.stringify(placed2.json));
+  const p2 = placed2.json?.parlay;
+  const wonParlayId = p2?.id;
+  const s2 = await api("POST", "/api/outcomes", [
+    { fixtureId: l1.fixture.id, ...winningScore(l1) },
+    { fixtureId: l3.fixture.id, ...winningScore(l3) },
+  ]);
+  check("winning outcomes stored", s2.status === 200 && s2.json?.outcomesStored === 2, JSON.stringify(s2.json));
+  const after2 = await api("GET", "/api/parlays");
+  const settledWon = after2.json.find((x) => x.id === wonParlayId);
+  check("parlay won when all legs win", settledWon?.status === "won", JSON.stringify(settledWon));
+  const expectPayout = Math.round(100 * (p2.combinedOdds - 1) * 100) / 100;
+  check("win payout at combined multiplier", Math.abs((settledWon?.outcomeAmount ?? 0) - expectPayout) < 0.001, `amount=${settledWon?.outcomeAmount} expected=${expectPayout}`);
+
+  // Restore the gate for the rest of the suite.
+  await api("PUT", "/api/settings", { multiplesEnabled: false, maxMultipleLegs: 3 });
 }
 
 console.log("\n[7] CLV");

@@ -209,6 +209,8 @@ export function buildSeedDatabase(): Database {
       leagues: LEAGUES.map((l) => l.name),
       markets: ["h2h", "totals"],
       multiplesEnabled: false,
+      maxMultipleLegs: 3,
     },
+    parlayBets: [],
   };
 }

@@ -20,6 +20,8 @@ export default function SlipsPage() {
   // user log what they ACTUALLY staked on SportyBet instead of what the
   // model suggested. Keyed by legKey.
   const [stakeOverrides, setStakeOverrides] = useState<Record<string, string>>({});
+  // Shown when the 3-leg cap blocks a 4th selection.
+  const [capNotice, setCapNotice] = useState<string | null>(null);
 
   const selectedLegs = useMemo(
     () => slips.filter((l) => selected.has(legKey(l))),
@@ -127,11 +129,25 @@ export default function SlipsPage() {
 
   if (!db) return <Loading />;
 
+  // Gated behind Settings → Multiples. OFF = the builder is completely hidden;
+  // ON = opt-in selection with a hard 3-leg cap (calibration error compounds
+  // badly beyond 3 legs at longer combined odds — the longshot-bleed pattern).
+  const multiplesOn = db.settings.multiplesEnabled === true;
+  const MAX_LEGS = 3;
+
   const toggle = (key: string) => {
+    if (!multiplesOn) return; // selection is hidden when multiples are OFF
+    setCapNotice(null);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(key)) {
+        next.delete(key);
+      } else if (next.size >= MAX_LEGS) {
+        setCapNotice(`Max ${MAX_LEGS} legs per multiple — pick ${MAX_LEGS} and deselect one to swap.`);
+        return prev;
+      } else {
+        next.add(key);
+      }
       return next;
     });
   };
@@ -263,13 +279,15 @@ export default function SlipsPage() {
                               checked ? "bg-emerald-400/[0.05]" : "hover:bg-ink-800/40"
                             }`}
                           >
-                            <span
-                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-bold transition-colors ${
-                                checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
-                              }`}
-                            >
-                              ✓
-                            </span>
+                            {multiplesOn && (
+                              <span
+                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-bold transition-colors ${
+                                  checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
+                                }`}
+                              >
+                                ✓
+                              </span>
+                            )}
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium text-slate-200">
                                 {marketLabel(leg.market, leg.selection)}
@@ -357,15 +375,37 @@ export default function SlipsPage() {
         <div className="lg:col-span-1">
           <SectionTitle sub="Opt-in only — the true math always shown">Multiple builder</SectionTitle>
           <Card className="card-pad lg:sticky lg:top-20">
-            {selectedLegs.length === 0 ? (
+            {!multiplesOn ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-500">
+                  Multiples are <span className="font-semibold text-amber-300">disabled</span> — the singles must prove
+                  their edge first (100+ logged bets, positive CLV vs. the closing line, CI not straddling zero).
+                </p>
+                <p className="text-xs text-slate-600">
+                  When the validation checklist is cleared, flip it on in{" "}
+                  <span className="font-semibold text-slate-400">Settings → Multiples</span> and the builder appears here.
+                </p>
+                <p className="rounded-lg border border-amber-400/30 bg-amber-400/[0.06] px-3 py-2 text-[11px] leading-relaxed text-amber-200/80">
+                  Multiples are not lower-risk than singles — they raise variance by construction. Max 3 legs, every leg
+                  must clear the single-bet EV threshold on its own.
+                </p>
+              </div>
+            ) : selectedLegs.length === 0 ? (
               <p className="text-sm text-slate-500">
                 Select <span className="font-semibold text-emerald-400">2+ singles</span> to combine. Singles are always the
                 default — a multiple is only worth it when the correlation is understood.
               </p>
             ) : (
               <div className="space-y-4">
+                {capNotice && (
+                  <div className="rounded-lg border border-amber-400/30 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200/80">
+                    ⚠ {capNotice}
+                  </div>
+                )}
                 <div>
-                  <p className="label mb-2">Selected legs ({selectedLegs.length})</p>
+                  <p className="label mb-2">
+                    Selected legs ({selectedLegs.length}/{MAX_LEGS})
+                  </p>
                   <ul className="space-y-1.5">
                     {selectedLegs.map((l) => (
                       <li key={legKey(l)} className="text-xs">

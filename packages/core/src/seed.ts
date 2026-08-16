@@ -208,6 +208,7 @@ export function buildSeedDatabase(): Database {
       defaultStakeCapPct: 0.05,
       leagues: LEAGUES.map((l) => l.name),
       markets: ["h2h", "totals"],
+      multiplesEnabled: false,
     },
   };
 }

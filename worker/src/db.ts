@@ -214,6 +214,7 @@ function defaultSettings(): Settings {
     defaultStakeCapPct: 0.05,
     leagues: [],
     markets: ["h2h", "totals"],
+    multiplesEnabled: false,
   };
 }
 
@@ -226,6 +227,7 @@ interface SettingsRow {
   default_stake_cap_pct: number;
   leagues: string;
   markets: string;
+  multiples_enabled: number | null;
 }
 
 function rowToSettings(r: SettingsRow): Settings {
@@ -238,6 +240,8 @@ function rowToSettings(r: SettingsRow): Settings {
     defaultStakeCapPct: r.default_stake_cap_pct,
     leagues: safeParseJson(r.leagues, []),
     markets: safeParseJson(r.markets, ["h2h", "totals"]),
+    // Column added in 0002 — null-safe so pre-migration rows read as OFF.
+    multiplesEnabled: r.multiples_enabled === 1,
   };
 }
 
@@ -260,7 +264,7 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       `UPDATE settings SET
         bankroll = ?1, kelly_fraction = ?2, edge_threshold = ?3,
         daily_stop_loss = ?4, weekly_stop_loss = ?5, default_stake_cap_pct = ?6,
-        leagues = ?7, markets = ?8
+        leagues = ?7, markets = ?8, multiples_enabled = ?9
        WHERE id = 1`,
     )
     .bind(
@@ -272,6 +276,7 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       s.defaultStakeCapPct,
       JSON.stringify(s.leagues),
       JSON.stringify(s.markets),
+      s.multiplesEnabled ? 1 : 0,
     )
     .run();
 }

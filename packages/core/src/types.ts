@@ -144,6 +144,12 @@ export interface Settings {
   defaultStakeCapPct: number;
   leagues: string[];
   markets: Market[];
+  /**
+   * Gate for the multiple (parlay) builder. Defaults OFF — multiples only go
+   * live after a sport clears the validation checklist (100+ bets, positive
+   * CLV, CI not straddling zero). OFF hides the builder everywhere.
+   */
+  multiplesEnabled: boolean;
 }
 
 /** A bet enriched with fixture + CLV context for UI tables. */

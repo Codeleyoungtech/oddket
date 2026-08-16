@@ -188,6 +188,7 @@ export function buildTennisSeedDatabase(): Database {
       defaultStakeCapPct: 0.05,
       leagues: TOURNAMENTS.map((t) => t.name),
       markets: ["h2h"],
+      multiplesEnabled: false,
     },
   };
 }

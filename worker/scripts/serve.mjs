@@ -21,7 +21,7 @@ import { D1Adapter } from "../test/d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
-const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql"];
 const BUNDLE = join(root, "dist", "worker.mjs");
 const DB_DIR = join(root, ".local");
 const DB_FILE = join(DB_DIR, "oddket.db");

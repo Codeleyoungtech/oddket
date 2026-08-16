@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -107,17 +107,31 @@ console.log("\n[4] fixtures / predictions");
   check("predictions list", p.status === 200 && Array.isArray(p.json) && p.json.length > 0);
 }
 
-console.log("\n[5] slips + multiple");
+console.log("\n[5] slips + multiple (gated)");
 {
   const s = await api("GET", "/api/slips");
   check("slips list", s.status === 200 && Array.isArray(s.json) && s.json.length > 0);
   const legs = s.json;
-  const key = `${legs[0].fixture.id}:${legs[0].market}:${legs[0].selection}`;
-  const m = await api("POST", "/api/slips/multiple", { legIds: [key, legs[1] && `${legs[1].fixture.id}:${legs[1].market}:${legs[1].selection}`] });
-  check("multiple built", m.status === 200 && m.json?.ok === true && m.json?.multiple, JSON.stringify(m.json));
+  const keys = legs.slice(0, 4).map((l) => `${l.fixture.id}:${l.market}:${l.selection}`);
+
+  // Gate: multiples default OFF → 403 until enabled in Settings.
+  const gated = await api("POST", "/api/slips/multiple", { legIds: keys.slice(0, 2) });
+  check("multiple gated by default (403)", gated.status === 403, JSON.stringify(gated.json));
+
+  // Enable multiples via Settings, then the builder works.
+  await api("PUT", "/api/settings", { multiplesEnabled: true });
+  const m = await api("POST", "/api/slips/multiple", { legIds: keys.slice(0, 2) });
+  check("multiple built after enable", m.status === 200 && m.json?.ok === true && m.json?.multiple, JSON.stringify(m.json));
   check("multiple advertisedOdds>1", (m.json?.multiple?.advertisedOdds ?? 0) > 1);
+
+  // Hard 3-leg cap.
+  const four = await api("POST", "/api/slips/multiple", { legIds: keys.slice(0, 4) });
+  check("4-leg multiple rejected (400)", four.status === 400, JSON.stringify(four.json));
+
+  // Back off for the rest of the suite.
+  await api("PUT", "/api/settings", { multiplesEnabled: false });
   const empty = await api("POST", "/api/slips/multiple", { legIds: ["nope:no:way"] });
-  check("invalid legs rejected (400)", empty.status === 400);
+  check("invalid legs rejected (403/400)", empty.status === 400 || empty.status === 403);
 }
 
 console.log("\n[6] bets + settlement");

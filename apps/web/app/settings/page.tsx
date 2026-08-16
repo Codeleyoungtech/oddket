@@ -246,6 +246,43 @@ export default function SettingsPage() {
 
       <Card className="card-pad">
         <CardHeader
+          title="Multiples (parlays)"
+          subtitle="The multiple builder exists in code but stays OFF until the singles have proven their edge. This is the gate."
+        />
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm">
+            <p className="font-medium text-slate-200">Enable multiple builder</p>
+            <p className="mt-1 max-w-lg text-xs leading-relaxed text-slate-500">
+              Multiples are <span className="font-semibold text-amber-300">not</span> lower-risk than singles — they raise
+              variance by construction. Flip this on only after a sport has cleared the validation checklist: 100+ logged
+              bets, positive real CLV vs. closing line, and the 95% CI not straddling zero. Max 3 legs, and every leg must
+              clear the single-bet EV threshold on its own.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={form.multiplesEnabled}
+            onClick={() => update({ multiplesEnabled: !form.multiplesEnabled })}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${
+              form.multiplesEnabled ? "bg-emerald-400" : "bg-ink-600/60"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-6 w-6 rounded-full bg-slate-100 transition-transform ${
+                form.multiplesEnabled ? "translate-x-[22px]" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          {form.multiplesEnabled
+            ? "ON — the slip builder will offer multiples. Remember: variance is higher, not lower."
+            : "OFF (default) — the slip builder shows singles only until you prove the edge."}
+        </p>
+      </Card>
+
+      <Card className="card-pad">
+        <CardHeader
           title="Markets in play"
           subtitle="Which markets the EV engine scans. More markets = more API budget on live pulls."
         />

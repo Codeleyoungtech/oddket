@@ -191,14 +191,22 @@ app.get("/api/slips", async (c) => {
 
 /** Build a multiple from selected leg ids ("fixtureId:market:selection"). */
 app.post("/api/slips/multiple", async (c) => {
+  const db = await loadDatabase(c.env.DB);
+  // Gated: the multiple builder stays OFF until the validation checklist is
+  // cleared and the flag is flipped in Settings. OFF → 403, not a silent no-op.
+  if (!db.settings.multiplesEnabled) {
+    return c.json({ ok: false, error: "Multiples are disabled in Settings." }, 403);
+  }
   const body = await c.req.json().catch(() => ({}));
   const legIds: string[] = body.legIds ?? [];
-  const db = await loadDatabase(c.env.DB);
   const legs = flagSlips(slipFixtures(db), db.predictions, db.odds, db.settings);
   const byKey = new Map(legs.map((l) => [`${l.fixture.id}:${l.market}:${l.selection}`, l]));
   const selected = legIds.map((k) => byKey.get(k)).filter((l): l is NonNullable<typeof l> => Boolean(l));
   if (selected.length === 0) {
     return c.json({ ok: false, error: "No valid legs selected." }, 400);
+  }
+  if (selected.length > 3) {
+    return c.json({ ok: false, error: "Max 3 legs per multiple — calibration error compounds badly beyond that." }, 400);
   }
   const multiple = buildMultiple(selected, db.settings);
   return c.json({ ok: true, legs: selected, multiple });
@@ -312,6 +320,7 @@ app.put("/api/settings", async (c) => {
     defaultStakeCapPct: typeof body.defaultStakeCapPct === "number" ? body.defaultStakeCapPct : current.defaultStakeCapPct,
     leagues: Array.isArray(body.leagues) ? body.leagues : current.leagues,
     markets: Array.isArray(body.markets) ? body.markets : current.markets,
+    multiplesEnabled: typeof body.multiplesEnabled === "boolean" ? body.multiplesEnabled : current.multiplesEnabled,
   };
   await putSettings(c.env.DB, next);
   return c.json({ ok: true, settings: next });

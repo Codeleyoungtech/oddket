@@ -41,10 +41,11 @@ export async function ingestTennisOdds(env: Env): Promise<TennisIngestResult> {
     .map((name) => TENNIS_SPORTS[name])
     .filter((k): k is string => Boolean(k));
 
-  // Explicit env override (TENNIS_SPORTS=key1,key2) beats settings; otherwise
-  // all ATP main-tour keys are tried (empty = out of season, safe).
+  // Settings (UI toggles) take precedence; env TENNIS_SPORTS=key1,key2 is a
+  // deploy-level fallback; otherwise all ATP main-tour keys are tried
+  // (empty = out of season, safe, costs 0 credits).
   const envKeys = (env.TENNIS_SPORTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const sportKeys = envKeys.length > 0 ? envKeys : selected.length > 0 ? selected : Object.values(TENNIS_SPORTS);
+  const sportKeys = selected.length > 0 ? selected : envKeys.length > 0 ? envKeys : Object.values(TENNIS_SPORTS);
 
   const { events, activeSports } = await fetchTennisOdds(apiKey, sportKeys, {
     regions: env.ODDS_REGIONS ?? "eu",

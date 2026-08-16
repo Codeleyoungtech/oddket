@@ -238,12 +238,13 @@ export default function SlipsPage() {
                 const first = legs[0]!;
                 return (
                   <div key={fixtureId} className="card overflow-hidden">
-                    <div className="flex items-center justify-between gap-3 border-b border-ink-700/40 bg-ink-800/30 px-4 py-2.5">
-                      <p className="truncate text-sm font-semibold text-slate-100">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-700/40 bg-ink-800/30 px-4 py-2.5">
+                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
                         {first.fixture.homeTeam} <span className="text-slate-500">vs</span> {first.fixture.awayTeam}
                       </p>
-                      <p className="shrink-0 text-xs text-slate-500">
-                        {fmtDate(first.fixture.commenceTime)} · {first.fixture.league}
+                      <p className="shrink-0 text-[11px] text-slate-500 sm:text-xs">
+                        {fmtDate(first.fixture.commenceTime)}
+                        <span className="hidden sm:inline"> · {first.fixture.league}</span>
                       </p>
                     </div>
                     <div className="divide-y divide-ink-700/30">

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import type { Settings } from "@oddket/core";
+import { TENNIS_SPORTS, type Settings } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Badge, Card, CardHeader, Loading, SectionTitle } from "../../components/ui";
 import { fmtMoney, fmtPct } from "../../lib/format";
@@ -20,6 +20,15 @@ const LEAGUE_OPTIONS = [
   { value: "Bundesliga", label: "Bundesliga" },
   { value: "Serie A", label: "Serie A" },
 ] as const;
+
+// Tennis tournaments come from the same TENNIS_SPORTS map the worker ingest
+// uses. Toggling these writes tournament names into the same `leagues` array
+// as the football leagues — the two maps (LEAGUE_SPORTS / TENNIS_SPORTS) are
+// disjoint, so they coexist without collision.
+const TENNIS_OPTIONS = Object.entries(TENNIS_SPORTS).map(([name]) => ({
+  value: name,
+  label: name,
+}));
 
 export default function SettingsPage() {
   const { db, saveSettings, mode } = useData();
@@ -48,6 +57,16 @@ export default function SettingsPage() {
   };
 
   const toggleLeague = (name: (typeof LEAGUE_OPTIONS)[number]["value"]) => {
+    setForm((f) => {
+      if (!f) return f;
+      const has = f.leagues.includes(name);
+      const leagues = has ? f.leagues.filter((x) => x !== name) : [...f.leagues, name];
+      return { ...f, leagues };
+    });
+    setSaved(false);
+  };
+
+  const toggleTennis = (name: string) => {
     setForm((f) => {
       if (!f) return f;
       const has = f.leagues.includes(name);
@@ -190,10 +209,40 @@ export default function SettingsPage() {
             );
           })}
         </div>
+      </Card>      <Card className="card-pad">
+        <CardHeader
+          title="Tennis tournaments"
+          subtitle="Which ATP main-tour events the live pulls cover. Off-season tournaments cost 0 API credits; only in-season ones burn budget. The model is trained on Grand Slams + Masters + 500s."
+        />
+        <div className="flex flex-wrap gap-2">
+          {TENNIS_OPTIONS.map((t) => {
+            const on = form.leagues.includes(t.value);
+            return (
+              <button
+                key={t.value}
+                onClick={() => toggleTennis(t.value)}
+                className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                  on
+                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                    : "border-ink-600/60 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {t.label.replace("ATP ", "")}
+                <span className={`ml-2 text-[11px] ${on ? "text-emerald-400/70" : "text-slate-600"}`}>{on ? "on" : "off"}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Toggling a tournament on/off here takes effect on the next odds pull — no redeploy needed.
+        </p>
       </Card>
 
       <Card className="card-pad">
-        <CardHeader title="Markets in play" subtitle="Which markets the EV engine scans. More markets = more API budget on live pulls." />
+        <CardHeader
+          title="Markets in play"
+          subtitle="Which markets the EV engine scans. More markets = more API budget on live pulls."
+        />
         <div className="flex flex-wrap gap-2">
           {MARKET_OPTIONS.map((m) => {
             const on = form.markets.includes(m.value);

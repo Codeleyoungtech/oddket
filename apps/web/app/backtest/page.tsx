@@ -60,6 +60,7 @@ export default function BacktestPage() {
 
         <Card className="overflow-hidden">
           <CardHeader title="Per-market breakdown" />
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-ink-700/60 text-[11px] uppercase tracking-widest text-slate-500">
@@ -90,7 +91,8 @@ export default function BacktestPage() {
                 </tr>
               )}
             </tbody>
-          </table>
+            </table>
+          </div>
         </Card>
       </div>
 

@@ -139,6 +139,7 @@ export default function BetsPage() {
           Log a bet you placed
         </SectionTitle>
         <form onSubmit={submitBet} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {/* Mobile: fields stack full-width; the submit button spans the row. */}
           <select
             value={formFixture}
             onChange={(e) => pickFixture(e.target.value)}
@@ -185,7 +186,7 @@ export default function BetsPage() {
               onChange={(e) => setFormStake(e.target.value)}
               className="w-full rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-400/50 focus:outline-none"
             />
-            <button type="submit" disabled={submitting} className="btn-primary shrink-0 whitespace-nowrap">
+            <button type="submit" disabled={submitting} className="btn-primary shrink-0 whitespace-nowrap px-5 sm:px-4">
               {submitting ? "Logging…" : "Log bet"}
             </button>
           </div>

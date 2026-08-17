@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -34,6 +35,8 @@ from datetime import datetime
 BASE_FEATURES = [
     "home_strength", "away_strength", "home_form", "away_form", "form_diff",
     "home_adv", "exp_home", "exp_away", "h2h_diff", "home_sot", "away_sot", "sot_diff",
+    "home_tsr", "away_tsr", "tsr_diff", "home_gd", "away_gd", "gd_diff",
+    "poi_h", "poi_d", "poi_a", "poi_over",
 ]
 ELO_SPLIT_FEATURES = ["home_elo_h", "away_elo_a"]
 EW_FORM_FEATURES = ["ew_home", "ew_away", "ew_diff"]
@@ -159,6 +162,37 @@ def _rest_days(state: TeamState, ts: int) -> tuple[int, bool]:
     return int(rest), rest < SHORT_REST_DAYS
 
 
+def _poisson_match_probs(lambda_h: float, mu_a: float, max_goals: int = 6) -> tuple[float, float, float, float]:
+    """Compute exact Poisson probabilities for home win, draw, away win, over 2.5 goals."""
+    p_h = 0.0
+    p_d = 0.0
+    p_a = 0.0
+    p_over = 0.0
+
+    def pois(k: int, lmb: float) -> float:
+        return (math.exp(-lmb) * (lmb ** k)) / math.factorial(k)
+
+    for hg in range(max_goals + 1):
+        p_hg = pois(hg, lambda_h)
+        for ag in range(max_goals + 1):
+            p_ag = pois(ag, mu_a)
+            p_score = p_hg * p_ag
+            if hg > ag:
+                p_h += p_score
+            elif hg == ag:
+                p_d += p_score
+            else:
+                p_a += p_score
+            if hg + ag > 2.5:
+                p_over += p_score
+    total_1x2 = p_h + p_d + p_a
+    if total_1x2 > 0:
+        p_h /= total_1x2
+        p_d /= total_1x2
+        p_a /= total_1x2
+    return p_h, p_d, p_a, p_over
+
+
 def compute_pair_features(home_state: TeamState, away_state: TeamState,
                           recent: list[Match], home: str, away: str, ts: int) -> dict:
     """Full candidate feature vector for (home, away) — all leakage-free."""
@@ -167,12 +201,26 @@ def compute_pair_features(home_state: TeamState, away_state: TeamState,
     away_form = _form_points(away_state)
     home_gf, home_ga = _avg_goals(home_state)
     away_gf, away_ga = _avg_goals(away_state)
-    home_sot, _ = _avg_sot(home_state)
-    away_sot, _ = _avg_sot(away_state)
+    home_sot_for, home_sot_against = _avg_sot(home_state)
+    away_sot_for, away_sot_against = _avg_sot(away_state)
     ew_home = _ew_form(home_state)
     ew_away = _ew_form(away_state)
     rest_home, short_home = _rest_days(home_state, ts)
     rest_away, short_away = _rest_days(away_state, ts)
+
+    # Total Shot Ratio (TSR) & Goal Differential
+    home_tsr = home_sot_for / (home_sot_for + home_sot_against + 1e-4)
+    away_tsr = away_sot_for / (away_sot_for + away_sot_against + 1e-4)
+    tsr_diff = home_tsr - away_tsr
+
+    home_gd = home_gf - home_ga
+    away_gd = away_gf - away_ga
+    gd_diff = home_gd - away_gd
+
+    # Dynamic Poisson expected goals (home baseline ~1.45, away baseline ~1.15)
+    lambda_h = max(0.2, min(4.0, 1.45 * (home_gf / 1.35) * (away_ga / 1.25)))
+    mu_a = max(0.2, min(4.0, 1.15 * (away_gf / 1.25) * (home_ga / 1.35)))
+    poi_h, poi_d, poi_a, poi_over = _poisson_match_probs(lambda_h, mu_a)
 
     # H2H: average goal difference in recent direct meetings
     h2h_diffs: list[float] = []
@@ -196,9 +244,19 @@ def compute_pair_features(home_state: TeamState, away_state: TeamState,
         "exp_home": round(home_gf, 4),
         "exp_away": round(away_gf, 4),
         "h2h_diff": round(h2h_diff, 4),
-        "home_sot": round(home_sot, 4),
-        "away_sot": round(away_sot, 4),
-        "sot_diff": round(home_sot - away_sot, 4),
+        "home_sot": round(home_sot_for, 4),
+        "away_sot": round(away_sot_for, 4),
+        "sot_diff": round(home_sot_for - away_sot_for, 4),
+        "home_tsr": round(home_tsr, 4),
+        "away_tsr": round(away_tsr, 4),
+        "tsr_diff": round(tsr_diff, 4),
+        "home_gd": round(home_gd, 4),
+        "away_gd": round(away_gd, 4),
+        "gd_diff": round(gd_diff, 4),
+        "poi_h": round(poi_h, 4),
+        "poi_d": round(poi_d, 4),
+        "poi_a": round(poi_a, 4),
+        "poi_over": round(poi_over, 4),
         # elo split
         "home_elo_h": round(home_state.rating_home / 1000.0, 4),
         "away_elo_a": round(away_state.rating_away / 1000.0, 4),

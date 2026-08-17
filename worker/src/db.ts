@@ -11,6 +11,16 @@ import type {
   Settings,
 } from "@oddket/core";
 
+export interface SettlementEvent {
+  id: string;
+  sport: string;
+  kind: "single" | "parlay";
+  label: string;
+  result: "won" | "lost";
+  amount: number;
+  settledAt: number;
+}
+
 export interface Env {
   DB: D1Database;
   /** May be a single key or a comma-separated list of keys. Each free-tier
@@ -30,6 +40,12 @@ export interface Env {
   ODDS_FETCH_LIMIT?: string;
   /** Comma-separated tennis tournament sport keys (overrides settings.leagues). */
   TENNIS_SPORTS?: string;
+  /** Web Push (RFC 8292 VAPID) — public key (base64url uncompressed point),
+   *  private key (JWK JSON), and a contact subject (mailto: or https URL).
+   *  Missing keys = push alerts simply don't send (no crash). */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 
 /* ---------------- row mappers ---------------- */
@@ -443,6 +459,16 @@ export async function settleTennisBets(db: D1Database): Promise<number> {
       .bind(won ? "won" : "lost", amount, bet.id)
       .run();
     settled++;
+
+    await recordSettlementEvent(db, {
+      id: `se-${bet.id}`,
+      sport: "tennis",
+      kind: "single",
+      label: `${match.home_team} vs ${match.away_team}`,
+      result: won ? "won" : "lost",
+      amount,
+      settledAt: Math.floor(Date.now() / 1000),
+    });
   }
   return settled;
 }
@@ -559,6 +585,18 @@ export async function settlePendingBets(db: D1Database): Promise<number> {
       .bind(won ? "won" : "lost", amount, bet.id)
       .run();
     settled++;
+
+    // Settlement alert event (label from the fixture + scoreline).
+    const fx = await db.prepare("SELECT home_team, away_team FROM fixtures WHERE id = ?1").bind(bet.fixtureId).first<{ home_team: string; away_team: string }>();
+    await recordSettlementEvent(db, {
+      id: `se-${bet.id}`,
+      sport: "football",
+      kind: "single",
+      label: fx ? `${fx.home_team} ${outcome.home_score}-${outcome.away_score} ${fx.away_team}` : bet.fixtureId,
+      result: won ? "won" : "lost",
+      amount,
+      settledAt: Math.floor(Date.now() / 1000),
+    });
   }
   return settled;
 }
@@ -652,6 +690,85 @@ export async function settleParlayBets(db: D1Database): Promise<number> {
       .bind(result.status, result.amount, parlay.id)
       .run();
     settled++;
+
+    await recordSettlementEvent(db, {
+      id: `sep-${parlay.id}`,
+      sport: parlay.sport,
+      kind: "parlay",
+      label: `${parlay.legs.length}-leg parlay`,
+      result: result.status === "won" ? "won" : "lost",
+      amount: result.amount,
+      settledAt: Math.floor(Date.now() / 1000),
+    });
   }
   return settled;
+}
+
+/* ---------------- settlement alerts ---------------- */
+
+async function recordSettlementEvent(db: D1Database, e: SettlementEvent): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO settlement_events (id, sport, kind, label, result, amount, settled_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
+    )
+    .bind(e.id, e.sport, e.kind, e.label, e.result, e.amount, e.settledAt)
+    .run();
+}
+
+/** Most recent settlement events within the last `hours` (newest first). */
+export async function listRecentSettlements(db: D1Database, hours = 48): Promise<SettlementEvent[]> {
+  const cutoff = Math.floor(Date.now() / 1000) - hours * 3600;
+  const rows = await db
+    .prepare("SELECT * FROM settlement_events WHERE settled_at >= ?1 ORDER BY settled_at DESC LIMIT 50")
+    .bind(cutoff)
+    .all<{
+      id: string;
+      sport: string;
+      kind: string;
+      label: string;
+      result: string;
+      amount: number;
+      settled_at: number;
+    }>();
+  return (rows.results ?? []).map((r) => ({
+    id: r.id,
+    sport: r.sport,
+    kind: r.kind === "parlay" ? ("parlay" as const) : ("single" as const),
+    label: r.label,
+    result: r.result === "won" ? ("won" as const) : ("lost" as const),
+    amount: r.amount,
+    settledAt: r.settled_at,
+  }));
+}
+
+/* ---------------- push subscriptions ---------------- */
+
+interface PushSubRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: number;
+}
+
+export async function upsertPushSubscription(
+  db: D1Database,
+  sub: { endpoint: string; p256dh: string; auth: string },
+): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh, auth, created_at)
+       VALUES (?1, ?2, ?3, ?4)`,
+    )
+    .bind(sub.endpoint, sub.p256dh, sub.auth, Math.floor(Date.now() / 1000))
+    .run();
+}
+
+export async function deletePushSubscription(db: D1Database, endpoint: string): Promise<void> {
+  await db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?1").bind(endpoint).run();
+}
+
+export async function listPushSubscriptions(db: D1Database): Promise<PushSubRow[]> {
+  const rows = await db.prepare("SELECT * FROM push_subscriptions").all<PushSubRow>();
+  return rows.results ?? [];
 }

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { TENNIS_SPORTS, type Settings } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
+import { api } from "../../lib/api";
 import { Badge, Card, CardHeader, Loading, SectionTitle } from "../../components/ui";
 import { InstallApp } from "../../components/install-app";
 import { fmtMoney, fmtPct } from "../../lib/format";
@@ -31,14 +32,56 @@ const TENNIS_OPTIONS = Object.entries(TENNIS_SPORTS).map(([name]) => ({
   label: name,
 }));
 
+const ALERTS_KEY = "oddket:alerts";
+
+type AlertState = "off" | "granted" | "denied" | "unsupported" | "busy";
+
+/** Standard base64url → Uint8Array for pushManager.subscribe(). */
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Uint8Array(new ArrayBuffer(raw.length));
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
 export default function SettingsPage() {
   const { db, saveSettings, mode } = useData();
   const [form, setForm] = useState<Settings | null>(null);
   const [saved, setSaved] = useState(false);
+  const [alertState, setAlertState] = useState<AlertState>("off");
+  const [pushReady, setPushReady] = useState(false);
+  const [pushSub, setPushSub] = useState<PushSubscription | null>(null);
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (db && !form) setForm(db.settings);
   }, [db, form]);
+
+  // Restore per-device alert state from localStorage + the live subscription.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setAlertState("unsupported");
+      return;
+    }
+    if (localStorage.getItem(ALERTS_KEY) === "on") {
+      if (Notification.permission === "granted") {
+        setAlertState("granted");
+        navigator.serviceWorker
+          ?.ready.then((reg) => reg.pushManager.getSubscription())
+          .then((sub) => {
+            if (sub) {
+              setPushSub(sub);
+              setPushReady(true);
+            }
+          })
+          .catch(() => {});
+      } else if (Notification.permission === "denied") {
+        setAlertState("denied");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!db || !form) return <Loading />;
 
@@ -81,6 +124,81 @@ export default function SettingsPage() {
     await saveSettings(form);
     setSaved(true);
     window.setTimeout(() => setSaved(false), 2000);
+  };
+
+  const enableAlerts = async () => {
+    setAlertState("busy");
+    setAlertMsg(null);
+    try {
+      if (!("Notification" in window)) {
+        setAlertState("unsupported");
+        return;
+      }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        setAlertState("denied");
+        setAlertMsg("Notifications are blocked. Allow them in your browser (site settings → Notifications) and try again.");
+        return;
+      }
+      // App-closed alerts (web push) — best-effort; in-app alerts work without it.
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const pk = await api.pushPublicKey();
+        if (pk.configured && pk.vapidPublicKey) {
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub) {
+            sub = await reg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(pk.vapidPublicKey),
+            });
+          }
+          const keys = sub.toJSON().keys ?? {};
+          await api.pushSubscribe({ endpoint: sub.endpoint, keys: { p256dh: keys.p256dh ?? "", auth: keys.auth ?? "" } });
+          setPushSub(sub);
+          setPushReady(true);
+          setAlertMsg("Alerts on — you'll get a push notification even when the app is closed.");
+        } else {
+          setAlertMsg("Alerts on while the app is open. Server push isn't configured on the worker yet — in-app alerts still work.");
+        }
+      } catch {
+        setAlertMsg("Alerts on while the app is open. Push subscription failed on this browser — in-app alerts still work.");
+      }
+      localStorage.setItem(ALERTS_KEY, "on");
+      setAlertState("granted");
+    } catch {
+      setAlertState("off");
+      setAlertMsg("Something went wrong enabling alerts — try again.");
+    }
+  };
+
+  const disableAlerts = async () => {
+    setAlertState("busy");
+    setAlertMsg(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await api.pushUnsubscribe(sub.endpoint).catch(() => {});
+        await sub.unsubscribe().catch(() => {});
+      }
+    } catch {
+      /* no SW / no subscription — nothing to clean up */
+    }
+    localStorage.setItem(ALERTS_KEY, "off");
+    setPushSub(null);
+    setPushReady(false);
+    setAlertState("off");
+  };
+
+  const testPush = async () => {
+    if (!pushSub) return;
+    setAlertMsg(null);
+    try {
+      await api.pushTest(pushSub.endpoint);
+      setAlertMsg("Test push sent — check your notifications.");
+    } catch {
+      setAlertMsg("Couldn't send — VAPID keys aren't set on the worker yet.");
+    }
   };
 
   const kellyExposure = form.bankroll * form.kellyFraction * 0.25; // rough max single stake before cap
@@ -242,6 +360,60 @@ export default function SettingsPage() {
       <Card className="card-pad">
         <CardHeader title="App" subtitle="Install OddKet for a standalone app experience on your phone or desktop." />
         <InstallApp />
+      </Card>
+
+      <Card className="card-pad">
+        <CardHeader
+          title="Settlement alerts"
+          subtitle="Know the moment a bet settles — no more refreshing the app to check."
+        />
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-sm">
+            <p className="font-medium text-slate-200">Alert me when bets settle</p>
+            <p className="mt-1 max-w-lg text-xs leading-relaxed text-slate-500">
+              Shows settled results as a banner when you open the app, a notification while you're using it, and a push
+              notification when it's closed (install the app for the best experience). Per-device — enable on each phone
+              and PC you want alerts on.
+            </p>
+          </div>
+          <button
+            role="switch"
+            aria-checked={alertState === "granted"}
+            disabled={alertState === "busy" || alertState === "unsupported"}
+            onClick={() => (alertState === "granted" ? disableAlerts() : enableAlerts())}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50 ${
+              alertState === "granted" ? "bg-emerald-400" : "bg-ink-600/60"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-6 w-6 rounded-full bg-slate-100 transition-transform ${
+                alertState === "granted" ? "translate-x-[22px]" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          {alertState === "granted"
+            ? "ON — settled bets alert you in-app and by notification."
+            : alertState === "denied"
+              ? "Blocked — allow notifications in your browser to turn this on."
+              : alertState === "unsupported"
+                ? "Not supported on this browser."
+                : alertState === "busy"
+                  ? "Enabling…"
+                  : "OFF — you'll still see settled bets on the Bets page."}
+        </p>
+        {pushReady && (
+          <div className="mt-4 flex items-center justify-between gap-4 border-t border-ink-700/40 pt-4">
+            <p className="text-xs text-slate-500">
+              Push is active on this device — you'll get a notification even when the app is closed.
+            </p>
+            <button className="btn-ghost shrink-0" onClick={testPush}>
+              Test notification
+            </button>
+          </div>
+        )}
+        {alertMsg && <p className="mt-3 text-xs text-slate-400">{alertMsg}</p>}
       </Card>
 
       <Card className="card-pad">

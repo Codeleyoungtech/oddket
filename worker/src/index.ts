@@ -19,10 +19,12 @@ import {
 } from "@oddket/core";
 import type { Env } from "./db";
 import {
+  deletePushSubscription,
   getSettings,
   insertBet,
   insertClv,
   insertParlay,
+  listRecentSettlements,
   loadDatabase,
   loadParlays,
   putSettings,
@@ -30,7 +32,9 @@ import {
   settlePendingBets,
   upsertOutcomes,
   upsertPredictions,
+  upsertPushSubscription,
 } from "./db";
+import { notifySettlements, sendTestPush } from "./push";
 import { ingestOdds } from "./odds/ingest";
 import { pullClosingOdds } from "./odds/closing";
 import { ingestTennisOdds, pullTennisClosingOdds } from "./odds/tennis-ingest";
@@ -296,6 +300,7 @@ app.post("/api/outcomes", async (c) => {
   await upsertOutcomes(c.env.DB, rows);
   const settled = await settlePendingBets(c.env.DB);
   const parlaysSettled = await settleParlayBets(c.env.DB);
+  if (settled + parlaysSettled > 0) await notifySettlements(c.env);
   return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled, parlaysSettled });
 });
 
@@ -503,6 +508,7 @@ app.post("/api/tennis/outcomes", async (c) => {
   }
   const settled = await settleTennisBets(c.env.DB);
   const parlaysSettled = await settleParlayBets(c.env.DB);
+  if (settled + parlaysSettled > 0) await notifySettlements(c.env);
   return c.json({ ok: true, outcomesStored: rows.length, betsSettled: settled, parlaysSettled });
 });
 
@@ -576,6 +582,7 @@ app.post("/api/settle", async (c) => {
     const result = await settleFinishedMatches(c.env);
     // True parlays settle all-or-nothing from the same outcomes.
     const parlaysSettled = await settleParlayBets(c.env.DB);
+    if (result.footballSettled + result.tennisSettled + parlaysSettled > 0) await notifySettlements(c.env);
     return c.json({ ...result, parlaysSettled });
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 502);
@@ -643,6 +650,64 @@ app.post("/api/parlays", async (c) => {
   };
   await insertParlay(c.env.DB, parlay);
   return c.json({ ok: true, parlay }, 201);
+});
+
+/* ---------------- settlement alerts ---------------- */
+
+/** Recent settlement events — powers the in-app banner + the SW notification
+ *  text (the push itself is data-less; the SW fetches this for detail). */
+app.get("/api/settlements/recent", async (c) => {
+  const raw = Number(c.req.query("hours"));
+  const hours = Number.isFinite(raw) ? Math.min(168, Math.max(1, raw)) : 48;
+  return c.json({ events: await listRecentSettlements(c.env.DB, hours) });
+});
+
+/** VAPID public key for the push subscribe flow. configured=false when the
+ *  worker has no VAPID keys → alerts fall back to in-app only. */
+app.get("/api/push/public-key", (c) =>
+  c.json({
+    vapidPublicKey: c.env.VAPID_PUBLIC_KEY ?? null,
+    configured: Boolean(c.env.VAPID_PUBLIC_KEY && c.env.VAPID_PRIVATE_KEY),
+  }),
+);
+
+/** Store this device's browser push subscription. */
+app.post("/api/push/subscribe", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const endpoint = body.endpoint;
+  const p256dh = body.keys?.p256dh;
+  const auth = body.keys?.auth;
+  if (
+    typeof endpoint !== "string" ||
+    !endpoint.startsWith("https://") ||
+    typeof p256dh !== "string" ||
+    typeof auth !== "string"
+  ) {
+    return c.json({ ok: false, error: "endpoint (https://), keys.p256dh and keys.auth are required." }, 400);
+  }
+  await upsertPushSubscription(c.env.DB, { endpoint, p256dh, auth });
+  return c.json({ ok: true }, 201);
+});
+
+/** Remove this device's push subscription (alerts turned off). */
+app.post("/api/push/unsubscribe", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (typeof body.endpoint === "string") await deletePushSubscription(c.env.DB, body.endpoint);
+  return c.json({ ok: true });
+});
+
+/** Send a test push to one device (Settings → Test notification). */
+app.post("/api/push/test", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  if (typeof body.endpoint !== "string") return c.json({ ok: false, error: "endpoint required." }, 400);
+  const sent = await sendTestPush(c.env, body.endpoint);
+  if (!sent) {
+    return c.json({
+      ok: false,
+      error: "Push not sent — VAPID keys missing on the worker, or this device isn't subscribed.",
+    }, 400);
+  }
+  return c.json({ ok: true });
 });
 
 /* ---------------- seed (demo / local dev) ---------------- */

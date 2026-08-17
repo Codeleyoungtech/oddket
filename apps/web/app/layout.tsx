@@ -3,6 +3,7 @@ import "./globals.css";
 import { DataProvider } from "../lib/data-provider";
 import { Nav } from "../components/nav";
 import { PwaRegister } from "../components/pwa-register";
+import { SettlementBanner } from "../components/settlement-banner";
 
 export const metadata: Metadata = {
   title: "OddKet — Decision Support for SportyBet",
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Nav />
           {/* pb accounts for the fixed mobile tab bar (56px) + safe area. */}
           <main className="mx-auto w-full max-w-7xl px-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 md:pb-20">
+            <SettlementBanner />
             {children}
           </main>
         </DataProvider>

@@ -48,6 +48,26 @@ export interface ParlayInput {
   stake: number;
 }
 
+export interface SettlementEvent {
+  id: string;
+  sport: string;
+  kind: "single" | "parlay";
+  label: string;
+  result: "won" | "lost";
+  amount: number;
+  settledAt: number;
+}
+
+export interface PushPublicKey {
+  vapidPublicKey: string | null;
+  configured: boolean;
+}
+
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
 export const api = {
   health: () => req<Health>("/api/health"),
   football: makeClient("/api"),
@@ -56,4 +76,14 @@ export const api = {
   logParlay: (p: ParlayInput) =>
     req<{ ok: boolean; parlay: unknown }>("/api/parlays", { method: "POST", body: JSON.stringify(p) }),
   parlays: () => req<unknown[]>("/api/parlays"),
+  /** Settlement alerts — shared, not sport-scoped. */
+  recentSettlements: (hours = 48) =>
+    req<{ events: SettlementEvent[] }>(`/api/settlements/recent?hours=${hours}`),
+  pushPublicKey: () => req<PushPublicKey>("/api/push/public-key"),
+  pushSubscribe: (sub: PushSubscriptionInput) =>
+    req<{ ok: boolean }>("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub) }),
+  pushUnsubscribe: (endpoint: string) =>
+    req<{ ok: boolean }>("/api/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) }),
+  pushTest: (endpoint: string) =>
+    req<{ ok: boolean }>("/api/push/test", { method: "POST", body: JSON.stringify({ endpoint }) }),
 };

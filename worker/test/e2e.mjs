@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -446,6 +446,36 @@ console.log("\n[13] TENNIS (isolated tables + endpoints)");
   const expectTp = Math.round(100 * (tp2?.combinedOdds - 1) * 100) / 100;
   check("tennis parlay won all-or-nothing", tp2?.status === "won" && Math.abs((tp2?.outcomeAmount ?? 0) - expectTp) < 0.001, JSON.stringify(tp2));
   await api("PUT", "/api/settings", { multiplesEnabled: false, maxMultipleLegs: 3 });
+}
+
+console.log("\n[14] settlement alerts (events + push subscriptions)");
+{
+  // The settle paths above (football single, parlays, tennis) should have
+  // written human-readable settlement_events rows.
+  const recent = await api("GET", "/api/settlements/recent?hours=48");
+  check("recent events 200 + array", recent.status === 200 && Array.isArray(recent.json?.events), JSON.stringify(recent.json));
+  check("events recorded from settlements", (recent.json?.events?.length ?? 0) > 0, `events=${recent.json?.events?.length}`);
+  const ev = recent.json?.events?.[0];
+  check("event has label/result/amount", typeof ev?.label === "string" && (ev?.result === "won" || ev?.result === "lost") && typeof ev?.amount === "number", JSON.stringify(ev));
+  check("football win label has scoreline", recent.json?.events?.some((e) => /\d-\d/.test(e.label ?? "")), JSON.stringify(recent.json?.events?.map((e) => e.label)));
+  check("parlay events recorded", recent.json?.events?.some((e) => e.kind === "parlay" && e.label.includes("parlay")), JSON.stringify(recent.json?.events?.map((e) => e.kind)));
+  const filtered = await api("GET", "/api/settlements/recent?hours=0");
+  check("hours=0 clamped to 1h", filtered.status === 200 && Array.isArray(filtered.json?.events));
+
+  // Push subscription CRUD + guards.
+  const pk = await api("GET", "/api/push/public-key");
+  check("public-key reports not configured", pk.status === 200 && pk.json?.configured === false && pk.json?.vapidPublicKey === null, JSON.stringify(pk.json));
+  const sub = { endpoint: "https://push.example.com/abc", keys: { p256dh: "aGVsbG8=", auth: "d29ybGQ=" } };
+  const ok = await api("POST", "/api/push/subscribe", sub);
+  check("subscribe stored (201)", ok.status === 201 && ok.json?.ok === true, JSON.stringify(ok.json));
+  const dup = await api("POST", "/api/push/subscribe", sub);
+  check("re-subscribe upserts (201)", dup.status === 201);
+  const bad = await api("POST", "/api/push/subscribe", { endpoint: "http://not-https.example" });
+  check("subscribe requires https endpoint (400)", bad.status === 400, JSON.stringify(bad.json));
+  const test = await api("POST", "/api/push/test", { endpoint: sub.endpoint });
+  check("test push refused without VAPID (400)", test.status === 400, JSON.stringify(test.json));
+  const un = await api("POST", "/api/push/unsubscribe", { endpoint: sub.endpoint });
+  check("unsubscribe ok", un.status === 200 && un.json?.ok === true, JSON.stringify(un.json));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -11,12 +11,32 @@ import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../../lib/format";
 
 export default function BetsPage() {
-  const { bets, db, sport, logBet, deleteBet, refresh } = useData();
+  const { bets, db, sport, logBet, deleteBet, recordOutcome, recordTennisOutcome, refresh } = useData();
   const [undoMsg, setUndoMsg] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "won" | "lost" | "pending">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [searchFilter, setSearchFilter] = useState("");
   const [showLogger, setShowLogger] = useState(false);
+  const [settleScores, setSettleScores] = useState<Record<string, { home: string; away: string }>>({});
+  const [settlingId, setSettlingId] = useState<string | null>(null);
+
+  const handleQuickSettle = async (fixtureId: string, isTennis: boolean) => {
+    const s = settleScores[fixtureId] || { home: "0", away: "0" };
+    const homeScore = parseInt(s.home, 10);
+    const awayScore = parseInt(s.away, 10);
+    if (isNaN(homeScore) || isNaN(awayScore)) return;
+    setSettlingId(fixtureId);
+    try {
+      if (isTennis) {
+        await recordTennisOutcome(fixtureId, homeScore > awayScore ? "home" : "away");
+      } else {
+        await recordOutcome(fixtureId, homeScore, awayScore);
+      }
+      refresh();
+    } finally {
+      setSettlingId(null);
+    }
+  };
 
   // --- paper-trade log form state ---
   const [formFixture, setFormFixture] = useState("");
@@ -424,6 +444,49 @@ export default function BetsPage() {
                           <span className={`font-bold ${clvClass(b.clv)}`}>{fmtSignedPct(b.clv, 2)}</span>
                         </div>
                       )}
+                      {b.status === "pending" && (
+                        <div className="mt-3 border-t border-ink-800/80 pt-2.5">
+                          <p className="text-[11px] font-semibold text-slate-300 mb-1.5">Manual Score Settlement</p>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              placeholder="Home"
+                              value={settleScores[b.fixtureId]?.home || ""}
+                              onChange={(e) =>
+                                setSettleScores((prev) => ({
+                                  ...prev,
+                                  [b.fixtureId]: { ...prev[b.fixtureId], home: e.target.value, away: prev[b.fixtureId]?.away || "0" },
+                                }))
+                              }
+                              className="w-14 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-center text-xs font-bold text-slate-100 focus:outline-none"
+                            />
+                            <span className="text-xs font-bold text-slate-500">-</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="20"
+                              placeholder="Away"
+                              value={settleScores[b.fixtureId]?.away || ""}
+                              onChange={(e) =>
+                                setSettleScores((prev) => ({
+                                  ...prev,
+                                  [b.fixtureId]: { ...prev[b.fixtureId], home: prev[b.fixtureId]?.home || "0", away: e.target.value },
+                                }))
+                              }
+                              className="w-14 rounded border border-ink-700 bg-ink-900 px-2 py-1 text-center text-xs font-bold text-slate-100 focus:outline-none"
+                            />
+                            <button
+                              onClick={() => handleQuickSettle(b.fixtureId, b.fixture?.sport === "tennis")}
+                              disabled={settlingId === b.fixtureId}
+                              className="rounded-lg border border-sky-400/40 bg-sky-400/20 px-3 py-1 text-xs font-bold text-sky-200 hover:bg-sky-400/30 transition-all disabled:opacity-50"
+                            >
+                              {settlingId === b.fixtureId ? "Settling…" : "⚡ Settle"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       <div className="flex justify-between pt-0.5">
                         <span className="text-slate-500">Fixture ID</span>
                         <span className="font-mono text-[10px] text-slate-500 truncate max-w-[150px]">{b.fixtureId}</span>
@@ -516,12 +579,52 @@ export default function BetsPage() {
                                   <p className="text-[11px] text-slate-500">profit: ₦{fmtMoney(potentialReturn - b.stake, 0)}</p>
                                 </div>
                                 <div>
-                                  <p className="text-slate-500 font-medium">Actions & Management</p>
-                                  <div className="mt-1 flex items-center gap-2">
+                                  <p className="text-slate-500 font-medium">Actions & Settlement</p>
+                                  <div className="mt-1 space-y-2">
+                                    {b.status === "pending" && (
+                                      <div className="flex items-center gap-1.5">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="20"
+                                          placeholder="H"
+                                          value={settleScores[b.fixtureId]?.home || ""}
+                                          onChange={(e) =>
+                                            setSettleScores((prev) => ({
+                                              ...prev,
+                                              [b.fixtureId]: { ...prev[b.fixtureId], home: e.target.value, away: prev[b.fixtureId]?.away || "0" },
+                                            }))
+                                          }
+                                          className="w-10 rounded border border-ink-700 bg-ink-800 px-1.5 py-0.5 text-center text-xs font-bold text-slate-100 focus:outline-none"
+                                        />
+                                        <span className="text-xs font-bold text-slate-500">-</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="20"
+                                          placeholder="A"
+                                          value={settleScores[b.fixtureId]?.away || ""}
+                                          onChange={(e) =>
+                                            setSettleScores((prev) => ({
+                                              ...prev,
+                                              [b.fixtureId]: { ...prev[b.fixtureId], home: prev[b.fixtureId]?.home || "0", away: e.target.value },
+                                            }))
+                                          }
+                                          className="w-10 rounded border border-ink-700 bg-ink-800 px-1.5 py-0.5 text-center text-xs font-bold text-slate-100 focus:outline-none"
+                                        />
+                                        <button
+                                          onClick={() => handleQuickSettle(b.fixtureId, b.fixture?.sport === "tennis")}
+                                          disabled={settlingId === b.fixtureId}
+                                          className="rounded border border-sky-400/40 bg-sky-400/15 px-2 py-0.5 text-[11px] font-bold text-sky-200 hover:bg-sky-400/25"
+                                        >
+                                          {settlingId === b.fixtureId ? "…" : "⚡ Settle"}
+                                        </button>
+                                      </div>
+                                    )}
                                     {b.status === "pending" && b.placedAt > Date.now() / 1000 - UNDO_WINDOW_SEC && (
                                       <button
                                         onClick={() => void undoBet(b)}
-                                        className="rounded border border-red-400/40 bg-red-400/10 px-2.5 py-1 text-xs font-semibold text-red-300 hover:bg-red-400/20"
+                                        className="rounded border border-red-400/40 bg-red-400/10 px-2 py-0.5 text-[11px] font-semibold text-red-300 hover:bg-red-400/20"
                                       >
                                         Undo Bet Log
                                       </button>

@@ -138,8 +138,8 @@ def _avg_goals(state: TeamState, window: int = FORM_WINDOW) -> tuple[float, floa
     recent = state.results[-window:]
     if not recent:
         return 1.3, 1.2
-    gf = sum(hg if o in (0, 1) else ag for o, hg, ag, _, _, _, _ in recent) / len(recent)
-    ga = sum(ag if o in (0, 1) else hg for o, hg, ag, _, _, _, _ in recent) / len(recent)
+    gf = sum(hg if is_home else ag for _, hg, ag, _, _, _, is_home in recent) / len(recent)
+    ga = sum(ag if is_home else hg for _, hg, ag, _, _, _, is_home in recent) / len(recent)
     return gf, ga
 
 
@@ -147,9 +147,9 @@ def _avg_sot(state: TeamState, window: int = FORM_WINDOW) -> tuple[float, float]
     recent = state.results[-window:]
     if not recent:
         return 4.0, 4.0
-    sf = sum(sf if o in (0, 1) else sa for o, _, _, sf, sa, _, _ in recent) / len(recent)
-    sa = sum(sa if o in (0, 1) else sf for o, _, _, sf, sa, _, _ in recent) / len(recent)
-    return sf, sa
+    sf_avg = sum(sf for _, _, _, sf, sa, _, _ in recent) / len(recent)
+    sa_avg = sum(sa for _, _, _, sf, sa, _, _ in recent) / len(recent)
+    return sf_avg, sa_avg
 
 
 def _rest_days(state: TeamState, ts: int) -> tuple[int, bool]:

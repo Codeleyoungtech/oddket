@@ -32,7 +32,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import numpy as np  # noqa: E402
 
-from features import build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
+from features import TeamState, build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
 
 # Map The Odds API team names -> football-data.co.uk names.
 NAME_MAP = {
@@ -104,6 +104,28 @@ NAME_MAP = {
     "Athletic Bilbao": "Ath Bilbao",
     "Real Sociedad": "Sociedad",
     "Eintracht Frankfurt": "Ein Frankfurt",
+    # 2025/26 + 2026/27 observed The Odds API names
+    "Coventry City": "Coventry",
+    "Hull City": "Hull",
+    "Sunderland": "Sunderland",
+    "Burnley": "Burnley",
+    "Elche CF": "Elche",
+    "Elche": "Elche",
+    "Malaga": "Malaga",
+    "CA Osasuna": "Osasuna",
+    "Osasuna": "Osasuna",
+    "Getafe": "Getafe",
+    "Levante": "Levante",
+    "Racing Santander": "Racing Santander",
+    "Real Racing Club de Santander": "Racing Santander",
+    "Hamburger SV": "Hamburg",
+    "Hamburg": "Hamburg",
+    "Elversberg": "Elversberg",
+    "Bayer Leverkusen": "Leverkusen",
+    "Borussia Dortmund": "Dortmund",
+    "Dortmund": "Dortmund",
+    "FC St. Pauli": "St Pauli",
+    "VfL Bochum": "Bochum",
 }
 
 
@@ -182,14 +204,40 @@ def main() -> int:
     history = load_matches_dict(hist_path)
     states = build_team_states(history)
 
+    # Neutral prior for teams with no history. IMPORTANT: the field's Elo has
+    # drifted far below START_RATING (1500) — the median real team sits around
+    # ~940 because the draw rule drains points from both sides over 10k matches.
+    # Using 1500 as the prior made brand-new teams look stronger than Bayern
+    # Munich, so every game touching a promoted side collapsed into a draw.
+    # The prior must be a FIELD-AVERAGE team, not the raw start rating.
+    prior_elo = float(sorted(s.rating for s in states.values())[len(states) // 2])
+    # Same for the split home/away ratings (they drift differently).
+    prior_home = float(sorted(s.rating_home for s in states.values())[len(states) // 2])
+    prior_away = float(sorted(s.rating_away for s in states.values())[len(states) // 2])
+    print(f"[predict] neutral prior Elo = {prior_elo:.0f} (home {prior_home:.0f} / away {prior_away:.0f}), field median", file=sys.stderr)
+
+    def _fresh_prior() -> TeamState:
+        st = TeamState()
+        st.rating = prior_elo
+        st.rating_home = prior_home
+        st.rating_away = prior_away
+        return st
+
     rows = []
+    unknown = 0
     for f in fixtures:
         home, away = normalize(f.get("home", "")), normalize(f.get("away", ""))
+        # Unknown teams get a FRESH field-average TeamState (median Elo, form
+        # 0.5, avg goals 1.3/1.2, no H2H) — scored honestly on the prior, never
+        # skipped. This is what guarantees every fixture gets a prediction,
+        # including promoted sides with no history in the training leagues.
         hs = states.get(home)
         as_ = states.get(away)
         if hs is None or as_ is None:
-            print(f"[predict] unknown team(s) for '{f.get('home')}' vs '{f.get('away')}' — skipping", file=sys.stderr)
-            continue
+            unknown += 1
+            print(f"[predict] no history for '{f.get('home')}' vs '{f.get('away')}' — scoring on neutral prior", file=sys.stderr)
+            hs = hs or _fresh_prior()
+            as_ = as_ or _fresh_prior()
         ts = int(f.get("commenceTime") or 0)
         features = compute_pair_features(hs, as_, history, home, away, ts)
         odds = f.get("odds") or {}
@@ -236,7 +284,9 @@ def main() -> int:
     with open(out_path, "w") as fh:
         json.dump(predictions, fh, indent=2)
 
-    print(f"[predict] market={market} {len(rows)} fixtures -> {len(predictions)} predictions -> {out_path}")
+    if unknown:
+        print(f"[predict] {unknown} fixture(s) used neutral prior (no history in training data)", file=sys.stderr)
+    print(f"[predict] market={market} {len(rows)}/{len(fixtures)} fixtures -> {len(predictions)} predictions -> {out_path}")
     print("[predict] push with:")
     print(f"  curl -s -X POST http://localhost:8787/api/predictions/ingest -H 'Content-Type: application/json' -d @{out_path}")
     return 0

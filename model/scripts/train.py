@@ -280,7 +280,12 @@ def main() -> int:
 
     fill_market_features(matches, market=market)
 
-    # TIME-ORDERED split
+    # TIME-ORDERED split. The data file is grouped by league (EPL, then
+    # Bundesliga, then La Liga, then Serie A), so an unsorted slice would test
+    # on a mix of old+new matches from one league — a cross-league test, not a
+    # time test. Sort globally by kickoff time first (features are stored, so
+    # sorting only changes the split, not the feature values).
+    matches.sort(key=lambda m: m.ts)
     n = len(matches)
     cut = int(n * 0.8)
     train_m, test_m = matches[:cut], matches[cut:]
@@ -288,7 +293,13 @@ def main() -> int:
     print(f"[train] {len(train_m)} train (oldest) / {len(test_m)} holdout ({test_m[0].date} -> {test_m[-1].date})")
 
     def target(m):
-        return 1 if m.home_goals + m.away_goals > 2.5 else 0 if market == "ou" else m.outcome
+        # NOTE: the ternary chain `1 if goals > 2.5 else 0 if market == "ou" else
+        # outcome` used to corrupt h2h labels — any match with >2.5 goals got
+        # labeled a draw (~70% of labels), so the model learned to predict draw
+        # for everything while the corrupted metrics looked "great".
+        if market == "ou":
+            return 1 if m.home_goals + m.away_goals > 2.5 else 0
+        return m.outcome
 
     X_tr = np.array([[m.features[f] for f in features] for m in train_m], dtype=float)
     y_tr = np.array([target(m) for m in train_m], dtype=int)
@@ -323,7 +334,7 @@ def main() -> int:
     meta = {
         "version": version,
         "market": market,
-        "source": "football-data.co.uk EPL/Bundesliga/LaLiga/SerieA 2019-2025",
+        "source": "football-data.co.uk EPL/Bundesliga/LaLiga/SerieA 2019-2026",
         "feature_groups": groups,
         "features": features,
         "n_train": len(train_m),

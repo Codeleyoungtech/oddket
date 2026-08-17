@@ -24,6 +24,7 @@ export default function SlipsPage() {
   const [logError, setLogError] = useState<string | null>(null);
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
+  const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
   // Per-leg stake override (₦). Defaults to the Kelly suggestion; lets the
   // user log what they ACTUALLY staked on SportyBet instead of what the
   // model suggested. Keyed by legKey.
@@ -66,9 +67,12 @@ export default function SlipsPage() {
       if (timeFilter === "today" && (t < today || t >= today + 86400)) return false;
       if (timeFilter === "week" && (t < today || t >= weekEnd)) return false;
       if (leagueFilter !== "all" && l.fixture.league !== leagueFilter) return false;
+      if (strategyFilter === "high_prob" && l.probability < 0.60) return false;
+      if (strategyFilter === "big_edge" && l.edge < 0.07) return false;
+      if (strategyFilter === "favorites" && l.odds > 1.85) return false;
       return true;
     });
-  }, [slips, timeFilter, leagueFilter, nowSec]);
+  }, [slips, timeFilter, leagueFilter, strategyFilter, nowSec]);
 
   const handleLogBet = async (leg: SlipLeg) => {
     const key = legKey(leg);
@@ -290,6 +294,28 @@ export default function SlipsPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          {/* Quick Strategy Filters */}
+          <div className="mb-4 flex flex-wrap items-center gap-1.5">
+            {[
+              ["all", "All Picks", "bg-ink-800/60 text-slate-300"],
+              ["high_prob", "🟢 High Win-Rate (≥60%)", "bg-emerald-400/15 text-emerald-300 border-emerald-400/30"],
+              ["big_edge", "💎 Big Edge (≥7%)", "bg-sky-400/15 text-sky-300 border-sky-400/30"],
+              ["favorites", "⚽ Favorites (≤1.85)", "bg-purple-400/15 text-purple-300 border-purple-400/30"],
+            ].map(([key, label, activeStyle]) => (
+              <button
+                key={key}
+                onClick={() => setStrategyFilter(key as any)}
+                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-all ${
+                  strategyFilter === key
+                    ? `${activeStyle} border-current shadow-sm`
+                    : "border-ink-700/50 bg-ink-900/40 text-slate-400 hover:border-ink-600 hover:text-slate-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           <SectionTitle sub={`${filteredSlips.length} of ${slips.length} flagged singles · edge ≥ ${fmtPct(db.settings.edgeThreshold, 0)}`}>

@@ -247,47 +247,51 @@ export default function SlipsPage() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-100">Slip Builder</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Singles by default, ranked by edge. Multiples are opt-in and always show the true math.{" "}
-          <span className="text-amber-400/90">You place the bet yourself in SportyBet — OddKet never does.</span>
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/50 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Slip Builder</h1>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Ranked value opportunities with proven closing-line edge.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {filteredSlips.length} Value Pick{filteredSlips.length === 1 ? "" : "s"}
+          </span>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Singles list — min-w-0 lets the column shrink below its content's
-            min-content on narrow screens (grid items default to min-width:auto,
-            which blows the page sideways when a card's content is wide). */}
-        <div className="min-w-0 lg:col-span-2">
-          {/* Filters — time range + league. League list is derived from the data,
-              so when other sports are added the options grow automatically. */}
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg border border-ink-600/60 bg-ink-800/40 p-0.5">
+        <div className="min-w-0 lg:col-span-2 space-y-4">
+          {/* Filter Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-ink-700/50 bg-ink-900/40 p-2.5">
+            <div className="flex rounded-lg border border-ink-700/60 bg-ink-800/60 p-0.5">
               {(
                 [
                   ["all", "All"],
                   ["today", "Today"],
-                  ["week", "This week"],
+                  ["week", "This Week"],
                 ] as const
               ).map(([key, label]) => (
                 <button
                   key={key}
                   onClick={() => setTimeFilter(key)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    timeFilter === key ? "bg-emerald-400 text-ink-950" : "text-slate-400 hover:text-slate-200"
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+                    timeFilter === key ? "bg-emerald-400 text-ink-950 shadow-sm" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
                   {label}
                 </button>
               ))}
             </div>
+
             <select
               value={leagueFilter}
               onChange={(e) => setLeagueFilter(e.target.value)}
-              className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 outline-none focus:border-sky-400/50"
+              className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 outline-none focus:border-sky-400/50"
             >
-              <option value="all">All leagues</option>
+              <option value="all">All Leagues</option>
               {leagues.map((lg) => (
                 <option key={lg} value={lg}>
                   {lg}
@@ -297,20 +301,20 @@ export default function SlipsPage() {
           </div>
 
           {/* Quick Strategy Filters */}
-          <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
             {[
-              ["all", "All Picks", "bg-ink-800/60 text-slate-300"],
-              ["high_prob", "🟢 High Win-Rate (≥60%)", "bg-emerald-400/15 text-emerald-300 border-emerald-400/30"],
-              ["big_edge", "💎 Big Edge (≥7%)", "bg-sky-400/15 text-sky-300 border-sky-400/30"],
-              ["favorites", "⚽ Favorites (≤1.85)", "bg-purple-400/15 text-purple-300 border-purple-400/30"],
+              ["all", "All Picks", "bg-ink-800 text-slate-200 border-ink-600"],
+              ["high_prob", "🟢 High Win-Rate (≥60%)", "bg-emerald-400/15 text-emerald-300 border-emerald-400/40"],
+              ["big_edge", "💎 Big Edge (≥7%)", "bg-sky-400/15 text-sky-300 border-sky-400/40"],
+              ["favorites", "⚽ Favorites (≤1.85)", "bg-purple-400/15 text-purple-300 border-purple-400/40"],
             ].map(([key, label, activeStyle]) => (
               <button
                 key={key}
                 onClick={() => setStrategyFilter(key as any)}
-                className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-all ${
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
                   strategyFilter === key
-                    ? `${activeStyle} border-current shadow-sm`
-                    : "border-ink-700/50 bg-ink-900/40 text-slate-400 hover:border-ink-600 hover:text-slate-200"
+                    ? `${activeStyle} shadow-sm ring-1 ring-current/20`
+                    : "border-ink-800 bg-ink-900/30 text-slate-400 hover:border-ink-700 hover:text-slate-200"
                 }`}
               >
                 {label}
@@ -318,32 +322,34 @@ export default function SlipsPage() {
             ))}
           </div>
 
-          <SectionTitle sub={`${filteredSlips.length} of ${slips.length} flagged singles · edge ≥ ${fmtPct(db.settings.edgeThreshold, 0)}`}>
-            Ranked opportunities
-          </SectionTitle>
           {logError && (
-            <div className="mb-3 rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-300">
+            <div className="rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-300">
               ⚠ {logError}
             </div>
           )}
+
           {filteredSlips.length === 0 ? (
-            <EmptyState title="No flagged singles in this view" body="Try a wider time range or another league — every pick must clear the edge threshold and stay inside the strategy odds band." />
+            <EmptyState
+              title="No flagged singles in this view"
+              body="Try switching your filter or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."
+            />
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               {groupedSlips.map(([fixtureId, legs]) => {
                 const first = legs[0]!;
                 return (
-                  <div key={fixtureId} className="card overflow-hidden">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-700/40 bg-ink-800/30 px-4 py-2.5">
-                      <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
-                        {first.fixture.homeTeam} <span className="text-slate-500">vs</span> {first.fixture.awayTeam}
-                      </p>
-                      <p className="shrink-0 text-[11px] text-slate-500 sm:text-xs">
-                        {fmtDate(first.fixture.commenceTime)}
-                        <span className="hidden sm:inline"> · {first.fixture.league}</span>
-                      </p>
+                  <div key={fixtureId} className="card overflow-hidden rounded-xl border border-ink-700/50 bg-ink-900/50 transition-all hover:border-ink-600/70">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-ink-800/80 bg-ink-800/40 px-4 py-2.5">
+                      <div className="min-w-0 flex-1 flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-100">
+                          {first.fixture.homeTeam} <span className="text-slate-500 font-normal">vs</span> {first.fixture.awayTeam}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-[11px] font-medium text-slate-400">
+                        {fmtDate(first.fixture.commenceTime)} · <span className="text-slate-500">{first.fixture.league}</span>
+                      </span>
                     </div>
-                    <div className="divide-y divide-ink-700/30">
+                    <div className="divide-y divide-ink-800/40">
                       {legs.map((leg) => {
                         const key = legKey(leg);
                         const checked = selected.has(key);
@@ -355,52 +361,44 @@ export default function SlipsPage() {
                             tabIndex={0}
                             onClick={() => toggle(key)}
                             onKeyDown={(e) => e.key === "Enter" && toggle(key)}
-                            className={`group flex w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-left transition-all duration-150 ${
-                              checked ? "bg-emerald-400/[0.05]" : "hover:bg-ink-800/40"
+                            className={`group flex w-full cursor-pointer flex-wrap items-center justify-between gap-3 px-4 py-3 text-left transition-all ${
+                              checked ? "bg-emerald-400/[0.04]" : "hover:bg-ink-800/30"
                             }`}
                           >
-                            {multiplesOn && (
-                              <span
-                                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[11px] font-bold transition-colors ${
-                                  checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
-                                }`}
-                              >
-                                ✓
-                              </span>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-slate-200">
-                                {marketLabel(leg.market, leg.selection)}
-                                {displayStake(leg.stake).floored && (
-                                  <span
-                                    title="Thin edge — below the ₦10 min stake. Don't add this leg to a multiple."
-                                    className="ml-1.5 inline-flex h-4 w-4 translate-y-[-1px] items-center justify-center rounded-full border border-amber-400/40 bg-amber-400/10 text-[10px] leading-none text-amber-300"
-                                  >
-                                    ⚠
-                                  </span>
-                                )}
-                              </p>
-                              <p className="mt-0.5 text-xs text-slate-500">
-                                prob <span className="num text-slate-300">{fmtPct(leg.probability)}</span>
-                                <span className="num text-slate-600"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
-                                {/* Edge shown inline on mobile (it's in its own column on desktop) */}
-                                <span className={`num ml-1.5 font-semibold sm:hidden ${edgeClass(leg.edge)}`}>
-                                  {fmtSignedPct(leg.edge)}
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {multiplesOn && (
+                                <span
+                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
+                                    checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
+                                  }`}
+                                >
+                                  ✓
                                 </span>
-                              </p>
+                              )}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-slate-100">
+                                    {marketLabel(leg.market, leg.selection)}
+                                  </span>
+                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                    leg.edge >= 0.07 ? "bg-emerald-400/15 text-emerald-300" : "bg-sky-400/15 text-sky-300"
+                                  }`}>
+                                    {fmtSignedPct(leg.edge)} EV
+                                  </span>
+                                </div>
+                                <p className="mt-0.5 text-xs text-slate-400">
+                                  Prob: <span className="font-semibold text-slate-200">{fmtPct(leg.probability)}</span>
+                                  <span className="text-slate-500"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)})</span>
+                                </p>
+                              </div>
                             </div>
-                            <div className="hidden shrink-0 text-right sm:block">
-                              <p className={`num text-sm font-semibold ${edgeClass(leg.edge)}`}>{fmtSignedPct(leg.edge)} edge</p>
-                            </div>
-                            {/* Action row — on mobile this is forced onto its own
-                                full-width line (w-full + flex-wrap on the parent) so
-                                odds, stake and the button never get squished next to
-                                the selection text. Desktop stays single-line. */}
-                            <div className="ml-auto flex w-full shrink-0 items-center justify-end gap-2.5 sm:w-auto sm:justify-start">
-                              <span className="num text-sm font-semibold text-slate-200">@{fmtOdds(leg.odds)}</span>
-                              <div className="relative inline-block">
-                                {/* ₦ sits INSIDE the field: absolutely positioned over the input's left padding. */}
-                                <span className="pointer-events-none absolute left-1.5 top-1/2 -translate-y-1/2 text-xs text-slate-500">₦</span>
+
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              <span className="rounded-md border border-ink-700/60 bg-ink-800/80 px-2.5 py-1 text-xs font-bold text-slate-100">
+                                @{fmtOdds(leg.odds)}
+                              </span>
+                              <div className="relative">
+                                <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">₦</span>
                                 <input
                                   type="number"
                                   min={MIN_STAKE}
@@ -412,8 +410,8 @@ export default function SlipsPage() {
                                   }}
                                   onClick={(e) => e.stopPropagation()}
                                   onKeyDown={(e) => e.stopPropagation()}
-                                  className="num no-spinner w-16 rounded-none border border-ink-600/60 bg-ink-800/60 py-0.5 pl-5 pr-1.5 text-right text-xs text-slate-200 focus:border-sky-400/50 focus:outline-none"
-                                  title="Stake to log — defaults to the Kelly suggestion, edit to match what you actually staked."
+                                  className="w-16 rounded-md border border-ink-700/60 bg-ink-800/80 py-1 pl-5 pr-1.5 text-right text-xs font-semibold text-slate-100 focus:border-sky-400/50 focus:outline-none"
+                                  title="Edit stake amount"
                                 />
                               </div>
                               <button
@@ -422,22 +420,13 @@ export default function SlipsPage() {
                                   void handleLogBet(leg);
                                 }}
                                 disabled={isLogged || loggingKeys.has(key)}
-                                className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
+                                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-wait ${
                                   isLogged
                                     ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                                    : "border-sky-400/40 bg-sky-400/10 text-sky-300 hover:bg-sky-400/20"
+                                    : "border-sky-400/40 bg-sky-400/15 text-sky-200 hover:bg-sky-400/25 shadow-sm"
                                 }`}
                               >
-                                {loggingKeys.has(key) ? (
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-300/40 border-t-sky-300" />
-                                    Logging…
-                                  </span>
-                                ) : isLogged ? (
-                                  "✓ Logged"
-                                ) : (
-                                  "Log bet"
-                                )}
+                                {loggingKeys.has(key) ? "Logging…" : isLogged ? "✓ Logged" : "Log Bet"}
                               </button>
                             </div>
                           </div>

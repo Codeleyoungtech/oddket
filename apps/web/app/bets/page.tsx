@@ -123,32 +123,63 @@ export default function BetsPage() {
   }, [bets]);
 
   if (!db) return <Loading />;
+  const pnlTotal = totals.ret - totals.staked;
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-100">Bet log</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          What you actually staked on SportyBet, scored against closing odds. <span className="text-slate-400">Every row you log feeds the CLV scoreboard.</span>
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/50 pb-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-100">Bet Log & History</h1>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Paper-trade record scored against bookmaker closing lines (CLV).
+          </p>
+        </div>
+      </div>
+
+      {/* KPI Stat Cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
+          <p className="text-[11px] font-medium text-slate-400">Settled Bets</p>
+          <p className="mt-1 text-lg font-bold text-slate-100">{totals.n}</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">{bets.filter(b => b.status === "pending").length} pending</p>
+        </div>
+        <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
+          <p className="text-[11px] font-medium text-slate-400">Total Staked</p>
+          <p className="mt-1 text-lg font-bold text-slate-100">₦{fmtMoney(totals.staked, 0)}</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">across settled</p>
+        </div>
+        <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
+          <p className="text-[11px] font-medium text-slate-400">Net Profit / Loss</p>
+          <p className={`mt-1 text-lg font-bold ${pnlTotal >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+            {pnlTotal >= 0 ? "+" : ""}₦{fmtMoney(pnlTotal, 0)}
+          </p>
+          <p className="mt-0.5 text-[10px] text-slate-500">actual returns</p>
+        </div>
+        <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
+          <p className="text-[11px] font-medium text-slate-400">Cumulative CLV</p>
+          <p className={`mt-1 text-lg font-bold ${clvClass(totals.cumClv)}`}>
+            {fmtSignedPct(totals.cumClv, 2)}
+          </p>
+          <p className="mt-0.5 text-[10px] text-slate-500">over {totals.nClv} scored lines</p>
+        </div>
       </div>
 
       {/* Paper-trade: log the bets you actually place on SportyBet */}
-      <Card className="card-pad">
-        <SectionTitle sub="Logged bets get settled automatically and scored against closing odds (CLV)">
-          Log a bet you placed
-        </SectionTitle>
-        <form onSubmit={submitBet} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {/* Mobile: fields stack full-width; the submit button spans the row. */}
+      <div className="rounded-xl border border-ink-700/50 bg-ink-900/50 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-100">Manual Bet Logger</h2>
+          <span className="text-[11px] text-slate-400">Auto-settles at match full-time</span>
+        </div>
+        <form onSubmit={submitBet} className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
           <select
             value={formFixture}
             onChange={(e) => pickFixture(e.target.value)}
-            className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 focus:border-sky-400/50 focus:outline-none lg:col-span-2"
+            className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-2 text-xs font-medium text-slate-200 focus:border-sky-400/50 focus:outline-none lg:col-span-2"
           >
-            <option value="">Pick a scheduled fixture…</option>
+            <option value="">Select a scheduled fixture…</option>
             {bettableFixtures.map((f) => (
               <option key={f.id} value={f.id}>
-                {f.homeTeam} vs {f.awayTeam}
+                {f.homeTeam} vs {f.awayTeam} ({f.league})
               </option>
             ))}
           </select>
@@ -159,11 +190,11 @@ export default function BetsPage() {
               setFormSelection(sel);
               pickSelection(sel);
             }}
-            className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 focus:border-sky-400/50 focus:outline-none"
+            className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-2 text-xs font-medium text-slate-200 focus:border-sky-400/50 focus:outline-none capitalize"
           >
             {selections.map((s) => (
               <option key={s} value={s} className="capitalize">
-                {s}
+                {s === "home" ? "Home Win" : s === "away" ? "Away Win" : "Draw"}
               </option>
             ))}
           </select>
@@ -174,54 +205,54 @@ export default function BetsPage() {
             placeholder="Odds (e.g. 1.85)"
             value={formOdds}
             onChange={(e) => setFormOdds(e.target.value)}
-            className="rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-400/50 focus:outline-none"
+            className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-2 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-sky-400/50 focus:outline-none"
           />
           <div className="flex gap-2">
             <input
               type="number"
               step="50"
               min="1"
-              placeholder="Stake ₦"
+              placeholder="Stake (₦)"
               value={formStake}
               onChange={(e) => setFormStake(e.target.value)}
-              className="w-full rounded-lg border border-ink-600/60 bg-ink-800/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:border-sky-400/50 focus:outline-none"
+              className="w-full rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-2 text-xs font-semibold text-slate-100 placeholder:text-slate-500 focus:border-sky-400/50 focus:outline-none"
             />
-            <button type="submit" disabled={submitting} className="btn-primary shrink-0 whitespace-nowrap px-5 sm:px-4">
-              {submitting ? "Logging…" : "Log bet"}
+            <button type="submit" disabled={submitting} className="rounded-lg border border-sky-400/40 bg-sky-400/15 px-4 py-2 text-xs font-bold text-sky-200 hover:bg-sky-400/25 transition-all shrink-0">
+              {submitting ? "Logging…" : "Log"}
             </button>
           </div>
         </form>
-        {formMsg && <p className="mt-2 text-xs text-emerald-300">{formMsg}</p>}
-        {undoMsg && <p className="mt-2 text-xs text-slate-400">{undoMsg}</p>}
-      </Card>
+        {formMsg && <p className="mt-2 text-xs text-emerald-300">✓ {formMsg}</p>}
+        {undoMsg && <p className="mt-2 text-xs text-slate-400">ℹ {undoMsg}</p>}
+      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(["all", "won", "lost", "pending"] as const).map((s) => (
-          <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
-              statusFilter === s
-                ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                : "border-ink-600/60 text-slate-400 hover:text-slate-200"
-            }`}
-          >
-            {s}
-          </button>
-        ))}
-        <span className="ml-auto text-xs text-slate-500">
-          {totals.n} settled · ₦{fmtMoney(totals.staked, 0)} staked · <span className={clvClass(totals.cumClv)}>{fmtSignedPct(totals.cumClv, 2)} cumulative CLV</span> over {totals.nClv}
-        </span>
+      {/* Filter Tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex rounded-lg border border-ink-700/60 bg-ink-900/40 p-0.5">
+          {(["all", "won", "lost", "pending"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`rounded-md px-3 py-1 text-xs font-semibold capitalize transition-all ${
+                statusFilter === s
+                  ? "bg-emerald-400 text-ink-950 shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState title="No bets match this filter" body="Use the form above to log the bets you place on SportyBet — every row feeds the CLV scoreboard." />
+        <EmptyState title="No bets match this filter" body="Use the form above or the Slips page to log bets — every row feeds the live CLV scoreboard." />
       ) : (
-        <Card className="overflow-hidden">
+        <div className="card overflow-hidden rounded-xl border border-ink-700/50 bg-ink-900/50">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-ink-700/60 text-[11px] uppercase tracking-widest text-slate-500">
+                <tr className="border-b border-ink-800/80 bg-ink-800/40 text-[11px] uppercase tracking-wider text-slate-400">
                   <th className="px-4 py-3 font-semibold">Placed</th>
                   <th className="px-4 py-3 font-semibold">Fixture</th>
                   <th className="px-4 py-3 font-semibold">Pick</th>
@@ -234,26 +265,28 @@ export default function BetsPage() {
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-ink-800/40">
                 {filtered.map((b) => (
-                  <tr key={b.id} className="border-b border-ink-700/40 transition-colors last:border-0 hover:bg-ink-800/40">
-                    <td className="num whitespace-nowrap px-4 py-3 text-slate-500">{fmtDate(b.placedAt)}</td>
+                  <tr key={b.id} className="transition-colors hover:bg-ink-800/30">
+                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">{fmtDate(b.placedAt)}</td>
                     <td className="px-4 py-3">
-                      <p className="text-slate-200">{b.fixture ? `${b.fixture.homeTeam} vs ${b.fixture.awayTeam}` : b.fixtureId}</p>
-                      <p className="text-xs text-slate-500">{b.fixture?.league}</p>
+                      <p className="text-xs font-semibold text-slate-100">{b.fixture ? `${b.fixture.homeTeam} vs ${b.fixture.awayTeam}` : b.fixtureId}</p>
+                      <p className="text-[11px] text-slate-500">{b.fixture?.league}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "slate"}>{b.selection}</Badge>
-                      <p className="mt-1 text-[11px] text-slate-500">{b.market}</p>
+                      <span className="inline-flex rounded px-1.5 py-0.5 text-xs font-semibold bg-ink-800 text-slate-200 border border-ink-700/60 capitalize">
+                        {b.selection}
+                      </span>
+                      <p className="mt-0.5 text-[10px] text-slate-500 uppercase">{b.market}</p>
                     </td>
-                    <td className="num px-4 py-3 text-right text-slate-300">{fmtOdds(b.odds)}</td>
-                    <td className="num px-4 py-3 text-right text-slate-300">{fmtMoney(b.stake)}</td>
-                    <td className={`num px-4 py-3 text-right ${b.edge > 0 ? "text-emerald-400" : "text-slate-500"}`}>{fmtSignedPct(b.edge)}</td>
-                    <td className={`num px-4 py-3 text-right font-medium ${clvClass(b.clv)}`}>
+                    <td className="px-4 py-3 text-right text-xs font-bold text-slate-200">@{fmtOdds(b.odds)}</td>
+                    <td className="px-4 py-3 text-right text-xs font-medium text-slate-300">₦{fmtMoney(b.stake, 0)}</td>
+                    <td className={`px-4 py-3 text-right text-xs font-semibold ${b.edge > 0 ? "text-emerald-400" : "text-slate-500"}`}>{fmtSignedPct(b.edge)}</td>
+                    <td className={`px-4 py-3 text-right text-xs font-bold ${clvClass(b.clv)}`}>
                       {b.clv !== undefined ? fmtSignedPct(b.clv, 2) : <span className="text-slate-600">—</span>}
                     </td>
-                    <td className={`num px-4 py-3 text-right font-medium ${pnlClass(b.outcomeAmount)}`}>
-                      {b.outcomeAmount !== undefined ? `${b.outcomeAmount > 0 ? "+" : ""}${fmtMoney(b.outcomeAmount)}` : <span className="text-slate-600">pending</span>}
+                    <td className={`px-4 py-3 text-right text-xs font-bold ${pnlClass(b.outcomeAmount)}`}>
+                      {b.outcomeAmount !== undefined ? `${b.outcomeAmount > 0 ? "+" : ""}₦${fmtMoney(b.outcomeAmount, 0)}` : <span className="text-slate-500 font-normal">pending</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>{b.status}</Badge>
@@ -263,7 +296,7 @@ export default function BetsPage() {
                         <button
                           onClick={() => void undoBet(b)}
                           title="Remove this mistaken bet log"
-                          className="rounded-md border border-ink-600/60 px-2 py-1 text-[11px] font-semibold text-slate-400 transition-colors hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-300"
+                          className="rounded-md border border-ink-700/60 px-2 py-1 text-[11px] font-semibold text-slate-400 transition-colors hover:border-red-400/40 hover:bg-red-400/10 hover:text-red-300"
                         >
                           Undo
                         </button>
@@ -274,7 +307,7 @@ export default function BetsPage() {
               </tbody>
             </table>
           </div>
-        </Card>
+        </div>
       )}
 
       {/* True parlays — logged as ONE unit, settle all-or-nothing. Cross-sport,

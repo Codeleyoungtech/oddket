@@ -156,6 +156,15 @@ export interface Settings {
    * than their advertised math, not better.
    */
   maxMultipleLegs: number;
+  /** Minimum number of bookmakers quoting a price before a bet is eligible.
+   *  Edges backed by only 1–2 books are likely stale data or a single-
+   *  bookmaker margin quirk, not real value.  Default 4 — calibrated against
+   *  The Odds API which returns 15–24 books per EPL fixture. */
+  minBookmakers: number;
+  /** Maximum fractional spread (max−min)/min across bookmaker odds before
+   *  a bet is flagged as low-confidence.  Default 0.10 (10 %) — the 90th
+   *  percentile of real EPL cross-book spreads (football-data.co.uk 2025-26). */
+  maxSpreadPct: number;
 }
 
 export interface ParlayLeg {

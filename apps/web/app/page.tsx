@@ -42,7 +42,7 @@ export default function OverviewPage() {
         <StatCard
           label="Cumulative CLV"
           value={fmtSignedPct(s.cumulativeClv, 2)}
-          sub={`avg ${fmtSignedPct(s.avgClv, 2)} across ${s.settledBets} settled bets`}
+          sub={`${fmtPct(s.positiveClvRate)} beat closing · avg ${fmtSignedPct(s.avgClv, 2)}`}
           tone={s.cumulativeClv >= 0 ? "positive" : "negative"}
         />
         <StatCard label="Win rate" value={fmtPct(s.winRate)} sub={`${s.settledBets} settled`} />
@@ -60,7 +60,7 @@ export default function OverviewPage() {
       <Card>
         <CardHeader
           title="Cumulative closing line value"
-          subtitle="Positive slope over 100+ bets = the model has a real edge. Watch this, not the streak."
+          subtitle={`${fmtPct(s.positiveClvRate)} of bets beat the closing line · positive slope over 100+ bets = real edge`}
           right={<Badge tone={s.cumulativeClv >= 0 ? "green" : "red"}>{s.cumulativeClv >= 0 ? "edge" : "no edge yet"}</Badge>}
         />
         {clvSeries.length > 1 ? <ClvChart data={clvSeries} /> : <EmptyState title="No CLV data yet" body="Log a bet and pull closing odds to start the scoreboard." />}

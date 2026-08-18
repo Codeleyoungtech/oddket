@@ -236,6 +236,8 @@ function defaultSettings(): Settings {
     markets: ["h2h", "totals"],
     multiplesEnabled: false,
     maxMultipleLegs: 3,
+    minBookmakers: 4,
+    maxSpreadPct: 0.10,
   };
 }
 
@@ -250,6 +252,8 @@ interface SettingsRow {
   markets: string;
   multiples_enabled: number | null;
   max_multiple_legs: number | null;
+  min_bookmakers: number | null;
+  max_spread_pct: number | null;
 }
 
 function rowToSettings(r: SettingsRow): Settings {
@@ -262,10 +266,12 @@ function rowToSettings(r: SettingsRow): Settings {
     defaultStakeCapPct: r.default_stake_cap_pct,
     leagues: safeParseJson(r.leagues, []),
     markets: safeParseJson(r.markets, ["h2h", "totals"]),
-    // Columns added in 0002/0003 — null-safe so pre-migration rows read as
+    // Columns added in 0002/0005 — null-safe so pre-migration rows read as
     // OFF (multiples gated) with the default 3-leg cap.
     multiplesEnabled: r.multiples_enabled === 1,
     maxMultipleLegs: r.max_multiple_legs ?? 3,
+    minBookmakers: r.min_bookmakers ?? 4,
+    maxSpreadPct: r.max_spread_pct ?? 0.10,
   };
 }
 
@@ -288,7 +294,8 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       `UPDATE settings SET
         bankroll = ?1, kelly_fraction = ?2, edge_threshold = ?3,
         daily_stop_loss = ?4, weekly_stop_loss = ?5, default_stake_cap_pct = ?6,
-        leagues = ?7, markets = ?8, multiples_enabled = ?9, max_multiple_legs = ?10
+        leagues = ?7, markets = ?8, multiples_enabled = ?9, max_multiple_legs = ?10,
+        min_bookmakers = ?11, max_spread_pct = ?12
        WHERE id = 1`,
     )
     .bind(
@@ -302,6 +309,8 @@ export async function putSettings(db: D1Database, s: Settings): Promise<void> {
       JSON.stringify(s.markets),
       s.multiplesEnabled ? 1 : 0,
       s.maxMultipleLegs ?? 3,
+      s.minBookmakers ?? 4,
+      s.maxSpreadPct ?? 0.10,
     )
     .run();
 }

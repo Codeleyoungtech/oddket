@@ -334,6 +334,8 @@ app.put("/api/settings", async (c) => {
     markets: Array.isArray(body.markets) ? body.markets : current.markets,
     multiplesEnabled: typeof body.multiplesEnabled === "boolean" ? body.multiplesEnabled : current.multiplesEnabled,
     maxMultipleLegs: typeof body.maxMultipleLegs === "number" ? Math.min(6, Math.max(2, body.maxMultipleLegs)) : current.maxMultipleLegs,
+    minBookmakers: typeof body.minBookmakers === "number" ? Math.max(1, Math.min(20, body.minBookmakers)) : current.minBookmakers,
+    maxSpreadPct: typeof body.maxSpreadPct === "number" ? Math.max(0.01, Math.min(0.50, body.maxSpreadPct)) : current.maxSpreadPct,
   };
   await putSettings(c.env.DB, next);
   return c.json({ ok: true, settings: next });

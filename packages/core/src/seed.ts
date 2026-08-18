@@ -210,6 +210,8 @@ export function buildSeedDatabase(): Database {
       markets: ["h2h", "totals"],
       multiplesEnabled: false,
       maxMultipleLegs: 3,
+      minBookmakers: 1, // seed has 1 book per selection — live gets 15-24
+      maxSpreadPct: 0.50, // permissive for demo — live defaults to 0.10
     },
     parlayBets: [],
   };

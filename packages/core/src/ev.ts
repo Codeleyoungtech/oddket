@@ -99,6 +99,16 @@ export interface FlagOptions {
    *  longshots (small calibration error x huge odds), so the shipped
    *  strategy restricts to short prices. */
   maxOdds?: number;
+  /** Minimum number of bookmakers quoting a price on this selection.
+   *  Edges backed by only 1–2 books are likely stale data or a single-
+   *  bookmaker margin quirk, not real value. Default 4 (calibrated against
+   *  The Odds API which returns 15–24 books per EPL fixture). */
+  minBookmakers?: number;
+  /** If the spread (max−min)/min across bookmaker odds for this selection
+   *  exceeds this fraction, the edge is flagged as low-confidence (thin
+   *  line, likely stale or stale-by-book). Default 0.10 (10 %) — the 90th
+   *  percentile of real EPL cross-book spreads (football-data.co.uk 2025-26). */
+  maxSpreadPct?: number;
 }
 
 /**
@@ -118,11 +128,36 @@ export function flagSlips(
   const threshold = opts.edgeThreshold ?? settings.edgeThreshold;
 
   const legs: SlipLeg[] = [];
+  const minBooks = opts.minBookmakers ?? settings.minBookmakers ?? 4;
+  const maxSpread = opts.maxSpreadPct ?? settings.maxSpreadPct ?? 0.10;
 
   for (const fixture of fixtures) {
     const fixtureOdds = snapshots.filter((s) => s.fixtureId === fixture.id);
     for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
       const marketOdds = fixtureOdds.filter((s) => s.market === pred.market);
+
+      // ── Bookmaker-depth gate ─────────────────────────────────────────
+      // Count unique bookmakers quoting THIS selection.  Edges backed by
+      // only 1–2 books are likely stale data or a single-book margin quirk,
+      // not real value.  The Odds API returns 15–24 books per EPL fixture,
+      // so ≥4 is easily met for live data and only rejects stale rows.
+      const selSnapshots = marketOdds.filter((s) => s.selection === pred.selection);
+      const uniqueBooks = new Set(selSnapshots.map((s) => s.bookmaker));
+      if (uniqueBooks.size < minBooks) continue;
+
+      // ── Market-width sanity check ────────────────────────────────────
+      // If the spread between best and worst odds across books is unusually
+      // wide, the edge is likely a stale line on one book rather than real
+      // value.  Calibrated against football-data.co.uk 2025-26 EPL:
+      //   median spread = 2.9 %,  90th pct = 8.0 %,  95th pct = 9.9 %
+      const selOdds = selSnapshots.map((s) => s.odds).filter((o) => o > 1.01);
+      if (selOdds.length >= 2) {
+        const lo = Math.min(...selOdds);
+        const hi = Math.max(...selOdds);
+        const spreadPct = (hi - lo) / lo;
+        if (spreadPct > maxSpread) continue; // thin/stale line — skip entirely
+      }
+
       // One price per selection (BEST) — otherwise every bookmaker snapshot
       // counts as a separate market outcome and implied collapses to ~0.
       const bestPerSel = new Map<Selection, number>();

@@ -87,16 +87,30 @@ export async function pullClosingOdds(env: Env): Promise<ClosingResult> {
     const closing = closingByFixture.get(bet.fixtureId)?.filter((s) => s.selection === bet.selection);
     if (!closing || closing.length === 0) continue;
 
-    // Best available closing odds for the same selection.
-    const best = [...closing].sort((a, b) => b.odds - a.odds)[0]!;
-    if (best.odds <= 1.01) continue;
+    // Use MEDIAN closing odds across all bookmakers for the same selection.
+    // Best-available (previously used) creates systematic negative bias when
+    // the user bets at a recreational book (e.g. SportyBet, wider margins)
+    // while the "best" comes from a sharper book (bet365/Pinnacle, tighter
+    // margins).  Median is a robust estimate of the true market price and
+    // removes the bookmaker mismatch.  See docs/clv-audit.md for details.
+    const sortedOdds = [...closing]
+      .map((s) => s.odds)
+      .filter((o) => o > 1.01)
+      .sort((a, b) => a - b);
+    if (sortedOdds.length === 0) continue;
+    const mid = Math.floor(sortedOdds.length / 2);
+    const medianOdds =
+      sortedOdds.length % 2 === 0
+        ? (sortedOdds[mid - 1]! + sortedOdds[mid]!) / 2
+        : sortedOdds[mid]!;
+    if (medianOdds <= 1.01) continue;
 
-    const clv = (bet.odds - best.odds) / best.odds;
+    const clv = (bet.odds - medianOdds) / medianOdds;
     const record: ClvResult = {
       id: `clv-${bet.id}`,
       betId: bet.id,
       openingOdds: bet.odds,
-      closingOdds: best.odds,
+      closingOdds: Math.round(medianOdds * 100) / 100,
       clv: Math.round(clv * 10000) / 10000,
       capturedAt,
     };

@@ -190,6 +190,8 @@ export function buildTennisSeedDatabase(): Database {
       markets: ["h2h"],
       multiplesEnabled: false,
       maxMultipleLegs: 3,
+      minBookmakers: 1,
+      maxSpreadPct: 0.50,
     },
     parlayBets: [],
   };

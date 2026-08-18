@@ -336,6 +336,34 @@ export default function SettingsPage() {
             <span className="mt-1 block text-xs text-slate-500">Hard ceiling on any one stake ≈ ₦{fmtMoney(form.bankroll * form.defaultStakeCapPct, 0)}.</span>
           </label>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="label mb-1.5 block">Min bookmakers to flag a bet ({form.minBookmakers})</span>
+            <input
+              className="input"
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={form.minBookmakers}
+              onChange={(e) => update({ minBookmakers: Number(e.target.value) })}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Rejects single-book edges as likely stale. Live API returns 15–24 books.</span>
+          </label>
+          <label className="block">
+            <span className="label mb-1.5 block">Max odds spread ({fmtPct(form.maxSpreadPct, 0)})</span>
+            <input
+              className="input"
+              type="range"
+              min={0.03}
+              max={0.30}
+              step={0.01}
+              value={form.maxSpreadPct}
+              onChange={(e) => update({ maxSpreadPct: Number(e.target.value) })}
+            />
+            <span className="mt-1 block text-xs text-slate-500">Skips bets where bookmakers disagree widely — thin/stale line.</span>
+          </label>
+        </div>
         <div className="mt-4 rounded-lg border border-ink-700/60 bg-ink-800/40 px-4 py-3 text-xs text-slate-400">
           At current settings a typical flagged single stakes up to{" "}
           <span className="num font-semibold text-emerald-300">₦{fmtMoney(Math.min(kellyExposure, form.bankroll * form.defaultStakeCapPct), 0)}</span>.

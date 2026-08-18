@@ -19,6 +19,20 @@ export default function BetsPage() {
   const [showLogger, setShowLogger] = useState(false);
   const [settleScores, setSettleScores] = useState<Record<string, { home: string; away: string }>>({});
   const [settlingId, setSettlingId] = useState<string | null>(null);
+  const [syncingCloud, setSyncingCloud] = useState(false);
+
+  const handleAutoSettle = async () => {
+    setSyncingCloud(true);
+    try {
+      await fetch("/api/settle", {
+        method: "POST",
+        headers: { "x-predict-key": "ok_783eededb840c83e014dc173bcb0fcba78431c953ea5b2bb" },
+      }).catch(() => null);
+      refresh();
+    } finally {
+      setSyncingCloud(false);
+    }
+  };
 
   const handleQuickSettle = async (fixtureId: string, isTennis: boolean) => {
     const s = settleScores[fixtureId] || { home: "0", away: "0" };
@@ -176,12 +190,21 @@ export default function BetsPage() {
             Real paper-trade records scored against closing line value (CLV).
           </p>
         </div>
-        <button
-          onClick={() => setShowLogger((v) => !v)}
-          className="rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition-all"
-        >
-          {showLogger ? "✕ Close Manual Logger" : "＋ Log Custom Bet"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleAutoSettle}
+            disabled={syncingCloud}
+            className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/20 transition-all disabled:opacity-50"
+          >
+            {syncingCloud ? "Syncing…" : "🔄 Auto-Settle All"}
+          </button>
+          <button
+            onClick={() => setShowLogger((v) => !v)}
+            className="rounded-lg border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-300 hover:bg-sky-400/20 transition-all"
+          >
+            {showLogger ? "✕ Close Logger" : "＋ Log Custom Bet"}
+          </button>
+        </div>
       </div>
 
       {/* KPI Stat Cards */}

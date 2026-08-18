@@ -53,7 +53,9 @@ export default function SettingsPage() {
   const [pushReady, setPushReady] = useState(false);
   const [pushSub, setPushSub] = useState<PushSubscription | null>(null);
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
-  const [settleScores, setSettleScores] = useState<Record<string, { home: string; away: string }>>({});
+  const [selectedFixtureId, setSelectedFixtureId] = useState<string>("");
+  const [scoreHome, setScoreHome] = useState<string>("");
+  const [scoreAway, setScoreAway] = useState<string>("");
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [settleStatusMsg, setSettleStatusMsg] = useState<string | null>(null);
   const [syncingCloud, setSyncingCloud] = useState(false);
@@ -209,24 +211,29 @@ export default function SettingsPage() {
     }
   };
 
-  const handleManualSettle = async (fixtureId: string, isTennis: boolean) => {
-    const s = settleScores[fixtureId] || { home: "0", away: "0" };
-    const homeScore = parseInt(s.home, 10);
-    const awayScore = parseInt(s.away, 10);
+  const handleManualSettle = async () => {
+    if (!selectedFixtureId) return;
+    const homeScore = parseInt(scoreHome, 10);
+    const awayScore = parseInt(scoreAway, 10);
     if (isNaN(homeScore) || isNaN(awayScore)) {
-      setSettleStatusMsg("Please enter valid scores.");
+      setSettleStatusMsg("Please enter valid numeric scores.");
       return;
     }
-    setSettlingId(fixtureId);
+    const bet = pendingBets.find((b) => b.fixtureId === selectedFixtureId);
+    const isTennis = bet?.fixture?.sport === "tennis";
+    setSettlingId(selectedFixtureId);
     setSettleStatusMsg(null);
     try {
       if (isTennis) {
         const winner = homeScore > awayScore ? "home" : "away";
-        await recordTennisOutcome(fixtureId, winner);
+        await recordTennisOutcome(selectedFixtureId, winner);
       } else {
-        await recordOutcome(fixtureId, homeScore, awayScore);
+        await recordOutcome(selectedFixtureId, homeScore, awayScore);
       }
-      setSettleStatusMsg(`✓ Settle completed for fixture (${homeScore}-${awayScore})!`);
+      setSettleStatusMsg(`✓ Match settled: ${bet?.fixture?.homeTeam ?? ""} vs ${bet?.fixture?.awayTeam ?? ""} (${homeScore}-${awayScore})!`);
+      setSelectedFixtureId("");
+      setScoreHome("");
+      setScoreAway("");
       refresh();
     } catch (err) {
       setSettleStatusMsg(err instanceof Error ? err.message : "Settlement failed.");
@@ -478,14 +485,14 @@ export default function SettingsPage() {
 
       <Card className="card-pad">
         <CardHeader
-          title="Manual Settlement & Live Sync"
-          subtitle="Settle bets manually when matches finish, or trigger cloud score auto-settlement immediately."
+          title="Settlement & Cloud Sync"
+          subtitle="Force-sync official bookmaker scores in batch, or manually resolve a finished match."
         />
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-800 bg-ink-950/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-800 bg-ink-950/40 p-3.5">
             <div>
-              <p className="text-xs font-semibold text-slate-200">Force Cloud Auto-Settlement</p>
-              <p className="text-[11px] text-slate-400">Pulls official full-time scores from bookmakers right now without waiting for the 30m cron.</p>
+              <p className="text-xs font-semibold text-slate-200">Batch Cloud Auto-Settlement</p>
+              <p className="text-[11px] text-slate-400">Pulls official full-time scores for all matches now without waiting for the 30m cron.</p>
             </div>
             <button
               onClick={handleCloudAutoSettle}
@@ -496,42 +503,50 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div>
-            <p className="text-xs font-semibold text-slate-300 mb-2">Pending Bets In Your Log ({pendingBets.length})</p>
+          <div className="rounded-lg border border-ink-800 bg-ink-950/40 p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-200">Manual Match Settle</p>
+              <span className="text-[11px] text-slate-400">{pendingBets.length} pending bet{pendingBets.length === 1 ? "" : "s"}</span>
+            </div>
+
             {pendingBets.length === 0 ? (
               <p className="text-xs text-slate-500 italic">No pending bets currently in your log.</p>
             ) : (
-              <div className="space-y-2.5">
-                {pendingBets.map((b) => {
-                  const s = settleScores[b.fixtureId] || { home: "", away: "" };
-                  const isTennis = b.fixture?.sport === "tennis";
-                  return (
-                    <div
-                      key={b.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700/60 bg-ink-900/60 p-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-slate-100 truncate">
-                          {b.fixture ? `${b.fixture.homeTeam} vs ${b.fixture.awayTeam}` : b.fixtureId}
-                        </p>
-                        <p className="text-[11px] text-slate-400">
-                          Pick: <span className="text-slate-200 font-semibold">{b.selection}</span> @{b.odds} · Stake: ₦{b.stake}
-                        </p>
-                      </div>
+              <div className="space-y-3">
+                <select
+                  value={selectedFixtureId}
+                  onChange={(e) => {
+                    setSelectedFixtureId(e.target.value);
+                    setScoreHome("");
+                    setScoreAway("");
+                  }}
+                  className="w-full rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-2 text-xs font-medium text-slate-200 focus:border-sky-400/50 focus:outline-none"
+                >
+                  <option value="">Select a pending fixture to resolve…</option>
+                  {pendingBets.map((b) => (
+                    <option key={b.id} value={b.fixtureId}>
+                      {b.fixture ? `${b.fixture.homeTeam} vs ${b.fixture.awayTeam}` : b.fixtureId} — {b.selection} (@{b.odds})
+                    </option>
+                  ))}
+                </select>
 
+                {selectedFixtureId && (() => {
+                  const bet = pendingBets.find((b) => b.fixtureId === selectedFixtureId);
+                  if (!bet) return null;
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-ink-700 bg-ink-900/80 p-3">
+                      <div>
+                        <p className="text-xs font-bold text-slate-100">{bet.fixture ? `${bet.fixture.homeTeam} vs ${bet.fixture.awayTeam}` : bet.fixtureId}</p>
+                        <p className="text-[11px] text-slate-400">Pick: <span className="font-semibold text-slate-200">{bet.selection}</span> @{bet.odds} · Stake: ₦{bet.stake}</p>
+                      </div>
                       <div className="flex items-center gap-2">
                         <input
                           type="number"
                           min="0"
                           max="20"
                           placeholder="Home"
-                          value={s.home}
-                          onChange={(e) =>
-                            setSettleScores((prev) => ({
-                              ...prev,
-                              [b.fixtureId]: { ...prev[b.fixtureId], home: e.target.value, away: prev[b.fixtureId]?.away || "0" },
-                            }))
-                          }
+                          value={scoreHome}
+                          onChange={(e) => setScoreHome(e.target.value)}
                           className="w-14 rounded border border-ink-700 bg-ink-800 px-2 py-1 text-center text-xs font-bold text-slate-100 focus:outline-none"
                         />
                         <span className="text-xs font-bold text-slate-500">-</span>
@@ -540,34 +555,28 @@ export default function SettingsPage() {
                           min="0"
                           max="20"
                           placeholder="Away"
-                          value={s.away}
-                          onChange={(e) =>
-                            setSettleScores((prev) => ({
-                              ...prev,
-                              [b.fixtureId]: { ...prev[b.fixtureId], home: prev[b.fixtureId]?.home || "0", away: e.target.value },
-                            }))
-                          }
+                          value={scoreAway}
+                          onChange={(e) => setScoreAway(e.target.value)}
                           className="w-14 rounded border border-ink-700 bg-ink-800 px-2 py-1 text-center text-xs font-bold text-slate-100 focus:outline-none"
                         />
-
                         <button
-                          onClick={() => handleManualSettle(b.fixtureId, isTennis)}
-                          disabled={settlingId === b.fixtureId}
-                          className="rounded-lg border border-sky-400/40 bg-sky-400/15 px-3 py-1 text-xs font-bold text-sky-200 hover:bg-sky-400/25 transition-all disabled:opacity-50"
+                          onClick={handleManualSettle}
+                          disabled={settlingId === selectedFixtureId}
+                          className="rounded-lg border border-sky-400/40 bg-sky-400/20 px-3 py-1 text-xs font-bold text-sky-200 hover:bg-sky-400/30 transition-all disabled:opacity-50"
                         >
-                          {settlingId === b.fixtureId ? "Settling…" : "⚡ Settle Bet"}
+                          {settlingId === selectedFixtureId ? "Settling…" : "⚡ Settle"}
                         </button>
                       </div>
                     </div>
                   );
-                })}
+                })()}
               </div>
             )}
-          </div>
 
-          {settleStatusMsg && (
-            <p className="text-xs text-emerald-300 font-medium">{settleStatusMsg}</p>
-          )}
+            {settleStatusMsg && (
+              <p className="text-xs text-emerald-300 font-medium">{settleStatusMsg}</p>
+            )}
+          </div>
         </div>
       </Card>
 

@@ -103,27 +103,45 @@ export async function pullTennisClosingOdds(env: Env): Promise<TennisClosingResu
     fetchLimit: Number(env.ODDS_FETCH_LIMIT ?? 50),
   });
 
-  // Current best price per (fixture, selection) from this pull = the line we
-  // compare against. Closing odds are the freshest snapshot before kickoff.
-  const bestByKey = new Map<string, number>();
+  // Store closing fixtures + snapshots (marked isClosing=true) so the
+  // recalculate endpoint can recompute CLV from stored data, same as football.
+  const now = Math.floor(Date.now() / 1000);
+  const closingFixtures = events.map((e) => e.fixture);
+  const closingSnapshots = events.flatMap((e) =>
+    e.snapshots.map((s) => ({ ...s, isClosing: true, capturedAt: now })),
+  );
+  if (closingFixtures.length > 0) await upsertTennisFixtures(env.DB, closingFixtures);
+  if (closingSnapshots.length > 0) await upsertTennisOdds(env.DB, closingSnapshots);
+
+  // Collect ALL odds per (fixture, selection) to compute median closing price.
+  // Median is a robust estimator of the true market price and avoids the
+  // bookmaker-mismatch bias that best-available creates (football fix).
+  const oddsByKey = new Map<string, number[]>();
   for (const e of events) {
     for (const s of e.snapshots) {
+      if (s.odds <= 1.01) continue;
       const key = `${s.fixtureId}:${s.selection}`;
-      const cur = bestByKey.get(key);
-      if (cur === undefined || s.odds > cur) bestByKey.set(key, s.odds);
+      const arr = oddsByKey.get(key) ?? [];
+      arr.push(s.odds);
+      oddsByKey.set(key, arr);
     }
   }
 
   let clvStored = 0;
-  const now = Math.floor(Date.now() / 1000);
   for (const bet of pending) {
-    const closing = bestByKey.get(`${bet.fixtureId}:${bet.selection}`);
-    if (!closing || closing <= 1) continue;
+    const oddsList = oddsByKey.get(`${bet.fixtureId}:${bet.selection}`);
+    if (!oddsList || oddsList.length === 0) continue;
+    const sorted = [...oddsList].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const closing = sorted.length % 2 === 0
+      ? (sorted[mid - 1]! + sorted[mid]!) / 2
+      : sorted[mid]!;
+    if (closing <= 1.01) continue;
     const record = {
       id: `tclv-${bet.id}-${now}`,
       betId: bet.id,
       openingOdds: bet.odds,
-      closingOdds: closing,
+      closingOdds: Math.round(closing * 100) / 100,
       clv: Math.round(((bet.odds - closing) / closing) * 10000) / 10000,
       capturedAt: now,
     };

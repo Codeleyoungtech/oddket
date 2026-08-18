@@ -87,6 +87,10 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const pendingBets = useMemo(() => {
+    return (bets || []).filter((b) => b.status === "pending");
+  }, [bets]);
+
   if (!db || !form) return <Loading />;
 
   const update = (patch: Partial<Settings>) => {
@@ -204,10 +208,6 @@ export default function SettingsPage() {
       setAlertMsg("Couldn't send — VAPID keys aren't set on the worker yet.");
     }
   };
-
-  const pendingBets = useMemo(() => {
-    return bets.filter((b) => b.status === "pending");
-  }, [bets]);
 
   const handleManualSettle = async (fixtureId: string, isTennis: boolean) => {
     const s = settleScores[fixtureId] || { home: "0", away: "0" };

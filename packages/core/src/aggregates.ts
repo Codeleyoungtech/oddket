@@ -197,14 +197,17 @@ export function buildDashboard(db: Database): Dashboard {
   const roiPct = totalStaked > 0 ? totalReturn / totalStaked : 0;
 
   const clvByBet = new Map(clv.map((c) => [c.betId, c]));
-  const settledClv = settled.filter((b) => clvByBet.has(b.id));
+  // CLV is a pre-kickoff metric — count ALL bets with CLV data (pending +
+  // settled), not just settled ones.  A bet logged before the 18:30 closing
+  // pull has a valid CLV number regardless of whether the match has finished.
+  const allClv = bets.filter((b) => clvByBet.has(b.id));
   const avgClv =
-    settledClv.length > 0
-      ? settledClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0) / settledClv.length
+    allClv.length > 0
+      ? allClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0) / allClv.length
       : 0;
-  const cumulativeClv = settledClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0);
+  const cumulativeClv = allClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0);
   const positiveClvRate =
-    settledClv.length > 0 ? settledClv.filter((b) => clvByBet.get(b.id)!.clv > 0).length / settledClv.length : 0;
+    allClv.length > 0 ? allClv.filter((b) => clvByBet.get(b.id)!.clv > 0).length / allClv.length : 0;
 
   const scheduledFixtures = fixtures.filter((f) => f.status === "scheduled");
   const flaggedSingles = flagSlips(scheduledFixtures, predictions, db.odds, settings).length;

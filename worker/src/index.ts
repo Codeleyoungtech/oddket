@@ -370,6 +370,73 @@ app.post("/api/closing", async (c) => {
   }
 });
 
+/** One-time CLV recalculation — recomputes all existing CLV records using
+ *  median closing odds (the fix for the systematic negative bias from
+ *  comparing SportyBet odds against bet365/Pinnacle best-available). */
+app.post("/api/clv/recalculate", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized." }, 401);
+  const db = c.env.DB;
+
+  // Load ALL closing odds snapshots
+  const snapRows = await db
+    .prepare("SELECT * FROM odds_snapshots WHERE is_closing = 1")
+    .all<Record<string, unknown>>();
+  const snaps = snapRows.results ?? [];
+
+  // Group by fixtureId:market:selection → list of odds
+  const snapMap = new Map<string, number[]>();
+  for (const r of snaps) {
+    const key = `${r.fixture_id}:${r.market}:${r.selection}`;
+    const arr = snapMap.get(key) ?? [];
+    const odds = Number(r.odds);
+    if (odds > 1.01) arr.push(odds);
+    snapMap.set(key, arr);
+  }
+
+  // Load ALL bets
+  const betRows = await db
+    .prepare("SELECT * FROM bets")
+    .all<Record<string, unknown>>();
+  const bets = betRows.results ?? [];
+
+  let updated = 0;
+  let skipped = 0;
+  for (const bet of bets) {
+    const betId = bet.id as string;
+    const fixtureId = bet.fixture_id as string;
+    const market = bet.market as string;
+    const selection = bet.selection as string;
+    const betOdds = Number(bet.odds);
+    if (betOdds <= 1.01) { skipped++; continue; }
+
+    const key = `${fixtureId}:${market}:${selection}`;
+    const oddsList = snapMap.get(key);
+    if (!oddsList || oddsList.length === 0) { skipped++; continue; }
+
+    // Compute median closing odds
+    const sorted = [...oddsList].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 === 0
+      ? (sorted[mid - 1]! + sorted[mid]!) / 2
+      : sorted[mid]!;
+    if (median <= 1.01) { skipped++; continue; }
+
+    const clv = (betOdds - median) / median;
+    const roundedClv = Math.round(clv * 10000) / 10000;
+    const roundedMedian = Math.round(median * 100) / 100;
+
+    await db
+      .prepare(
+        `UPDATE clv_results SET clv = ?1, closing_odds = ?2 WHERE bet_id = ?3`,
+      )
+      .bind(roundedClv, roundedMedian, betId)
+      .run();
+    updated++;
+  }
+
+  return c.json({ ok: true, updated, skipped, total: bets.length });
+});
+
 /* ---------------- TENNIS (isolated from football) ---------------- */
 
 /** Tennis fixtures are always "real" (sport = 'tennis') — no demo-seed blurring. */

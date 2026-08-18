@@ -365,3 +365,20 @@ same code in production (see `wrangler.toml`).
   auto-falls-back to sklearn `GradientBoostingClassifier` — output format is identical.
 - pip downloads on this network are flaky; retry individually, e.g.
   `.venv/bin/pip install xgboost` (or just rely on the sklearn fallback).
+
+---
+
+## 12. Pass 3 — Mobile Feed, Search & Settlement Upgrades
+
+1. **Mobile Responsive Slips & Bets:**
+   - Slips cards stack vertically on small screens without wrapping/colliding.
+   - Bets log replaced horizontal table scrolling on mobile with clean finance-grade activity cards.
+2. **Instant Search & Detailed Drawers:**
+   - Real-time search by team name, league, or pick.
+   - Expandable "View Details & Insights" drawer showing true Model Probability, Bookmaker Implied Probability, Potential Payout ₦, and CLV.
+3. **Settlement Architecture:**
+   - **Batch Cloud Sync (`/api/settle`):** 1-tap `🔄 Auto-Settle All` button on `/bets` and `/settings` queries bookmaker full-time scores and settles all pending bets simultaneously.
+   - **Compact Manual Settle:** Single-selector dropdown on `/settings` that keeps the card at a fixed ~140px height regardless of how many bets are logged.
+   - **In-card Quick Settle:** Direct score inputs inside the details drawer on `/bets`.
+4. **Automated Monthly Retraining:**
+   - GitHub Actions workflow runs monthly on the 1st (`.github/workflows/retrain-monthly.yml`) to fetch fresh historical data, retrain XGBoost/sklearn models, generate calibrated predictions, and ingest into the Cloudflare Worker DB automatically.

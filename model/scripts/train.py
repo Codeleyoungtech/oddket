@@ -124,14 +124,16 @@ def fill_market_features(matches: list, market: str = "h2h") -> None:
                 f[key] = round((max(books) - min(books)) / min(books), 4)
 
 
-def calibrate_on_train(clf, X_tr, y_tr, X_te, cv: int = 3) -> tuple[np.ndarray, np.ndarray]:
-    """Multiclass Platt-style calibration (sigmoid per class) fitted on the
-    TRAIN set with internal cross-validation, applied to the holdout.
+def calibrate_on_train(clf, X_tr, y_tr, X_te, cv: int = 3, n_classes: int = 3) -> tuple[np.ndarray, np.ndarray]:
+    """Calibration fitted on TRAIN (internal CV), applied to the holdout.
 
-    Uses CalibratedClassifierCV with method='sigmoid' — monotonic and smooth,
-    so it cannot over-extrapolate the way isotonic regression did on sparse
-    high-probability bins (which inflated draw to 65%+ nonsense)."""
-    cccv = CalibratedClassifierCV(clf, method="sigmoid", cv=cv)
+    - Binary (n_classes=2, ou market): isotonic regression — non-parametric,
+      no shape assumptions, works well on binary with enough samples.
+    - Multiclass (n_classes=3, h2h): sigmoid (Platt) — monotonic and smooth,
+      avoids isotonic's over-extrapolation on sparse high-probability bins
+      (which inflated draw to 65%+ nonsense on 3-class)."""
+    method = "isotonic" if n_classes == 2 else "sigmoid"
+    cccv = CalibratedClassifierCV(clf, method=method, cv=cv)
     cccv.fit(X_tr, y_tr)
     return cccv.predict_proba(X_tr), cccv.predict_proba(X_te)
 
@@ -309,8 +311,10 @@ def main() -> int:
     clf, version = load_clf()
     clf.fit(X_tr, y_tr)
 
-    # Platt calibration fitted on TRAIN (internal CV), applied to holdout
-    _, proba_cal = calibrate_on_train(clf, X_tr, y_tr, X_te)
+    # Calibration fitted on TRAIN (internal CV), applied to holdout.
+    # Binary (ou) gets isotonic; multiclass (h2h) gets sigmoid.
+    n_cls = 2 if market == "ou" else 3
+    _, proba_cal = calibrate_on_train(clf, X_tr, y_tr, X_te, n_classes=n_cls)
     raw_brier = multiclass_brier(y_te, clf.predict_proba(X_te))
     cal_brier = multiclass_brier(y_te, proba_cal)
     acc = float((proba_cal.argmax(axis=1) == y_te).mean())

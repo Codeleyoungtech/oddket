@@ -41,7 +41,7 @@ export async function ingestOdds(env: Env): Promise<IngestResult> {
     sports,
     regions: env.ODDS_REGIONS ?? "eu",
     markets: env.ODDS_MARKETS ?? "h2h,totals",
-    fetchLimit: Number(env.ODDS_FETCH_LIMIT ?? 10),
+    fetchLimit: Number(env.ODDS_FETCH_LIMIT ?? 50),
     bookmakers: env.ODDS_BOOKMAKERS,
   });
 

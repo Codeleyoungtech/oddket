@@ -134,11 +134,29 @@ def _ascii(name: str) -> str:
     return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
 
 
-def normalize(name: str) -> str:
+def normalize(name: str, _fuzzy_cache: dict | None = None) -> str:
     if name in NAME_MAP:
         return NAME_MAP[name]
     n = _ascii(name)
-    return NAME_MAP.get(n, n)
+    if n in NAME_MAP:
+        return NAME_MAP[n]
+    # Fuzzy fallback: strip common suffixes (FC, CF, City, United, etc.)
+    # and try again — catches "Deportivo La Coruña" -> "Deportivo La Coruna"
+    # -> "La Coruna" variants.
+    stripped = n
+    for suffix in (" CF", " FC", " United", " City", " Town", " BC",
+                   " AC", " SC", " 1913", " 1907", " 05"):
+        if stripped.endswith(suffix):
+            stripped = stripped[:-len(suffix)].strip()
+            if stripped in NAME_MAP:
+                return NAME_MAP[stripped]
+    # If we have a fuzzy cache (built from training data), try close matches
+    if _fuzzy_cache is not None:
+        import difflib
+        matches = difflib.get_close_matches(n, list(_fuzzy_cache.keys()), n=1, cutoff=0.6)
+        if matches:
+            return _fuzzy_cache[matches[0]]
+    return n
 
 
 def logit(p: float) -> float:
@@ -204,6 +222,14 @@ def main() -> int:
     history = load_matches_dict(hist_path)
     states = build_team_states(history)
 
+    # Build fuzzy lookup cache: normalizedName -> training team name.
+    # Used by normalize() as a fallback for teams not in NAME_MAP.
+    _fuzzy_cache: dict[str, str] = {}
+    for team_name in states:
+        norm = normalize(team_name)
+        if norm not in _fuzzy_cache:
+            _fuzzy_cache[norm] = team_name
+
     # Neutral prior for teams with no history. IMPORTANT: the field's Elo has
     # drifted far below START_RATING (1500) — the median real team sits around
     # ~940 because the draw rule drains points from both sides over 10k matches.
@@ -226,7 +252,7 @@ def main() -> int:
     rows = []
     unknown = 0
     for f in fixtures:
-        home, away = normalize(f.get("home", "")), normalize(f.get("away", ""))
+        home, away = normalize(f.get("home", ""), _fuzzy_cache), normalize(f.get("away", ""), _fuzzy_cache)
         # Unknown teams get a FRESH field-average TeamState (median Elo, form
         # 0.5, avg goals 1.3/1.2, no H2H) — scored honestly on the prior, never
         # skipped. This is what guarantees every fixture gets a prediction,

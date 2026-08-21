@@ -45,6 +45,13 @@ ODDS_FEATURES = ["odd_h", "odd_d", "odd_a"]
 OU_ODDS_FEATURES = ["odd_over", "odd_under"]
 MOVE_FEATURES = ["move_h", "move_d", "move_a"]
 SPREAD_FEATURES = ["spread_h", "spread_d", "spread_a"]
+# Goal-volume features: directly predict over/under 2.5 by measuring
+# how many goals each team scores and concedes per match.
+OU_GOALS_FEATURES = [
+    "ou_combined_avg_goals", "ou_home_scored_rate", "ou_away_scored_rate",
+    "ou_home_conceded_rate", "ou_away_conceded_rate",
+    "ou_h2h_avg_total", "ou_poisson_expected_total",
+]
 
 FEATURE_GROUPS = {
     "base": BASE_FEATURES,
@@ -53,6 +60,7 @@ FEATURE_GROUPS = {
     "rest": REST_FEATURES,
     "odds": ODDS_FEATURES,
     "ou_odds": OU_ODDS_FEATURES,
+    "ou_goals": OU_GOALS_FEATURES,
     "move": MOVE_FEATURES,
     "spread": SPREAD_FEATURES,
 }
@@ -222,6 +230,24 @@ def compute_pair_features(home_state: TeamState, away_state: TeamState,
     mu_a = max(0.2, min(4.0, 1.15 * (away_gf / 1.25) * (home_ga / 1.35)))
     poi_h, poi_d, poi_a, poi_over = _poisson_match_probs(lambda_h, mu_a)
 
+    # Goal-volume features: directly measure scoring/defensive rates
+    # that predict over/under 2.5 goals.
+    ou_combined_avg_goals = home_gf + home_ga + away_gf + away_ga  # total avg goals
+    ou_home_scored_rate = home_gf  # home team goals scored per game
+    ou_away_scored_rate = away_gf  # away team goals scored per game
+    ou_home_conceded_rate = home_ga  # home team goals conceded per game
+    ou_away_conceded_rate = away_ga  # away team goals conceded per game
+    # H2H total goals: average total goals in recent direct meetings
+    h2h_totals: list[float] = []
+    for m in reversed(recent):
+        if len(h2h_totals) >= H2H_WINDOW:
+            break
+        if (m.home == home and m.away == away) or (m.home == away and m.away == home):
+            h2h_totals.append(m.home_goals + m.away_goals)
+    ou_h2h_avg_total = sum(h2h_totals) / len(h2h_totals) if h2h_totals else (home_gf + home_ga + away_gf + away_ga) / 2
+    # Poisson expected total: lambda_h + mu_a (both teams combined)
+    ou_poisson_expected_total = lambda_h + mu_a
+
     # H2H: average goal difference in recent direct meetings
     h2h_diffs: list[float] = []
     for m in reversed(recent):
@@ -270,6 +296,14 @@ def compute_pair_features(home_state: TeamState, away_state: TeamState,
         "rest_diff": float(rest_home - rest_away),
         "short_rest_home": 1.0 if short_home else 0.0,
         "short_rest_away": 1.0 if short_away else 0.0,
+        # goal-volume features (directly predict over/under 2.5)
+        "ou_combined_avg_goals": round(ou_combined_avg_goals, 4),
+        "ou_home_scored_rate": round(ou_home_scored_rate, 4),
+        "ou_away_scored_rate": round(ou_away_scored_rate, 4),
+        "ou_home_conceded_rate": round(ou_home_conceded_rate, 4),
+        "ou_away_conceded_rate": round(ou_away_conceded_rate, 4),
+        "ou_h2h_avg_total": round(ou_h2h_avg_total, 4),
+        "ou_poisson_expected_total": round(ou_poisson_expected_total, 4),
         # market features (filled in later from historical_odds.json)
         "odd_h": 0.0, "odd_d": 0.0, "odd_a": 0.0,
         "odd_over": 0.0, "odd_under": 0.0,

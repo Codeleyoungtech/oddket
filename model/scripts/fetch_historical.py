@@ -119,7 +119,7 @@ def _odds_summary(r: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seasons", default="2019,2020,2021,2022,2023,2024",
+    ap.add_argument("--seasons", default="2019,2020,2021,2022,2023,2024,2025",
                     help="calendar-year season starts, comma-separated")
     ap.add_argument("--leagues", default="E0,D1,SP1,I1",
                     help="league codes, comma-separated (E0,D1,SP1,I1)")

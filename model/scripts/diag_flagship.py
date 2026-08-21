@@ -23,6 +23,7 @@ features = meta["features"]
 
 matches = load_matches_dict(os.path.join(ROOT, "data", "historical.json"))
 fill_market_features(matches)
+matches.sort(key=lambda m: m.ts)
 n = len(matches)
 cut = int(n * 0.8)
 train_m, test_m = matches[:cut], matches[cut:]

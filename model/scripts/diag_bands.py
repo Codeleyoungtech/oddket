@@ -18,7 +18,7 @@ import numpy as np  # noqa: E402
 from sklearn.calibration import CalibratedClassifierCV  # noqa: E402
 
 from features import FEATURE_GROUPS, load_matches_dict  # noqa: E402
-from train import fill_market_features  # noqa: E402
+from train import fill_market_features, odds_for_market  # noqa: E402
 
 
 def main() -> int:
@@ -30,6 +30,7 @@ def main() -> int:
 
     matches = load_matches_dict(os.path.join(ROOT, "data", "historical.json"))
     fill_market_features(matches)
+    matches.sort(key=lambda m: m.ts)
     n = len(matches)
     cut = int(n * 0.8)
     train_m, test_m = matches[:cut], matches[cut:]
@@ -50,10 +51,10 @@ def main() -> int:
     res = {b: {"bets": 0, "wins": 0, "staked": 0.0, "ret": 0.0, "edge_sum": 0.0} for b in bands}
     all_bets = []
     for i, m in enumerate(test_m):
-        o = m.odds or {}
-        if not o or not all(v and v > 0 for v in o.values()):
+        o = odds_for_market(m, classes)
+        if len(o) != len(classes):
             continue
-        inv = {k: 1.0 / v for k, v in o.items() if v and v > 0}
+        inv = {k: 1.0 / o[k] for k in classes}
         s = sum(inv.values())
         implied = {k: v / s for k, v in inv.items()}
         edges = {c: pcal[i][j] - implied[c] for j, c in enumerate(classes)}

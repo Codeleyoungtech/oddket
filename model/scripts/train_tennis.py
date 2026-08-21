@@ -10,14 +10,9 @@ ATP main tour, match-winner only (V1). Same honesty discipline as football:
   - Feature groups toggle independently via --features so each candidate
     change is backtested on its own (base,h2h,ew_form,rest,odds,spread).
 
-Odds note: tennis-data.co.uk stores odds keyed to Winner/Loser (outcome-
-labeled), NOT to named players — the CSV tells you the winner's price and the
-loser's price, but a pre-match bettor does not know which slot a player will
-occupy. So odds/spread CANNOT be used as model features from this source
-without leaking the outcome (verified: including them gave 100% accuracy / 0
-Brier on the holdout — the odds columns encoded the answer). The market still
-enters the live loop where it belongs: the EV engine compares model prob vs
-implied prob at slip time, and CLV is measured against closing odds live.
+Odds note: tennis-data.co.uk stores raw odds in Winner/Loser columns. The
+feature builder resolves those prices by player name before training; routing
+by result slot leaked the outcome and produced impossible 100% accuracy.
 
 Outputs:
     model/models/tennis_model.joblib, tennis_calibrator.joblib
@@ -161,8 +156,7 @@ def simulate_staking(test_m, proba_cal, bankroll: float = 10000.0,
         "entry": "best price across books (B365/CB/EX/IW/PS)",
         "market": "h2h",
         "note": "Tennis holdout backtest, edge>0, quarter Kelly, 5% cap. "
-                "Odds features excluded from training (tennis-data.co.uk odds "
-                "are outcome-labeled — including them leaked the result). "
+                "Odds features are player-name resolved before training; "
                 "ROI/CLV measured live via the worker's closing-odds pull.",
     }
 
@@ -199,6 +193,7 @@ def main() -> int:
         fill_odds_features(m)
 
     # TIME-ORDERED split
+    matches.sort(key=lambda m: m.ts)
     n = len(matches)
     cut = int(n * 0.8)
     train_m, test_m = matches[:cut], matches[cut:]

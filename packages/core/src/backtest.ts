@@ -7,7 +7,7 @@ import type {
   Settings,
 } from "./types";
 import { selectionWon, buildBankrollSeries, buildClvSeries } from "./aggregates";
-import { bestOddsFor, marginAdjustedImplied } from "./ev";
+import { bestOddsBySelection, bestOddsFor, hasCompleteMarketOdds, marginAdjustedImplied } from "./ev";
 import { suggestedStake } from "./kelly";
 import { round } from "./math";
 
@@ -55,8 +55,10 @@ export function runBacktest(db: Database, opts: { edgeThreshold?: number } = {})
 
     for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
       const marketOdds = fixtureOdds.filter((o) => o.market === pred.market);
+      const bestPerSel = bestOddsBySelection(marketOdds, pred.market);
+      if (!hasCompleteMarketOdds(bestPerSel, pred.market, fixture)) continue;
       const implied = marginAdjustedImplied(
-        marketOdds.map((o) => ({ selection: o.selection, odds: o.odds })),
+        [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
         pred.selection,
       );
       if (implied <= 0) continue;

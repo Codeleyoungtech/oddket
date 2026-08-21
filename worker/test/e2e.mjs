@@ -478,5 +478,42 @@ console.log("\n[14] settlement alerts (events + push subscriptions)");
   check("unsubscribe ok", un.status === 200 && un.json?.ok === true, JSON.stringify(un.json));
 }
 
+console.log("\n[15] EV market integrity (football draw is 1X2, not binary)");
+{
+  const now = Math.floor(Date.now() / 1000);
+  sqlite.prepare("INSERT INTO fixtures (id, sport, league, home_team, away_team, commence_time, status) VALUES (?,?,?,?,?,?,?)")
+    .run("draw-ev", "soccer_epl", "English Premier League", "Draw FC", "Parity United", now + 86400, "scheduled");
+  sqlite.prepare("INSERT INTO fixtures (id, sport, league, home_team, away_team, commence_time, status) VALUES (?,?,?,?,?,?,?)")
+    .run("binary-ev", "soccer_epl", "English Premier League", "Binary FC", "No Draw Town", now + 86400, "scheduled");
+
+  const books = ["Pinnacle", "Bet365", "SportyBet", "Betway"];
+  const drawPrices = [
+    { home: 2.5, draw: 3.6, away: 3.1 },
+    { home: 2.48, draw: 3.55, away: 3.08 },
+    { home: 2.52, draw: 3.65, away: 3.12 },
+    { home: 2.47, draw: 3.58, away: 3.06 },
+  ];
+  drawPrices.forEach((prices, i) => {
+    for (const selection of ["home", "draw", "away"]) {
+      sqlite.prepare("INSERT INTO odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+        .run(`draw-ev-${selection}-${i}`, "draw-ev", "h2h", selection, prices[selection], books[i], now, 0);
+    }
+  });
+  books.forEach((book, i) => {
+    sqlite.prepare("INSERT INTO odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+      .run(`binary-ev-home-${i}`, "binary-ev", "h2h", "home", 1.9 + i * 0.01, book, now, 0);
+    sqlite.prepare("INSERT INTO odds_snapshots (id, fixture_id, market, selection, odds, bookmaker, captured_at, is_closing) VALUES (?,?,?,?,?,?,?,?)")
+      .run(`binary-ev-away-${i}`, "binary-ev", "h2h", "away", 2.1 + i * 0.01, book, now, 0);
+  });
+  sqlite.prepare("INSERT INTO predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+    .run("draw-ev-pred", "draw-ev", "h2h", "draw", 0.36, 0.3, 0.42, "ev-integrity", now);
+  sqlite.prepare("INSERT INTO predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+    .run("binary-ev-pred", "binary-ev", "h2h", "home", 0.7, 0.62, 0.78, "ev-integrity", now);
+
+  const slips = await api("GET", "/api/slips");
+  check("complete 1X2 draw edge is evaluated", slips.json?.some((l) => l.fixture.id === "draw-ev" && l.selection === "draw"), JSON.stringify(slips.json?.map((l) => `${l.fixture.id}:${l.selection}`)));
+  check("football h2h without draw odds is skipped", !slips.json?.some((l) => l.fixture.id === "binary-ev"), JSON.stringify(slips.json?.map((l) => `${l.fixture.id}:${l.selection}`)));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

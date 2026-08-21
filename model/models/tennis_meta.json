@@ -18910,7 +18910,7 @@
     ],
     "entry": "best price across books (B365/CB/EX/IW/PS)",
     "market": "h2h",
-    "note": "Tennis holdout backtest, edge>0, quarter Kelly, 5% cap. Odds features excluded from training (tennis-data.co.uk odds are outcome-labeled \u2014 including them leaked the result). ROI/CLV measured live via the worker's closing-odds pull."
+    "note": "Tennis holdout backtest, edge>0, quarter Kelly, 5% cap. Odds features are player-name resolved before training; ROI/CLV measured live via the worker's closing-odds pull."
   },
   "band_sweep": [
     {

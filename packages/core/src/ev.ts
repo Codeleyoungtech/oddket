@@ -23,8 +23,21 @@ import { stopLossViolation, suggestedStake } from "./kelly";
  *   totals <=1.95 (366 bets, ROI +5.8%, CLV +3.5%)
  */
 export const STRATEGY_MAX_ODDS: Partial<Record<Market, number>> = {
-  h2h: 2.5,
   totals: 1.95,
+};
+
+export const STRATEGY_MAX_ODDS_BY_SELECTION: Partial<Record<Market, Partial<Record<Selection, number>>>> = {
+  h2h: {
+    home: 2.5,
+    away: 2.5,
+    // Football draws usually price above the old 2.5 h2h favorite band. Give
+    // the draw side its own band so the EV engine can evaluate draw edges.
+    draw: 4.5,
+  },
+  totals: {
+    over: 1.95,
+    under: 1.95,
+  },
 };
 
 export interface SlipLeg {
@@ -74,9 +87,46 @@ export function marginAdjustedImplied(
   return idx >= 0 ? norm[idx]! : 0;
 }
 
+export function requiredSelectionsForMarket(market: Market, fixture?: Fixture): Selection[] {
+  if (market === "h2h") {
+    return fixture?.sport === "tennis" ? ["home", "away"] : ["home", "draw", "away"];
+  }
+  if (market === "totals") return ["over", "under"];
+  if (market === "btts") return ["yes", "no"];
+  return [];
+}
+
+export function bestOddsBySelection(
+  marketOdds: OddsSnapshot[],
+  market: Market,
+): Map<Selection, number> {
+  const required = new Set(requiredSelectionsForMarket(market));
+  const best = new Map<Selection, number>();
+  for (const s of marketOdds) {
+    if (s.odds <= 1.01) continue;
+    if (required.size > 0 && !required.has(s.selection)) continue;
+    const cur = best.get(s.selection);
+    if (cur === undefined || s.odds > cur) best.set(s.selection, s.odds);
+  }
+  return best;
+}
+
+export function hasCompleteMarketOdds(
+  bestPerSelection: Map<Selection, number>,
+  market: Market,
+  fixture?: Fixture,
+): boolean {
+  const required = requiredSelectionsForMarket(market, fixture);
+  return required.length === 0 || required.every((selection) => (bestPerSelection.get(selection) ?? 0) > 1.01);
+}
+
+export function strategyMaxOddsFor(market: Market, selection: Selection): number {
+  return STRATEGY_MAX_ODDS_BY_SELECTION[market]?.[selection] ?? STRATEGY_MAX_ODDS[market] ?? 0;
+}
+
 /**
  * Pick the best odds snapshot for a (fixture, market, selection) pair —
- * prefers closing, then most recent.
+ * prefers closing if present, then the latest capture, then the highest price.
  */
 export function bestOddsFor(
   snapshots: OddsSnapshot[],
@@ -84,9 +134,14 @@ export function bestOddsFor(
   market: Market,
   selection: Selection,
 ): OddsSnapshot | undefined {
-  return snapshots
-    .filter((s) => s.fixtureId === fixtureId && s.market === market && s.selection === selection)
-    .sort((a, b) => Number(b.isClosing) - Number(a.isClosing) || b.capturedAt - a.capturedAt)[0];
+  const rows = snapshots.filter((s) => s.fixtureId === fixtureId && s.market === market && s.selection === selection && s.odds > 1.01);
+  if (rows.length === 0) return undefined;
+  const closing = rows.filter((s) => s.isClosing);
+  const pool = closing.length > 0 ? closing : rows;
+  const latest = Math.max(...pool.map((s) => s.capturedAt));
+  return pool
+    .filter((s) => s.capturedAt === latest)
+    .sort((a, b) => b.odds - a.odds)[0];
 }
 
 export interface FlagOptions {
@@ -134,6 +189,7 @@ export function flagSlips(
   for (const fixture of fixtures) {
     const fixtureOdds = snapshots.filter((s) => s.fixtureId === fixture.id);
     for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
+      if (settings.markets.length > 0 && !settings.markets.includes(pred.market)) continue;
       const marketOdds = fixtureOdds.filter((s) => s.market === pred.market);
 
       // ── Bookmaker-depth gate ─────────────────────────────────────────
@@ -160,11 +216,8 @@ export function flagSlips(
 
       // One price per selection (BEST) — otherwise every bookmaker snapshot
       // counts as a separate market outcome and implied collapses to ~0.
-      const bestPerSel = new Map<Selection, number>();
-      for (const s of marketOdds) {
-        const cur = bestPerSel.get(s.selection);
-        if (cur === undefined || s.odds > cur) bestPerSel.set(s.selection, s.odds);
-      }
+      const bestPerSel = bestOddsBySelection(marketOdds, pred.market);
+      if (!hasCompleteMarketOdds(bestPerSel, pred.market, fixture)) continue;
       const implied = marginAdjustedImplied(
         [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
         pred.selection,
@@ -174,9 +227,9 @@ export function flagSlips(
       if (edge < threshold) continue;
       if (pred.probability < minProb || pred.probability > maxProb) continue;
 
-      const odds = bestOddsFor(fixtureOdds, fixture.id, pred.market, pred.selection)?.odds ?? 0;
+      const odds = bestPerSel.get(pred.selection) ?? bestOddsFor(fixtureOdds, fixture.id, pred.market, pred.selection)?.odds ?? 0;
       if (odds <= 1) continue;
-      const maxOdds = opts.maxOdds ?? STRATEGY_MAX_ODDS[pred.market] ?? 0;
+      const maxOdds = opts.maxOdds ?? strategyMaxOddsFor(pred.market, pred.selection);
       if (maxOdds > 0 && odds > maxOdds) continue;
 
       legs.push({
@@ -273,4 +326,3 @@ export function checkStakeAgainstStopLoss(
   const reason = stopLossViolation(stake, spentToday, spentThisWeek, settings);
   return reason ? { allowed: false, reason } : { allowed: true };
 }
-

@@ -7,8 +7,8 @@ backtested independently:
   base,elo_split,ew_form,rest,odds,move,spread
 
 The split is TIME-ORDERED (first 80% train, newest 20% validate). Calibration
-is isotonic per class, fit on the TRAIN set and applied to the holdout (no
-leakage — unlike v1 which fit on the holdout itself).
+is fit on TRAIN with internal CV and applied to the holdout (no leakage):
+sigmoid for multiclass h2h, isotonic for binary totals.
 
 Outputs:
     model/models/h2h_model.joblib, h2h_calibrator.joblib
@@ -37,10 +37,12 @@ from features import (  # noqa: E402
 )
 
 MODEL_VERSION_TAG = "h2h-xgb-v3"
+OU_MODEL_VERSION_TAG = "ou-xgb-v3"
 FALLBACK_TAG = "h2h-gbc-v3"
+OU_FALLBACK_TAG = "ou-gbc-v3"
 
 
-def load_clf() -> tuple:
+def load_clf(market: str = "h2h") -> tuple:
     try:
         from xgboost import XGBClassifier
 
@@ -48,14 +50,14 @@ def load_clf() -> tuple:
             n_estimators=400, max_depth=3, learning_rate=0.05,
             subsample=0.85, colsample_bytree=0.85,
             eval_metric="mlogloss", n_jobs=-1, random_state=42,
-        ), MODEL_VERSION_TAG
+        ), OU_MODEL_VERSION_TAG if market == "ou" else MODEL_VERSION_TAG
     except ImportError:
         print("[train] xgboost unavailable — falling back to sklearn GradientBoostingClassifier")
         from sklearn.ensemble import GradientBoostingClassifier
 
         return GradientBoostingClassifier(
             n_estimators=400, max_depth=3, learning_rate=0.05, subsample=0.85, random_state=42
-        ), FALLBACK_TAG
+        ), OU_FALLBACK_TAG if market == "ou" else FALLBACK_TAG
 
 
 def multiclass_brier(y_true: np.ndarray, proba: np.ndarray) -> float:
@@ -64,6 +66,12 @@ def multiclass_brier(y_true: np.ndarray, proba: np.ndarray) -> float:
     y_onehot = np.zeros((n, k))
     y_onehot[np.arange(n), y_true] = 1.0
     return float(np.mean(np.sum((proba - y_onehot) ** 2, axis=1)))
+
+
+def brier_score(y_true: np.ndarray, proba: np.ndarray) -> float:
+    if proba.shape[1] == 2:
+        return float(np.mean((proba[:, 1] - y_true) ** 2))
+    return multiclass_brier(y_true, proba)
 
 
 def logit(p: float) -> float:
@@ -124,7 +132,7 @@ def fill_market_features(matches: list, market: str = "h2h") -> None:
                 f[key] = round((max(books) - min(books)) / min(books), 4)
 
 
-def calibrate_on_train(clf, X_tr, y_tr, X_te, cv: int = 3, n_classes: int = 3) -> tuple[np.ndarray, np.ndarray]:
+def calibrate_on_train(clf, X_tr, y_tr, X_te, cv: int = 3, n_classes: int = 3):
     """Calibration fitted on TRAIN (internal CV), applied to the holdout.
 
     - Binary (n_classes=2, ou market): isotonic regression — non-parametric,
@@ -135,7 +143,59 @@ def calibrate_on_train(clf, X_tr, y_tr, X_te, cv: int = 3, n_classes: int = 3) -
     method = "isotonic" if n_classes == 2 else "sigmoid"
     cccv = CalibratedClassifierCV(clf, method=method, cv=cv)
     cccv.fit(X_tr, y_tr)
-    return cccv.predict_proba(X_tr), cccv.predict_proba(X_te)
+    return cccv, cccv.predict_proba(X_tr), cccv.predict_proba(X_te), method
+
+
+def odds_for_market(match, classes: list[str]) -> dict[str, float]:
+    """Return only the odds columns belonging to this market.
+
+    The historical summary also carries close_* and other-market odds. Including
+    those in the normalization turns a 3-way football market into a fake 8-way
+    market and massively overstates edge.
+    """
+    raw = match.odds or {}
+    out: dict[str, float] = {}
+    for sel in classes:
+        v = raw.get(sel)
+        if v and v > 1.0:
+            out[sel] = float(v)
+    return out
+
+
+def calibration_bins(y_true: np.ndarray, proba: np.ndarray, classes: list[str]) -> tuple[list[dict], dict[str, list[dict]]]:
+    """10-bin calibration view.
+
+    Binary markets use the positive class only. Multiclass h2h uses every
+    class probability as a one-vs-rest sample so home/draw/away calibration is
+    visible instead of reporting draw-only bins.
+    """
+    def build(probs: np.ndarray, actuals: np.ndarray) -> list[dict]:
+        bins = []
+        for i in range(10):
+            lo, hi = i / 10.0, (i + 1) / 10.0
+            mask = (probs >= lo) & (probs < hi)
+            cnt = int(mask.sum())
+            bins.append({
+                "bin": round(lo + 0.05, 2),
+                "count": cnt,
+                "predicted": round(float(probs[mask].mean()), 4) if cnt else 0.0,
+                "actual": round(float(actuals[mask].mean()), 4) if cnt else 0.0,
+            })
+        return bins
+
+    if len(classes) == 2:
+        return build(proba[:, 1], (y_true == 1).astype(int)), {
+            classes[1]: build(proba[:, 1], (y_true == 1).astype(int)),
+        }
+
+    y_onehot = np.zeros_like(proba)
+    y_onehot[np.arange(len(y_true)), y_true] = 1
+    overall = build(proba.ravel(), y_onehot.ravel())
+    by_class = {
+        label: build(proba[:, idx], (y_true == idx).astype(int))
+        for idx, label in enumerate(classes)
+    }
+    return overall, by_class
 
 
 def simulate_staking(test_m, proba_cal, bankroll: float = 10000.0,
@@ -170,11 +230,11 @@ def simulate_staking(test_m, proba_cal, bankroll: float = 10000.0,
     bets_log = []
 
     for i, m in enumerate(test_m):
-        o = m.odds or {}
-        if not o or not all(v and v > 0 for v in o.values()):
+        o = odds_for_market(m, classes)
+        if len(o) != len(classes):
             continue
         p = proba_cal[i]
-        inv = {k: 1.0 / v for k, v in o.items() if v and v > 0}
+        inv = {k: 1.0 / o[k] for k in classes}
         s = sum(inv.values())
         implied = {k: v / s for k, v in inv.items()}
         edges = {c: p[j] - implied[c] for j, c in enumerate(classes)}
@@ -308,15 +368,18 @@ def main() -> int:
     X_te = np.array([[m.features[f] for f in features] for m in test_m], dtype=float)
     y_te = np.array([target(m) for m in test_m], dtype=int)
 
-    clf, version = load_clf()
+    clf, version = load_clf(market)
     clf.fit(X_tr, y_tr)
 
     # Calibration fitted on TRAIN (internal CV), applied to holdout.
     # Binary (ou) gets isotonic; multiclass (h2h) gets sigmoid.
     n_cls = 2 if market == "ou" else 3
-    _, proba_cal = calibrate_on_train(clf, X_tr, y_tr, X_te, n_classes=n_cls)
-    raw_brier = multiclass_brier(y_te, clf.predict_proba(X_te))
-    cal_brier = multiclass_brier(y_te, proba_cal)
+    calibrator, _, proba_cal, calibration_method = calibrate_on_train(clf, X_tr, y_tr, X_te, n_classes=n_cls)
+    if proba_cal.shape[1] != n_cls:
+        print(f"[train] expected {n_cls} classes for {market}, got {proba_cal.shape[1]}", file=sys.stderr)
+        return 1
+    raw_brier = brier_score(y_te, clf.predict_proba(X_te))
+    cal_brier = brier_score(y_te, proba_cal)
     acc = float((proba_cal.argmax(axis=1) == y_te).mean())
 
     backtest = simulate_staking(test_m, proba_cal, edge_min=args.edge_min,
@@ -330,9 +393,7 @@ def main() -> int:
 
     suffix = "" if market == "h2h" else "_ou"
     dump(clf, os.path.join(ROOT, "models", f"{('h2h' if market == 'h2h' else 'ou')}_model.joblib"))
-    cccv = CalibratedClassifierCV(clf, method="sigmoid", cv=3)
-    cccv.fit(X_tr, y_tr)
-    dump(cccv, os.path.join(ROOT, "models", f"{('h2h' if market == 'h2h' else 'ou')}_calibrator.joblib"))
+    dump(calibrator, os.path.join(ROOT, "models", f"{('h2h' if market == 'h2h' else 'ou')}_calibrator.joblib"))
 
     classes = (["home", "draw", "away"] if market == "h2h" else ["under", "over"])
     meta = {
@@ -347,6 +408,7 @@ def main() -> int:
         "accuracy": round(acc, 4),
         "brier_raw": round(raw_brier, 4),
         "brier_calibrated": round(cal_brier, 4),
+        "calibration_method": calibration_method,
         "backtest": backtest,
         "classes": classes,
         "seed": args.seed,
@@ -356,22 +418,13 @@ def main() -> int:
     with open(os.path.join(ROOT, "models", f"model_meta{suffix}.json"), "w") as fh:
         json.dump(meta, fh, indent=2)
 
-    bins = []
-    for i in range(10):
-        lo, hi = i / 10.0, (i + 1) / 10.0
-        mask = (proba_cal[:, 1] >= lo) & (proba_cal[:, 1] < hi)
-        cnt = int(mask.sum())
-        bins.append({
-            "bin": round(lo + 0.05, 2),
-            "count": cnt,
-            "predicted": round(float(proba_cal[mask, 1].mean()), 4) if cnt else 0.0,
-            "actual": round(float((y_te[mask] == 1).mean()), 4) if cnt else 0.0,
-        })
+    bins, class_bins = calibration_bins(y_te, proba_cal, classes)
     cal_out = {
         "model_version": version,
         "sample_size": int(len(y_te)),
         "brier": round(cal_brier, 4),
         "bins": bins,
+        "class_bins": class_bins,
     }
     with open(os.path.join(ROOT, "output", f"calibration{suffix}.json"), "w") as fh:
         json.dump(cal_out, fh, indent=2)

@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { marketLabel, type Parlay, type Selection } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
+import { api } from "../../lib/api";
 
 // Bets logged in the last 24h can be undone (mistaken logs). Older rows are
 // kept immutable — undoing settled/CLV-scored history would corrupt the scoreboard.
@@ -10,8 +11,14 @@ const UNDO_WINDOW_SEC = 24 * 3600;
 import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../../lib/format";
 
-/** Format a unix timestamp into kickoff info with EDT (UTC-4) and WAT (UTC+1). */
-function formatKickoff(ts: number): { day: string; date: string; edt: string; wat: string; countdown: string } {
+/** Format a unix timestamp into kickoff info with EDT (UTC-4) and WAT (UTC+1).
+ *  Pass fixture status + scores for finished/in-play matches. */
+function formatKickoff(
+  ts: number,
+  status?: string,
+  homeScore?: number,
+  awayScore?: number,
+): { day: string; date: string; edt: string; wat: string; countdown: string; tag: string; tagColor: string } {
   const d = new Date(ts * 1000);
   const now = new Date();
   const diffMs = d.getTime() - now.getTime();
@@ -31,10 +38,35 @@ function formatKickoff(ts: number): { day: string; date: string; edt: string; wa
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   let countdown: string;
-  if (diffH < 0) countdown = "already started";
-  else if (diffH < 1) countdown = "kicks off within the hour";
-  else if (diffH < 24) countdown = `kicks off in ${diffH}h`;
-  else countdown = `kicks off in ${diffD} day${diffD !== 1 ? "s" : ""}`;
+  let tag: string;
+  let tagColor: string;
+
+  if (status === "finished" && homeScore != null && awayScore != null) {
+    countdown = `${homeScore} - ${awayScore} (FT)`;
+    tag = "Final";
+    tagColor = "text-slate-400 bg-slate-400/10 border-slate-400/20";
+  } else if (diffH < -2) {
+    // Match started 2+ hours ago but no score recorded yet
+    countdown = "in play";
+    tag = "Live";
+    tagColor = "text-red-400 bg-red-400/10 border-red-400/20";
+  } else if (diffH < 0) {
+    countdown = "kicked off";
+    tag = "Started";
+    tagColor = "text-amber-300 bg-amber-400/10 border-amber-400/20";
+  } else if (diffH < 1) {
+    countdown = "kicks off within the hour";
+    tag = "Soon";
+    tagColor = "text-amber-300 bg-amber-400/10 border-amber-400/20";
+  } else if (diffH < 24) {
+    countdown = `kicks off in ${diffH}h`;
+    tag = "Today";
+    tagColor = "text-amber-300 bg-amber-400/10 border-amber-400/20";
+  } else {
+    countdown = `kicks off in ${diffD} day${diffD !== 1 ? "s" : ""}`;
+    tag = "Upcoming";
+    tagColor = "text-sky-300 bg-sky-400/10 border-sky-400/20";
+  }
 
   return {
     day: dayNames[d.getUTCDay()],
@@ -42,6 +74,8 @@ function formatKickoff(ts: number): { day: string; date: string; edt: string; wa
     edt: fmt(-4),
     wat: fmt(1),
     countdown,
+    tag,
+    tagColor,
   };
 }
 
@@ -55,6 +89,7 @@ export default function BetsPage() {
   const [settleScores, setSettleScores] = useState<Record<string, { home: string; away: string }>>({});
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [syncingCloud, setSyncingCloud] = useState(false);
+  const [undoingIds, setUndoingIds] = useState<Set<string>>(new Set());
 
   const handleAutoSettle = async () => {
     setSyncingCloud(true);
@@ -142,9 +177,23 @@ export default function BetsPage() {
       setUndoMsg("Only pending bets can be undone — settled bets are locked to keep the scoreboard honest.");
       return;
     }
-    await deleteBet(b.id);
+    // Optimistic: mark as undoing so the UI hides it instantly.
+    // Fire DELETE in background — refresh() will confirm it's gone from the
+    // server. If the server delete fails, un-mark so it reappears.
+    setUndoingIds((prev) => new Set(prev).add(b.id));
     setUndoMsg("Bet removed from your log.");
-    refresh();
+    try {
+      await api.football.deleteBet(b.id);
+      refresh();
+    } catch {
+      // Server delete failed — show it again
+      setUndoingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(b.id);
+        return next;
+      });
+      setUndoMsg("Failed to remove bet — it may have already been settled.");
+    }
   };
 
   const submitBet = async (e: React.FormEvent) => {
@@ -193,7 +242,7 @@ export default function BetsPage() {
   };
 
   const filtered = useMemo(() => {
-    let list = bets;
+    let list = bets.filter((b) => !undoingIds.has(b.id));
     if (statusFilter !== "all") {
       list = list.filter((b) => b.status === statusFilter);
     }
@@ -207,7 +256,7 @@ export default function BetsPage() {
       );
     }
     return list;
-  }, [bets, statusFilter, searchFilter]);
+  }, [bets, statusFilter, searchFilter, undoingIds]);
 
   const totals = useMemo(() => {
     const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
@@ -445,16 +494,16 @@ export default function BetsPage() {
                     </p>
                     <p className="text-xs text-slate-500">{b.fixture?.league}</p>
                     {b.fixture?.commenceTime && (() => {
-                      const ko = formatKickoff(b.fixture.commenceTime);
+                      const ko = formatKickoff(b.fixture.commenceTime, b.fixture.status, b.fixture.homeScore, b.fixture.awayScore);
                       return (
                         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                          <span className="rounded bg-amber-400/10 px-1.5 py-0.5 font-semibold text-amber-300">
-                            ⏰ {ko.day} {ko.date}
+                          <span className={`rounded border px-1.5 py-0.5 font-semibold ${ko.tagColor}`}>
+                            {ko.tag === "Final" ? "🏁" : ko.tag === "Live" ? "🔴" : "⏰"} {ko.day} {ko.date}
                           </span>
                           <span className="text-slate-400">{ko.edt} EDT</span>
                           <span className="text-slate-600">·</span>
                           <span className="text-slate-400">{ko.wat} WAT</span>
-                          <span className="ml-auto text-[10px] text-slate-500 italic">{ko.countdown}</span>
+                          <span className={`ml-auto text-[10px] italic ${ko.tag === "Final" ? "text-slate-500" : ko.tag === "Live" ? "text-red-400" : "text-slate-500"}`}>{ko.countdown}</span>
                         </div>
                       );
                     })()}
@@ -513,7 +562,7 @@ export default function BetsPage() {
                           <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-2.5">
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-amber-300 font-bold">⚽ Kickoff</span>
-                              <span className="text-[10px] text-amber-400/70 italic">{ko.countdown}</span>
+                              <span className={`text-[10px] italic ${ko.tag === "Final" ? "text-slate-400" : ko.tag === "Live" ? "text-red-400" : "text-amber-400/70"}`}>{ko.countdown}</span>
                             </div>
                             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
                               <div className="flex justify-between">
@@ -675,7 +724,7 @@ export default function BetsPage() {
                               <div className="space-y-4 text-xs rounded-xl border border-ink-800 bg-ink-900/60 p-4">
                                 {/* Kickoff banner */}
                                 {b.fixture?.commenceTime && (() => {
-                                  const ko = formatKickoff(b.fixture.commenceTime);
+                                  const ko = formatKickoff(b.fixture.commenceTime, b.fixture.status, b.fixture.homeScore, b.fixture.awayScore);
                                   return (
                                     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3">
                                       <span className="text-amber-300 font-bold text-sm">⚽ Kickoff</span>
@@ -687,7 +736,7 @@ export default function BetsPage() {
                                         <span className="text-slate-600">|</span>
                                         <span className="text-sky-300 font-semibold">{ko.wat} WAT</span>
                                       </div>
-                                      <span className="ml-auto text-[11px] text-amber-400/70 italic">{ko.countdown}</span>
+                                      <span className={`ml-auto text-[11px] italic ${ko.tag === "Final" ? "text-slate-400" : ko.tag === "Live" ? "text-red-400" : "text-amber-400/70"}`}>{ko.countdown}</span>
                                     </div>
                                   );
                                 })()}

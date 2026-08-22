@@ -10,6 +10,41 @@ const UNDO_WINDOW_SEC = 24 * 3600;
 import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../../lib/format";
 
+/** Format a unix timestamp into kickoff info with EDT (UTC-4) and WAT (UTC+1). */
+function formatKickoff(ts: number): { day: string; date: string; edt: string; wat: string; countdown: string } {
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const diffMs = d.getTime() - now.getTime();
+  const diffH = Math.round(diffMs / 3600000);
+  const diffD = Math.round(diffMs / 86400000);
+
+  const fmt = (offs: number) => {
+    const local = new Date(d.getTime() + offs * 3600000);
+    const hh = String(local.getUTCHours()).padStart(2, "0");
+    const mm = String(local.getUTCMinutes()).padStart(2, "0");
+    const ampm = local.getUTCHours() >= 12 ? "PM" : "AM";
+    const h12 = local.getUTCHours() % 12 || 12;
+    return `${h12}:${mm} ${ampm}`;
+  };
+
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  let countdown: string;
+  if (diffH < 0) countdown = "already started";
+  else if (diffH < 1) countdown = "kicks off within the hour";
+  else if (diffH < 24) countdown = `kicks off in ${diffH}h`;
+  else countdown = `kicks off in ${diffD} day${diffD !== 1 ? "s" : ""}`;
+
+  return {
+    day: dayNames[d.getUTCDay()],
+    date: `${d.getUTCDate()} ${monthNames[d.getUTCMonth()]}`,
+    edt: fmt(-4),
+    wat: fmt(1),
+    countdown,
+  };
+}
+
 export default function BetsPage() {
   const { bets, db, sport, logBet, deleteBet, recordOutcome, recordTennisOutcome, refresh } = useData();
   const [undoMsg, setUndoMsg] = useState<string | null>(null);
@@ -409,6 +444,20 @@ export default function BetsPage() {
                       {b.fixture ? `${b.fixture.homeTeam} vs ${b.fixture.awayTeam}` : b.fixtureId}
                     </p>
                     <p className="text-xs text-slate-500">{b.fixture?.league}</p>
+                    {b.fixture?.commenceTime && (() => {
+                      const ko = formatKickoff(b.fixture.commenceTime);
+                      return (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className="rounded bg-amber-400/10 px-1.5 py-0.5 font-semibold text-amber-300">
+                            ⏰ {ko.day} {ko.date}
+                          </span>
+                          <span className="text-slate-400">{ko.edt} EDT</span>
+                          <span className="text-slate-600">·</span>
+                          <span className="text-slate-400">{ko.wat} WAT</span>
+                          <span className="ml-auto text-[10px] text-slate-500 italic">{ko.countdown}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="mt-3 flex items-center justify-between gap-2">
@@ -458,6 +507,35 @@ export default function BetsPage() {
                   {/* Expanded Insight Drawer */}
                   {isExpanded && (
                     <div className="mt-2 space-y-2 rounded-lg border border-ink-800 bg-ink-950/60 p-3 text-xs">
+                      {b.fixture?.commenceTime && (() => {
+                        const ko = formatKickoff(b.fixture.commenceTime);
+                        return (
+                          <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-2.5">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="text-amber-300 font-bold">⚽ Kickoff</span>
+                              <span className="text-[10px] text-amber-400/70 italic">{ko.countdown}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Day</span>
+                                <span className="font-semibold text-slate-200">{ko.day}, {ko.date}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">UTC</span>
+                                <span className="font-semibold text-slate-200">{new Date(b.fixture.commenceTime * 1000).toUTCString().slice(17, 22)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">EDT</span>
+                                <span className="font-semibold text-sky-300">{ko.edt}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">WAT</span>
+                                <span className="font-semibold text-sky-300">{ko.wat}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       <div className="flex justify-between border-b border-ink-800/60 pb-1.5">
                         <span className="text-slate-400">Model Probability</span>
                         <span className="font-semibold text-slate-200">{fmtPct(b.modelProbability)}</span>
@@ -594,7 +672,26 @@ export default function BetsPage() {
                         {isExpanded && (
                           <tr className="bg-ink-950/40">
                             <td colSpan={10} className="px-6 py-4">
-                              <div className="grid grid-cols-4 gap-4 text-xs rounded-xl border border-ink-800 bg-ink-900/60 p-4">
+                              <div className="space-y-4 text-xs rounded-xl border border-ink-800 bg-ink-900/60 p-4">
+                                {/* Kickoff banner */}
+                                {b.fixture?.commenceTime && (() => {
+                                  const ko = formatKickoff(b.fixture.commenceTime);
+                                  return (
+                                    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-400/20 bg-amber-400/5 p-3">
+                                      <span className="text-amber-300 font-bold text-sm">⚽ Kickoff</span>
+                                      <div className="flex items-center gap-2 text-[11px]">
+                                        <span className="rounded bg-ink-800/80 px-2 py-0.5 font-semibold text-slate-200">{ko.day}, {ko.date}</span>
+                                        <span className="text-slate-400">UTC {new Date(b.fixture.commenceTime * 1000).toUTCString().slice(17, 22)}</span>
+                                        <span className="text-slate-600">|</span>
+                                        <span className="text-sky-300 font-semibold">{ko.edt} EDT</span>
+                                        <span className="text-slate-600">|</span>
+                                        <span className="text-sky-300 font-semibold">{ko.wat} WAT</span>
+                                      </div>
+                                      <span className="ml-auto text-[11px] text-amber-400/70 italic">{ko.countdown}</span>
+                                    </div>
+                                  );
+                                })()}
+                                <div className="grid grid-cols-4 gap-4">
                                 <div>
                                   <p className="text-slate-500 font-medium">Model Probability</p>
                                   <p className="mt-1 text-sm font-bold text-slate-100">{fmtPct(b.modelProbability)}</p>
@@ -660,8 +757,8 @@ export default function BetsPage() {
                                       >
                                         Undo Bet Log
                                       </button>
-                                    )}
-                                  </div>
+                                    )}                                  </div>
+                                </div>
                                 </div>
                               </div>
                             </td>
@@ -670,6 +767,7 @@ export default function BetsPage() {
                       </React.Fragment>
                     );
                   })}
+
                 </tbody>
               </table>
             </div>

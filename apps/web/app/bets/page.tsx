@@ -120,6 +120,15 @@ export default function BetsPage() {
       setFormMsg("Pick a fixture, selection, odds (>1) and stake.");
       return;
     }
+    if (stake < 10) {
+      setFormMsg("Minimum stake is ₦10 (bookmaker minimum).");
+      return;
+    }
+    const maxStake = (db?.settings.bankroll ?? 1000) * (db?.settings.defaultStakeCapPct ?? 0.05);
+    if (stake > maxStake) {
+      setFormMsg(`Stake exceeds the ₦${maxStake.toFixed(0)} cap (5% of bankroll). Increase bankroll in Settings to bet more.`);
+      return;
+    }
     const fixture = db?.fixtures.find((f) => f.id === formFixture);
     const pred = db?.predictions.find(
       (p) => p.fixtureId === formFixture && p.market === formMarket && p.selection === formSelection,
@@ -300,8 +309,8 @@ export default function BetsPage() {
               <div className="flex gap-2">
                 <input
                   type="number"
-                  step="50"
-                  min="1"
+                  step="1"
+                  min="10"
                   placeholder="Stake (₦)"
                   value={formStake}
                   onChange={(e) => setFormStake(e.target.value)}

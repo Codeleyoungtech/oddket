@@ -262,12 +262,16 @@ export default function BetsPage() {
   }, [bets, statusFilter, searchFilter, undoingIds]);
 
   const totals = useMemo(() => {
-    const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
+    // Model-flagged bets only for the summary stats.
+    const modelBets = bets.filter((b) => (b.source ?? "model") === "model");
+    const settled = modelBets.filter((b) => b.status === "won" || b.status === "lost");
     const staked = settled.reduce((a, b) => a + b.stake, 0);
     const ret = settled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
     const withClv = settled.filter((b) => b.clv !== undefined);
     const cumClv = withClv.reduce((a, b) => a + (b.clv ?? 0), 0);
-    return { n: settled.length, staked, ret, cumClv, nClv: withClv.length };
+    // Manual bets count for reference.
+    const manualSettled = bets.filter((b) => b.source === "manual" && (b.status === "won" || b.status === "lost"));
+    return { n: settled.length, staked, ret, cumClv, nClv: withClv.length, manualN: manualSettled.length };
   }, [bets]);
 
   if (!db) return <Loading />;
@@ -303,24 +307,24 @@ export default function BetsPage() {
         </div>
       </div>
 
-      {/* KPI Stat Cards */}
+      {/* KPI Stat Cards — model-flagged bets only */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
-          <p className="text-[11px] font-medium text-slate-400">Settled Bets</p>
+          <p className="text-[11px] font-medium text-slate-400">Model Settled</p>
           <p className="mt-1 text-lg font-bold text-slate-100">{totals.n}</p>
-          <p className="mt-0.5 text-[10px] text-slate-500">{bets.filter((b) => b.status === "pending").length} pending</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">{totals.manualN} manual · {bets.filter((b) => b.status === "pending").length} pending</p>
         </div>
         <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
           <p className="text-[11px] font-medium text-slate-400">Total Staked</p>
           <p className="mt-1 text-lg font-bold text-slate-100">₦{fmtMoney(totals.staked, 0)}</p>
-          <p className="mt-0.5 text-[10px] text-slate-500">across settled</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">model bets only</p>
         </div>
         <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
           <p className="text-[11px] font-medium text-slate-400">Net Profit / Loss</p>
           <p className={`mt-1 text-lg font-bold ${pnlTotal >= 0 ? "text-emerald-400" : "text-red-400"}`}>
             {pnlTotal >= 0 ? "+" : ""}₦{fmtMoney(pnlTotal, 0)}
           </p>
-          <p className="mt-0.5 text-[10px] text-slate-500">settled balance</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">model bets only</p>
         </div>
         <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
           <p className="text-[11px] font-medium text-slate-400">Cumulative CLV</p>

@@ -477,6 +477,13 @@ export default function BetsPage() {
                       <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>
                         {b.status}
                       </Badge>
+                      <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
+                        (b.source ?? "model") === "manual"
+                          ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                          : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                      }`}>
+                        {(b.source ?? "model") === "manual" ? "✋ Manual" : "🤖 Model"}
+                      </span>
                       {b.status === "pending" && b.placedAt > Date.now() / 1000 - UNDO_WINDOW_SEC && (
                         <button
                           onClick={() => void undoBet(b)}
@@ -706,7 +713,16 @@ export default function BetsPage() {
                             {b.outcomeAmount !== undefined ? `${b.outcomeAmount > 0 ? "+" : ""}₦${fmtMoney(b.outcomeAmount, 0)}` : <span className="text-slate-500 font-normal">pending</span>}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>{b.status}</Badge>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
+                                (b.source ?? "model") === "manual"
+                                  ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
+                                  : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                              }`}>
+                                {(b.source ?? "model") === "manual" ? "✋" : "🤖"}
+                              </span>
+                              <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>{b.status}</Badge>
+                            </div>
                           </td>
                           <td className="px-4 py-3 text-center">
                             <button

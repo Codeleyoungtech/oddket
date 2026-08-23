@@ -4,9 +4,11 @@ import type {
   Database,
   Fixture,
   Market,
+  OddsSnapshot,
   Outcome,
   Prediction,
   Selection,
+  Settings,
 } from "./types";
 import { meanBrier, wilsonInterval, round } from "./math";
 import { flagSlips } from "./ev";
@@ -175,6 +177,10 @@ export interface ByMarketRow {
 
 export interface Dashboard {
   summary: DashboardSummary;
+  /** Stats for model-flagged bets only (passed all gates). */
+  modelSummary: DashboardSummary;
+  /** Stats for manual/off-system bets (custom or gate-rejected). */
+  manualSummary: DashboardSummary;
   clvSeries: ClvPoint[];
   bankrollSeries: BankrollPoint[];
   calibration: CalibrationResult;
@@ -185,32 +191,68 @@ export interface Dashboard {
  * One function to rule the dashboards — the worker's GET /api/dashboard and
  * the web app's demo mode both derive everything from raw records via this.
  */
-export function buildDashboard(db: Database): Dashboard {
-  const { bets, clv, predictions, fixtures, outcomes, settings } = db;
-
-  const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
+function summarizeBets(
+  bets: Bet[],
+  odds: OddsSnapshot[],
+  clv: ClvResult[],
+  predictions: Prediction[],
+  outcomes: Outcome[],
+  fixtures: Fixture[],
+  settings: Settings,
+  isModel: boolean,
+): DashboardSummary {
+  // Filter by source: model = passed all gates, manual = custom/gate-rejected.
+  // Bets without a source tag (legacy) default to 'model'.
+  const filtered = bets.filter((b) => (isModel ? (b.source ?? "model") === "model" : b.source === "manual"));
+  const settled = filtered.filter((b) => b.status === "won" || b.status === "lost");
   const won = settled.filter((b) => b.status === "won");
   const winRate = settled.length > 0 ? won.length / settled.length : 0;
-
   const totalStaked = settled.reduce((a, b) => a + b.stake, 0);
   const totalReturn = settled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
   const roiPct = totalStaked > 0 ? totalReturn / totalStaked : 0;
 
   const clvByBet = new Map(clv.map((c) => [c.betId, c]));
-  // CLV is a pre-kickoff metric — count ALL bets with CLV data (pending +
-  // settled), not just settled ones.  A bet logged before the 18:30 closing
-  // pull has a valid CLV number regardless of whether the match has finished.
-  const allClv = bets.filter((b) => clvByBet.has(b.id));
-  const avgClv =
-    allClv.length > 0
-      ? allClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0) / allClv.length
-      : 0;
+  const allClv = filtered.filter((b) => clvByBet.has(b.id));
+  const avgClv = allClv.length > 0
+    ? allClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0) / allClv.length
+    : 0;
   const cumulativeClv = allClv.reduce((a, b) => a + clvByBet.get(b.id)!.clv, 0);
-  const positiveClvRate =
-    allClv.length > 0 ? allClv.filter((b) => clvByBet.get(b.id)!.clv > 0).length / allClv.length : 0;
+  const positiveClvRate = allClv.length > 0
+    ? allClv.filter((b) => clvByBet.get(b.id)!.clv > 0).length / allClv.length
+    : 0;
 
   const scheduledFixtures = fixtures.filter((f) => f.status === "scheduled");
-  const flaggedSingles = flagSlips(scheduledFixtures, predictions, db.odds, settings).length;
+  const flaggedSingles = flagSlips(scheduledFixtures, predictions, odds, settings).length;
+  const bankrollSeries = buildBankrollSeries(filtered, settings.bankroll);
+  const bankrollNow = bankrollSeries.length > 0 ? bankrollSeries[bankrollSeries.length - 1]!.bankroll : settings.bankroll;
+
+  return {
+    nBets: filtered.length,
+    settledBets: settled.length,
+    winRate: round(winRate, 4),
+    totalStaked: round(totalStaked, 2),
+    totalReturn: round(totalReturn, 2),
+    roiPct: round(roiPct, 4),
+    avgClv: round(avgClv, 4),
+    cumulativeClv: round(cumulativeClv, 4),
+    positiveClvRate: round(positiveClvRate, 4),
+    brier: buildCalibration(predictions, outcomes, fixtures).brier,
+    flaggedSingles,
+    bankrollNow,
+  };
+}
+
+export function buildDashboard(db: Database): Dashboard {
+  const { bets, odds, clv, predictions, fixtures, outcomes, settings } = db;
+
+  const summary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, true);
+  const modelSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, true);
+  const manualSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, false);
+
+  const clvByBet = new Map(clv.map((c) => [c.betId, c]));
+  const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
+  const totalStaked = settled.reduce((a, b) => a + b.stake, 0);
+  const totalReturn = settled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
 
   const byMarket = buildByMarket(settled, clvByBet, totalStaked > 0 ? totalReturn / totalStaked : 0);
 
@@ -219,19 +261,12 @@ export function buildDashboard(db: Database): Dashboard {
 
   return {
     summary: {
-      nBets: bets.length,
-      settledBets: settled.length,
-      winRate: round(winRate, 4),
-      totalStaked: round(totalStaked, 2),
-      totalReturn: round(totalReturn, 2),
-      roiPct: round(roiPct, 4),
-      avgClv: round(avgClv, 4),
-      cumulativeClv: round(cumulativeClv, 4),
-      positiveClvRate: round(positiveClvRate, 4),
-      brier: buildCalibration(predictions, outcomes, fixtures).brier,
-      flaggedSingles,
+      ...summary,
+      nBets: bets.length, // total across all sources
       bankrollNow,
     },
+    modelSummary,
+    manualSummary,
     clvSeries: buildClvSeries(bets, clv),
     bankrollSeries,
     calibration: buildCalibration(predictions, outcomes, fixtures),

@@ -73,8 +73,15 @@ function computeViews(db: Database) {
     db.odds,
     db.settings,
   );
+  // Retroactively tag bets: if a bet's (fixtureId, market, selection) is in
+  // the flagged slips list, it's 'model'. Otherwise 'manual'. Legacy bets
+  // without a source field get classified this way.
+  const slipKeys = new Set(slips.map((s) => `${s.fixture.id}:${s.market}:${s.selection}`));
   const bets = enrichBets(
-    db.bets,
+    db.bets.map((b) => ({
+      ...b,
+      source: b.source ?? (slipKeys.has(`${b.fixtureId}:${b.market}:${b.selection}`) ? "model" : "manual"),
+    })),
     db.fixtures,
     db.clv.map((r) => ({ betId: r.betId, clv: r.clv, closingOdds: r.closingOdds })),
   ).sort((a, b) => b.placedAt - a.placedAt);
@@ -137,12 +144,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setDb((prev) => (prev ? { ...prev, settings: s } : prev));
   }, []);
 
-  const logBet = useCallback(async (bet: Omit<Bet, "id" | "status" | "bankrollAtBet">) => {
+  const logBet = useCallback(async (bet: Omit<Bet, "id" | "status" | "bankrollAtBet" | "source">) => {
+    // Auto-detect source: if this (fixtureId, market, selection) is in the
+    // flagged slips list, it passed all gates → 'model'. Otherwise → 'manual'.
+    const isInSlips = (views?.slips ?? []).some(
+      (s) => s.fixture.id === bet.fixtureId && s.market === bet.market && s.selection === bet.selection,
+    );
+    const source = isInSlips ? "model" : "manual";
     const withMeta = {
       ...bet,
       id: `bet-${Date.now()}`,
       status: "pending" as const,
       bankrollAtBet: 0,
+      source,
     };
     try {
       await sportApi.logBet(withMeta);
@@ -154,7 +168,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setDb({ ...prev, bets: [...prev.bets, withMeta as Bet] });
     }
     setTick((t) => t + 1);
-  }, [db, mode, sport, sportApi]);
+  }, [db, mode, sport, sportApi, views]);
 
   const logParlay = useCallback(async (p: { legIds: string[]; stake: number }) => {
     try {

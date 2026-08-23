@@ -57,6 +57,7 @@ export type Market = "h2h" | "totals" | "btts" | "spreads";
 export type Selection = "home" | "draw" | "away" | "over" | "under" | "yes" | "no";
 export type FixtureStatus = "scheduled" | "live" | "finished";
 export type BetStatus = "pending" | "won" | "lost" | "void";
+export type BetSource = "model" | "manual";
 
 export interface Fixture {
   id: string;
@@ -108,6 +109,8 @@ export interface Bet {
   /** edge (model prob − margin-adjusted implied prob) at bet time */
   edge: number;
   modelProbability: number;
+  /** 'model' = passed all gates, 'manual' = custom bet or gate-rejected */
+  source?: BetSource;
   status: BetStatus;
   /** net P&L in currency units (stake*odds − stake on a win) */
   outcomeAmount?: number;

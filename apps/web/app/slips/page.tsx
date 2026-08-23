@@ -15,7 +15,7 @@ import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle } from "../.
 import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
 
 export default function SlipsPage() {
-  const { slips, bets, db, logBet, logParlay, refresh, sport } = useData();
+  const { slips, allPredictions, bets, db, logBet, logParlay, refresh, sport } = useData();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [justLogged, setJustLogged] = useState<Set<string>>(new Set());
   // Legs currently being logged — the button shows a spinner and disables so
@@ -25,6 +25,7 @@ export default function SlipsPage() {
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
   const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
+  const [showAll, setShowAll] = useState(false);
   // Per-leg stake override (₦). Defaults to the Kelly suggestion; lets the
   // user log what they ACTUALLY staked on SportyBet instead of what the
   // model suggested. Keyed by legKey.
@@ -36,9 +37,12 @@ export default function SlipsPage() {
   const [parlayError, setParlayError] = useState<string | null>(null);
   const [loggedParlays, setLoggedParlays] = useState<Set<string>>(new Set());
 
+  // When showAll is on, use allPredictions instead of flagged slips.
+  const activeLegs = showAll ? allPredictions : slips;
+
   const selectedLegs = useMemo(
-    () => slips.filter((l) => selected.has(legKey(l))),
-    [slips, selected],
+    () => activeLegs.filter((l) => selected.has(legKey(l))),
+    [activeLegs, selected],
   );
 
   // Bets already on the books (paper-trade log) for these legs.
@@ -62,7 +66,7 @@ export default function SlipsPage() {
     };
     const today = startOfToday(nowSec);
     const weekEnd = today + 7 * 86400;
-    return slips.filter((l) => {
+    return activeLegs.filter((l) => {
       const t = l.fixture.commenceTime;
       if (timeFilter === "today" && (t < today || t >= today + 86400)) return false;
       if (timeFilter === "week" && (t < today || t >= weekEnd)) return false;
@@ -72,7 +76,7 @@ export default function SlipsPage() {
       if (strategyFilter === "favorites" && l.odds > 1.85) return false;
       return true;
     });
-  }, [slips, timeFilter, leagueFilter, strategyFilter, nowSec]);
+  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, nowSec]);
 
   const handleLogBet = async (leg: SlipLeg) => {
     const key = legKey(leg);
@@ -254,10 +258,11 @@ export default function SlipsPage() {
             Ranked value opportunities with proven closing-line edge.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            {filteredSlips.length} Value Pick{filteredSlips.length === 1 ? "" : "s"}
+        <div className="flex items-center gap-2">            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
+              showAll ? "border-amber-400/30 bg-amber-400/10 text-amber-300" : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+            }`}>
+            <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${showAll ? "bg-amber-400" : "bg-emerald-400"}`} />
+            {showAll ? `${filteredSlips.length} Prediction${filteredSlips.length === 1 ? "" : "s"}` : `${filteredSlips.length} Value Pick${filteredSlips.length === 1 ? "" : "s"}`}
           </span>
         </div>
       </div>
@@ -298,6 +303,17 @@ export default function SlipsPage() {
                 </option>
               ))}
             </select>
+
+            <button
+              onClick={() => setShowAll(!showAll)}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
+                showAll
+                  ? "border-amber-400/50 bg-amber-400/15 text-amber-300 shadow-sm ring-1 ring-amber-400/20"
+                  : "border-ink-700/60 bg-ink-800/80 text-slate-400 hover:border-ink-600 hover:text-slate-200"
+              }`}
+            >
+              {showAll ? "🏷️ Show Value Picks Only" : "👁️ Show All Predictions"}
+            </button>
           </div>
 
           {/* Quick Strategy Filters */}
@@ -322,6 +338,16 @@ export default function SlipsPage() {
             ))}
           </div>
 
+          {showAll && (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-700/40 bg-ink-800/30 px-3 py-2 text-[11px] text-slate-400">
+              <span className="font-medium text-slate-300">Legend:</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-400" /> Edge ≥ 7% (strong)</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-sky-400" /> Edge 0–7% (moderate)</span>
+              <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-400" /> Edge &lt; 0% (no edge)</span>
+              <span className="text-slate-500">· All model probabilities shown — only flagged picks (green/sky) qualify for slips.</span>
+            </div>
+          )}
+
           {logError && (
             <div className="rounded-lg border border-red-400/40 bg-red-400/10 px-3 py-2 text-xs font-medium text-red-300">
               ⚠ {logError}
@@ -330,8 +356,8 @@ export default function SlipsPage() {
 
           {filteredSlips.length === 0 ? (
             <EmptyState
-              title="No flagged singles in this view"
-              body="Try switching your filter or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."
+              title={showAll ? "No predictions match your filters" : "No flagged singles in this view"}
+              body={showAll ? "Try switching your filter or selecting another league." : "Try switching your filter or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."}
             />
           ) : (
             <div className="space-y-3.5">
@@ -381,6 +407,7 @@ export default function SlipsPage() {
                                     {marketLabel(leg.market, leg.selection)}
                                   </span>
                                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold border ${
+                                    leg.edge < 0 ? "bg-red-400/15 text-red-300 border-red-400/30" :
                                     leg.edge >= 0.07 ? "bg-emerald-400/15 text-emerald-300 border-emerald-400/30" : "bg-sky-400/15 text-sky-300 border-sky-400/30"
                                   }`}>
                                     {fmtSignedPct(leg.edge)} EV

@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
+  allPredictionsAsLegs,
   buildCalibration,
   buildClvSeries,
   buildDashboard,
@@ -37,6 +38,7 @@ export interface DataContextValue {
   calibration: CalibrationResult | null;
   clvSeries: ClvPoint[];
   slips: SlipLeg[];
+  allPredictions: SlipLeg[];
   bets: BetWithClv[];
   backtest: BacktestResult | null;
   refresh: () => void;
@@ -77,7 +79,13 @@ function computeViews(db: Database) {
     db.clv.map((r) => ({ betId: r.betId, clv: r.clv, closingOdds: r.closingOdds })),
   ).sort((a, b) => b.placedAt - a.placedAt);
   const backtest = runBacktest(db);
-  return { dashboard, calibration, clvSeries, slips, bets, backtest };
+  const allPredictions = allPredictionsAsLegs(
+    slipFixtures,
+    db.predictions,
+    db.odds,
+    db.settings,
+  );
+  return { dashboard, calibration, clvSeries, slips, allPredictions, bets, backtest };
 }
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
@@ -246,6 +254,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       calibration: views?.calibration ?? null,
       clvSeries: views?.clvSeries ?? [],
       slips: views?.slips ?? [],
+      allPredictions: views?.allPredictions ?? [],
       bets: views?.bets ?? [],
       backtest: views?.backtest ?? null,
       refresh,

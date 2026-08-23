@@ -326,3 +326,61 @@ export function checkStakeAgainstStopLoss(
   const reason = stopLossViolation(stake, spentToday, spentThisWeek, settings);
   return reason ? { allowed: false, reason } : { allowed: true };
 }
+
+/**
+ * Convert ALL predictions into SlipLeg-shaped objects for the "Show All" view.
+ * Bypasses edge threshold, odds band, bookmaker depth, and spread filters.
+ * Still computes edge (for display) but never filters on it.
+ * Only requires: valid odds > 1.01 and a complete market.
+ */
+export function allPredictionsAsLegs(
+  fixtures: Fixture[],
+  predictions: Prediction[],
+  snapshots: OddsSnapshot[],
+  settings: Settings,
+): SlipLeg[] {
+  const legs: SlipLeg[] = [];
+
+  for (const fixture of fixtures) {
+    const fixtureOdds = snapshots.filter((s) => s.fixtureId === fixture.id);
+    for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
+      if (settings.markets.length > 0 && !settings.markets.includes(pred.market)) continue;
+      const marketOdds = fixtureOdds.filter((s) => s.market === pred.market);
+      if (marketOdds.length === 0) continue;
+
+      const bestPerSel = bestOddsBySelection(marketOdds, pred.market);
+      if (!hasCompleteMarketOdds(bestPerSel, pred.market, fixture)) continue;
+      const implied = marginAdjustedImplied(
+        [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
+        pred.selection,
+      );
+      if (implied <= 0) continue;
+      const edge = pred.probability - implied;
+
+      const odds = bestPerSel.get(pred.selection) ?? 0;
+      if (odds <= 1) continue;
+
+      legs.push({
+        fixture,
+        market: pred.market,
+        selection: pred.selection,
+        probability: pred.probability,
+        confidenceLow: pred.confidenceLow,
+        confidenceHigh: pred.confidenceHigh,
+        odds,
+        impliedProbability: implied,
+        edge,
+        stake: suggestedStake(pred.probability, odds, settings.bankroll, settings),
+      });
+    }
+  }
+
+  // Dedupe: one leg per (fixture, market, selection) — keep the best odds.
+  const best = new Map<string, SlipLeg>();
+  for (const leg of legs) {
+    const key = `${leg.fixture.id}:${leg.market}:${leg.selection}`;
+    const cur = best.get(key);
+    if (!cur || leg.odds > cur.odds) best.set(key, leg);
+  }
+  return [...best.values()].sort((a, b) => b.edge - a.edge);
+}

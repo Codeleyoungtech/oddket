@@ -245,24 +245,26 @@ function summarizeBets(
 export function buildDashboard(db: Database): Dashboard {
   const { bets, odds, clv, predictions, fixtures, outcomes, settings } = db;
 
-  const summary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, true);
+  // Model-flagged bets only — these drive the official ROI/CLV metrics.
   const modelSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, true);
+  // Manual/off-system bets — tracked separately, excluded from model metrics.
   const manualSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, false);
+  // Combined total for reference (nBets count only — ROI/CLV still model-only).
+  const totalSettled = bets.filter((b) => b.status === "won" || b.status === "lost");
+  const totalStaked = totalSettled.reduce((a, b) => a + b.stake, 0);
+  const totalReturn = totalSettled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
 
   const clvByBet = new Map(clv.map((c) => [c.betId, c]));
-  const settled = bets.filter((b) => b.status === "won" || b.status === "lost");
-  const totalStaked = settled.reduce((a, b) => a + b.stake, 0);
-  const totalReturn = settled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
-
-  const byMarket = buildByMarket(settled, clvByBet, totalStaked > 0 ? totalReturn / totalStaked : 0);
+  const byMarket = buildByMarket(totalSettled, clvByBet, totalStaked > 0 ? totalReturn / totalStaked : 0);
 
   const bankrollSeries = buildBankrollSeries(bets, settings.bankroll);
   const bankrollNow = bankrollSeries.length > 0 ? bankrollSeries[bankrollSeries.length - 1]!.bankroll : settings.bankroll;
 
   return {
     summary: {
-      ...summary,
-      nBets: bets.length, // total across all sources
+      ...modelSummary,
+      nBets: modelSummary.nBets + manualSummary.nBets, // total count for reference
+      settledBets: modelSummary.settledBets + manualSummary.settledBets,
       bankrollNow,
     },
     modelSummary,

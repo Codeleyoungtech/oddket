@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { marketLabel, type Parlay, type Selection } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
-import { api } from "../../lib/api";
+
 
 // Bets logged in the last 24h can be undone (mistaken logs). Older rows are
 // kept immutable — undoing settled/CLV-scored history would corrupt the scoreboard.
@@ -43,6 +43,11 @@ function formatKickoff(
 
   if (status === "finished" && homeScore != null && awayScore != null) {
     countdown = `${homeScore} - ${awayScore} (FT)`;
+    tag = "Final";
+    tagColor = "text-slate-400 bg-slate-400/10 border-slate-400/20";
+  } else if (status === "finished") {
+    // Finished but scores not recorded yet
+    countdown = "FT (score pending)";
     tag = "Final";
     tagColor = "text-slate-400 bg-slate-400/10 border-slate-400/20";
   } else if (diffH < -2) {
@@ -178,15 +183,13 @@ export default function BetsPage() {
       return;
     }
     // Optimistic: mark as undoing so the UI hides it instantly.
-    // Fire DELETE in background — refresh() will confirm it's gone from the
-    // server. If the server delete fails, un-mark so it reappears.
     setUndoingIds((prev) => new Set(prev).add(b.id));
     setUndoMsg("Bet removed from your log.");
     try {
-      await api.football.deleteBet(b.id);
-      refresh();
+      // Use the data provider's deleteBet — handles both live (API) and demo (local).
+      await deleteBet(b.id);
     } catch {
-      // Server delete failed — show it again
+      // Delete failed — show it again
       setUndoingIds((prev) => {
         const next = new Set(prev);
         next.delete(b.id);

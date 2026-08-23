@@ -73,15 +73,24 @@ function computeViews(db: Database) {
     db.odds,
     db.settings,
   );
-  // Retroactively tag bets: if a bet's (fixtureId, market, selection) is in
-  // the flagged slips list, it's 'model'. Otherwise 'manual'. Legacy bets
-  // without a source field get classified this way.
+  // Tag bets: only auto-classify bets placed TODAY onwards.
+  // Legacy bets (before source tagging existed) keep no source tag —
+  // they won't show 🤖 or 🟡, and won't affect either dashboard summary.
   const slipKeys = new Set(slips.map((s) => `${s.fixture.id}:${s.market}:${s.selection}`));
+  const startOfToday = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return Math.floor(d.getTime() / 1000);
+  })();
   const bets = enrichBets(
-    db.bets.map((b) => ({
-      ...b,
-      source: b.source ?? (slipKeys.has(`${b.fixtureId}:${b.market}:${b.selection}`) ? "model" : "manual"),
-    })),
+    db.bets.map((b) => {
+      // Already tagged (logged after this feature shipped) — keep it.
+      if (b.source) return b;
+      // Legacy bet placed before today — leave source undefined (untracked).
+      if (b.placedAt < startOfToday) return b;
+      // Bet placed today without a source — auto-classify.
+      return { ...b, source: slipKeys.has(`${b.fixtureId}:${b.market}:${b.selection}`) ? "model" : "manual" };
+    }),
     db.fixtures,
     db.clv.map((r) => ({ betId: r.betId, clv: r.clv, closingOdds: r.closingOdds })),
   ).sort((a, b) => b.placedAt - a.placedAt);

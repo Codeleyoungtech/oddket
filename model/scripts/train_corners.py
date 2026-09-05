@@ -50,13 +50,17 @@ RECENT_WINDOW = 10       # last N matches for recent corner form
 MOMENTUM_WINDOW = 5      # last N vs previous N for momentum trend
 H2H_CORNERS_WINDOW = 4   # last N direct meetings for corner H2H
 LEAGUES = {
-    "E0": "EPL", "E1": "Championship", "E2": "League 1", "E3": "League 2",
-    "SP1": "La Liga", "SP2": "La Liga 2",
-    "D1": "Bundesliga", "D2": "Bundesliga 2",
-    "I1": "Serie A", "I2": "Serie B",
-    "T1": "Super Lig",
+    "E0": "EPL",
+    "SP1": "La Liga",
+    "D1": "Bundesliga",
+    "I1": "Serie A",
 }
-SEASONS = ["2012", "2020", "2021"]  # seasons with corner data
+# 12 seasons of corner data from football-data.co.uk
+SEASONS = [
+    "2014_15", "2015_16", "2016_17", "2017_18", "2018_19",
+    "2019_20", "2020_21", "2021_22", "2022_23", "2023_24",
+    "2024_25", "2025_26",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +324,18 @@ def compute_corners_features(home_state: CornerTeamState, away_state: CornerTeam
         # Sample size (confidence proxy)
         "home_n": float(min(home_n, 30)),
         "away_n": float(min(away_n, 30)),
+        # === INTERACTION FEATURES ===
+        # How well does home team's corner rate match against away's weakness?
+        "home_attack_vs_away_defense": round(home_corners_for_home * away_opponent_weakness, 4),
+        "away_attack_vs_home_defense": round(away_corners_for_away * home_opponent_weakness, 4),
+        # Combined baseline (both teams contribute)
+        "combined_baseline": round(home_baseline + away_baseline, 4),
+        # Form vs baseline gap (is team in better/worse form than usual?)
+        "home_form_gap": round(home_ew_corners - home_baseline, 4),
+        "away_form_gap": round(away_ew_corners - away_baseline, 4),
+        # Momentum weighted by sample size (more data = more trustworthy)
+        "home_momentum_weighted": round(home_momentum * min(home_n, 15) / 15, 4),
+        "away_momentum_weighted": round(away_momentum * min(away_n, 15) / 15, 4),
     }
 
 
@@ -347,6 +363,11 @@ FEATURE_NAMES = [
     "home_rest", "away_rest", "rest_diff",
     # Sample size
     "home_n", "away_n",
+    # Interactions
+    "home_attack_vs_away_defense", "away_attack_vs_home_defense",
+    "combined_baseline",
+    "home_form_gap", "away_form_gap",
+    "home_momentum_weighted", "away_momentum_weighted",
 ]
 
 
@@ -400,24 +421,35 @@ def build_dataset(matches: list[CornerMatch]) -> tuple[list[CornerMatch], list[d
 # Model training and evaluation
 # ---------------------------------------------------------------------------
 def train_and_evaluate(X_train, y_train, X_test, y_test, match_type: str = "home"):
-    """Train XGBoost regressor and evaluate."""
+    """Train regressor and evaluate. Tries LightGBM → XGBoost → sklearn."""
     try:
-        from xgboost import XGBRegressor
-        model = XGBRegressor(
-            n_estimators=800, max_depth=5, learning_rate=0.02,
-            subsample=0.75, colsample_bytree=0.75,
-            reg_alpha=0.2, reg_lambda=2.0,
-            min_child_weight=5,
-            n_jobs=-1, random_state=42,
+        import lightgbm as lgb
+        model = lgb.LGBMRegressor(
+            n_estimators=800, max_depth=6, learning_rate=0.03,
+            subsample=0.8, colsample_bytree=0.8,
+            reg_alpha=0.1, reg_lambda=1.0,
+            min_child_weight=5, num_leaves=31,
+            n_jobs=-1, random_state=42, verbose=-1,
         )
-        version = "corners-xgb-v3"
+        version = "corners-lgb-v4"
     except ImportError:
-        from sklearn.ensemble import GradientBoostingRegressor
-        model = GradientBoostingRegressor(
-            n_estimators=500, max_depth=5, learning_rate=0.03,
-            subsample=0.8, random_state=42,
-        )
-        version = "corners-gbr-v2"
+        try:
+            from xgboost import XGBRegressor
+            model = XGBRegressor(
+                n_estimators=1000, max_depth=6, learning_rate=0.02,
+                subsample=0.75, colsample_bytree=0.75,
+                reg_alpha=0.2, reg_lambda=2.0,
+                min_child_weight=5,
+                n_jobs=-1, random_state=42,
+            )
+            version = "corners-xgb-v4"
+        except ImportError:
+            from sklearn.ensemble import GradientBoostingRegressor
+            model = GradientBoostingRegressor(
+                n_estimators=500, max_depth=5, learning_rate=0.03,
+                subsample=0.8, random_state=42,
+            )
+            version = "corners-gbr-v4"
 
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)

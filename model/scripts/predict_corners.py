@@ -39,6 +39,11 @@ from train_corners import (
     RECENT_WINDOW, MOMENTUM_WINDOW, H2H_CORNERS_WINDOW,
     _avg, _ew_avg,
 )
+# Also try importing from the v4 script for newer features
+try:
+    from train_corners_v4 import compute_corners_features as v4_features
+except ImportError:
+    pass
 
 # Alias table: API team name -> historical team name
 # Built by comparing football-data.co.uk CSVs with The Odds API team names.

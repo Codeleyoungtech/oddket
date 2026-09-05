@@ -370,12 +370,14 @@ same code in production (see `wrangler.toml`).
 - Rest days between matches
 - Sample size (confidence proxy)
 
-**Honest backtest (time-ordered 80/20 split):**
-- Home MAE: 1.821 corners | Away MAE: 1.803 corners
-- 80% CI: ±2.3 corners (wide — corner counts are inherently noisy)
-- Line accuracy: Over 3.5 → 71%, Over 4.5 → 66%, Over 5.5 → 70%, Over 6.5 → 78%
-- **70% consistency rule: 35% — BELOW threshold.** Model is not reliable enough for blind betting.
+**Honest backtest (time-ordered 80/20 split, V3 with V2 features):**
+- Home MAE: 1.688 corners | Away MAE: 1.682 corners (was 1.82/1.80 in V1)
+- R²: 0.34 (was 0.25 in V1 — 36% improvement)
+- 80% CI: ±2.1 corners
+- Line accuracy: Over 3.5 → 73%, Over 4.5 → 69%, Over 5.5 → 74%, Over 6.5 → 80%
+- **70% consistency rule: 39% — BELOW threshold.** Model is not reliable enough for blind betting.
 - The line probabilities are the useful output — compare to bookmaker's implied probability to find edge.
+- Top feature: H2H corner history (27% importance) — knowing how many corners teams get against each other is the strongest signal.
 
 **Isolation:** Completely separate from h2h/totals:
 - Separate D1 table: `corners_predictions`
@@ -399,6 +401,14 @@ same code in production (see `wrangler.toml`).
 - Live/in-play corner betting (separate infrastructure needed)
 - Match-total corners (both teams combined) — V1 is individual team totals only
 - 70% consistency not met — model needs more features (tactical data, formation info) to improve
+
+**Data expansion path (to improve MAE from 1.69 toward 0.7-1.3):**
+- FBref has match-level corner data for 10+ seasons per league, but blocks cloud servers
+- Run `model/scripts/fetch_fbref_corners.py` locally on your machine to download data
+- Each season adds ~380 matches (EPL) or ~306 (Bundesliga) of training data
+- Going from 3 seasons to 10+ seasons should significantly improve MAE
+- API-Football free tier (100 req/day) can also provide match statistics including corners
+- Key: more seasons = more team corner history = better recent-form features
 
 ---
 

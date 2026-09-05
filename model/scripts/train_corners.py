@@ -46,6 +46,9 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 # ---------------------------------------------------------------------------
 FORM_WINDOW = 8          # last N matches for corner form
 EW_DECAY = 0.85          # recency-weighted decay
+RECENT_WINDOW = 10       # last N matches for recent corner form
+MOMENTUM_WINDOW = 5      # last N vs previous N for momentum trend
+H2H_CORNERS_WINDOW = 4   # last N direct meetings for corner H2H
 LEAGUES = {
     "E0": "EPL", "E1": "Championship", "E2": "League 1", "E3": "League 2",
     "SP1": "La Liga", "SP2": "La Liga 2",
@@ -177,14 +180,23 @@ def _ew_avg(values: list[float], decay: float = EW_DECAY) -> float:
 
 
 def compute_corners_features(home_state: CornerTeamState, away_state: CornerTeamState,
-                              home: str, away: str, ts: int) -> dict:
-    """Feature vector for predicting per-team corner counts."""
+                              home: str, away: str, ts: int,
+                              recent_matches: list[CornerMatch] | None = None) -> dict:
+    """Feature vector for predicting per-team corner counts.
+    
+    New V2 features:
+    - Last 10 corners form (rolling average, larger window)
+    - Corner momentum (trend: last 5 vs previous 5)
+    - H2H corner history (avg corners in recent head-to-head meetings)
+    - Venue strength index (team's home rate vs league average)
+    - Opponent corner weakness (how many corners they concede)
+    - Total match corner tendency (both teams combined)
+    """
     # Team's corner rate (venue-filtered)
     home_corners_for_home = _avg(home_state.corner_rate_home, FORM_WINDOW)
     away_corners_for_away = _avg(away_state.corner_rate_away, FORM_WINDOW)
 
     # Opponent's corners conceded (venue-filtered)
-    # Home team concedes corners at home; away team concedes corners away
     home_conceded_at_home = _avg(home_state.conceded_rate_home, FORM_WINDOW)
     away_conceded_away = _avg(away_state.conceded_rate_away, FORM_WINDOW)
 
@@ -196,22 +208,75 @@ def compute_corners_features(home_state: CornerTeamState, away_state: CornerTeam
     home_ew_corners = _ew_avg([c for c, _ in home_state.corner_history[-FORM_WINDOW:]])
     away_ew_corners = _ew_avg([c for c, _ in away_state.corner_history[-FORM_WINDOW:]])
 
+    # === NEW V2 FEATURES ===
+    
+    # Last 10 corners form (larger window for more stable estimate)
+    home_recent10 = _avg([c for c, _ in home_state.corner_history[-RECENT_WINDOW:]])
+    away_recent10 = _avg([c for c, _ in away_state.corner_history[-RECENT_WINDOW:]])
+    
+    # Corner momentum: trend = (last 5 avg) - (previous 5 avg)
+    # Positive = improving, negative = declining
+    home_history = [c for c, _ in home_state.corner_history]
+    away_history = [c for c, _ in away_state.corner_history]
+    if len(home_history) >= MOMENTUM_WINDOW * 2:
+        home_momentum = (_avg(home_history[-MOMENTUM_WINDOW:]) - 
+                        _avg(home_history[-MOMENTUM_WINDOW*2:-MOMENTUM_WINDOW]))
+    else:
+        home_momentum = 0.0
+    if len(away_history) >= MOMENTUM_WINDOW * 2:
+        away_momentum = (_avg(away_history[-MOMENTUM_WINDOW:]) - 
+                        _avg(away_history[-MOMENTUM_WINDOW*2:-MOMENTUM_WINDOW]))
+    else:
+        away_momentum = 0.0
+    
+    # H2H corner history: avg corners in recent head-to-head meetings
+    home_h2h_corners = 0.0
+    away_h2h_corners = 0.0
+    h2h_count = 0
+    if recent_matches:
+        for m in reversed(recent_matches):
+            if h2h_count >= H2H_CORNERS_WINDOW:
+                break
+            if (m.home == home and m.away == away) or (m.home == away and m.away == home):
+                if m.home == home:
+                    home_h2h_corners += m.home_corners
+                    away_h2h_corners += m.away_corners
+                else:
+                    home_h2h_corners += m.away_corners
+                    away_h2h_corners += m.home_corners
+                h2h_count += 1
+        if h2h_count > 0:
+            home_h2h_corners /= h2h_count
+            away_h2h_corners /= h2h_count
+    
+    # Venue strength: how many corners team gets at this venue vs league avg (5.5)
+    home_venue_strength = home_corners_for_home / 5.5
+    away_venue_strength = away_corners_for_away / 5.5
+    
+    # Opponent weakness: how many corners opponent concedes at their venue
+    home_opponent_weakness = away_conceded_away / 5.5
+    away_opponent_weakness = home_conceded_at_home / 5.5
+    
+    # Total match corner tendency (both teams combined rate)
+    home_total_tendency = home_corners_for_home + home_conceded_at_home
+    away_total_tendency = away_corners_for_away + away_conceded_away
+    
     # Overall corner averages (venue-agnostic)
     home_overall_avg = _avg(home_state.corner_rate_home + home_state.corner_rate_away)
     away_overall_avg = _avg(away_state.corner_rate_away + away_state.corner_rate_away)
-
+    
     # Shots (proxy for attacking intent → corners)
     home_shots_avg = _avg([s for s, _ in home_state.shots_history[-FORM_WINDOW:]])
     away_shots_avg = _avg([s for s, _ in away_state.shots_history[-FORM_WINDOW:]])
-
+    
     # Rest days
     home_rest = max(0, (ts - home_state.last_ts) // 86400) if home_state.last_ts else 14
     away_rest = max(0, (ts - away_state.last_ts) // 86400) if away_state.last_ts else 14
-
+    
     # Sample size (number of matches played)
     home_n = len(home_state.corner_history)
     away_n = len(away_state.corner_history)
-
+    
     return {
         # Core corner features
         "home_corners_for": round(home_corners_for_home, 4),
@@ -224,6 +289,26 @@ def compute_corners_features(home_state: CornerTeamState, away_state: CornerTeam
         "away_ew_corners": round(away_ew_corners, 4),
         "home_overall_avg": round(home_overall_avg, 4),
         "away_overall_avg": round(away_overall_avg, 4),
+        # NEW V2: Recent 10 form
+        "home_recent10": round(home_recent10, 4),
+        "away_recent10": round(away_recent10, 4),
+        "recent10_diff": round(home_recent10 - away_recent10, 4),
+        # NEW V2: Momentum (trend)
+        "home_momentum": round(home_momentum, 4),
+        "away_momentum": round(away_momentum, 4),
+        "momentum_diff": round(home_momentum - away_momentum, 4),
+        # NEW V2: H2H corner history
+        "home_h2h_corners": round(home_h2h_corners, 4),
+        "away_h2h_corners": round(away_h2h_corners, 4),
+        "h2h_corners_diff": round(home_h2h_corners - away_h2h_corners, 4),
+        # NEW V2: Venue strength & opponent weakness
+        "home_venue_strength": round(home_venue_strength, 4),
+        "away_venue_strength": round(away_venue_strength, 4),
+        "home_opponent_weakness": round(home_opponent_weakness, 4),
+        "away_opponent_weakness": round(away_opponent_weakness, 4),
+        # NEW V2: Total match tendency
+        "home_total_tendency": round(home_total_tendency, 4),
+        "away_total_tendency": round(away_total_tendency, 4),
         # Shots (proxy)
         "home_shots": round(home_shots_avg, 4),
         "away_shots": round(away_shots_avg, 4),
@@ -239,13 +324,28 @@ def compute_corners_features(home_state: CornerTeamState, away_state: CornerTeam
 
 
 FEATURE_NAMES = [
+    # Core
     "home_corners_for", "away_corners_for",
     "home_conceded", "away_conceded",
     "home_baseline", "away_baseline",
     "home_ew_corners", "away_ew_corners",
     "home_overall_avg", "away_overall_avg",
+    # V2: Recent 10 form
+    "home_recent10", "away_recent10", "recent10_diff",
+    # V2: Momentum
+    "home_momentum", "away_momentum", "momentum_diff",
+    # V2: H2H corners
+    "home_h2h_corners", "away_h2h_corners", "h2h_corners_diff",
+    # V2: Venue strength & opponent weakness
+    "home_venue_strength", "away_venue_strength",
+    "home_opponent_weakness", "away_opponent_weakness",
+    # V2: Total tendency
+    "home_total_tendency", "away_total_tendency",
+    # Shots
     "home_shots", "away_shots", "shots_diff",
+    # Rest
     "home_rest", "away_rest", "rest_diff",
+    # Sample size
     "home_n", "away_n",
 ]
 
@@ -267,7 +367,7 @@ def build_dataset(matches: list[CornerMatch]) -> tuple[list[CornerMatch], list[d
         hs = teams.setdefault(m.home, CornerTeamState())
         as_ = teams.setdefault(m.away, CornerTeamState())
 
-        features = compute_corners_features(hs, as_, m.home, m.away, m.ts)
+        features = compute_corners_features(hs, as_, m.home, m.away, m.ts, recent_matches=valid_matches)
         m.features = features
 
         # Home team row
@@ -304,13 +404,13 @@ def train_and_evaluate(X_train, y_train, X_test, y_test, match_type: str = "home
     try:
         from xgboost import XGBRegressor
         model = XGBRegressor(
-            n_estimators=500, max_depth=5, learning_rate=0.03,
-            subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.1, reg_lambda=1.0,
+            n_estimators=800, max_depth=5, learning_rate=0.02,
+            subsample=0.75, colsample_bytree=0.75,
+            reg_alpha=0.2, reg_lambda=2.0,
             min_child_weight=5,
             n_jobs=-1, random_state=42,
         )
-        version = "corners-xgb-v2"
+        version = "corners-xgb-v3"
     except ImportError:
         from sklearn.ensemble import GradientBoostingRegressor
         model = GradientBoostingRegressor(

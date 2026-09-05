@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 from train_corners import (
     CornerMatch, CornerTeamState, LEAGUES, SEASONS,
     compute_corners_features, FEATURE_NAMES, FORM_WINDOW, EW_DECAY,
+    RECENT_WINDOW, MOMENTUM_WINDOW, H2H_CORNERS_WINDOW,
     _avg, _ew_avg,
 )
 
@@ -232,6 +233,7 @@ def predict_fixtures(
     teams: dict[str, CornerTeamState],
     home_model,
     away_model,
+    recent_matches: list[CornerMatch] | None = None,
 ) -> list[dict]:
     """Predict corner counts for each fixture."""
     known_teams = set(teams.keys())
@@ -252,7 +254,7 @@ def predict_fixtures(
             skipped.append(f"{home_raw} vs {away_raw}")
             continue
 
-        features = compute_corners_features(hs, as_, home, away, ts)
+        features = compute_corners_features(hs, as_, home, away, ts, recent_matches=recent_matches)
         X = np.array([[features[f] for f in FEATURE_NAMES]], dtype=float)
 
         home_corners = float(home_model.predict(X)[0])
@@ -295,6 +297,8 @@ def main() -> int:
     hist = load_historical_corners(args.data_dir)
     teams = build_team_states(hist)
     print(f"[predict] {len(teams)} teams loaded", file=sys.stderr)
+    # Keep the full match list for H2H corner features
+    recent_matches = hist
 
     # Load fixtures
     fixtures_path = args.fixtures
@@ -327,7 +331,7 @@ def main() -> int:
     upcoming = [fx for fx in fixtures if fx.get("commenceTime", 0) > now]
     print(f"[predict] {len(upcoming)} upcoming fixtures", file=sys.stderr)
 
-    preds, skipped = predict_fixtures(upcoming, teams, home_model, away_model)
+    preds, skipped = predict_fixtures(upcoming, teams, home_model, away_model, recent_matches=recent_matches)
     print(f"[predict] {len(preds)} predictions generated", file=sys.stderr)
     if skipped:
         print(f"[predict] {len(skipped)} skipped (team not in historical data):", file=sys.stderr)

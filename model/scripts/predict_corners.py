@@ -39,6 +39,129 @@ from train_corners import (
     _avg, _ew_avg,
 )
 
+# Alias table: API team name -> historical team name
+# Built by comparing football-data.co.uk CSVs with The Odds API team names.
+TEAM_ALIASES: dict[str, str] = {
+    # EPL
+    "Manchester City": "Man City",
+    "Manchester United": "Man United",
+    "Tottenham Hotspur": "Tottenham",
+    "Brighton and Hove Albion": "Brighton",
+    "Newcastle United": "Newcastle",
+    "Nottingham Forest": "Nott'm Forest",
+    "West Ham United": "West Ham",
+    "Wolverhampton Wanderers": "Wolves",
+    "Wolverhampton": "Wolves",
+    "Leeds United": "Leeds",
+    "Leicester City": "Leicester",
+    "Ipswich Town": "Ipswich",
+    "Coventry City": "Coventry",
+    "Hull City": "Hull",
+    "Sunderland": "Sunderland",
+    # La Liga
+    "Atlético Madrid": "Ath Madrid",
+    "Athletic Bilbao": "Ath Bilbao",
+    "Real Sociedad": "Sociedad",
+    "Real Betis": "Betis",
+    "CA Osasuna": "Osasuna",
+    "Rayo Vallecano": "Vallecano",
+    "Deportivo La Coruña": "Deportivo La Coru",
+    "Elche CF": "Elche",
+    "Real Racing Club de Santander": "Racing Santande",
+    "RCD Espanyol": "Espanyol",
+    "Espanyol": "Espanyol",
+    "RCD Mallorca": "Mallorca",
+    "Málaga": "Malaga",
+    "Girona": "Girona",
+    "Alavés": "Alaves",
+    # Bundesliga
+    "Bayer Leverkusen": "Leverkusen",
+    "Borussia Dortmund": "Dortmund",
+    "Borussia Monchengladbach": "M'gladbach",
+    "Eintracht Frankfurt": "Ein Frankfurt",
+    "TSG Hoffenheim": "Hoffenheim",
+    "VfB Stuttgart": "Stuttgart",
+    "FC Schalke 04": "Schalke 04",
+    "FSV Mainz 05": "Mainz",
+    "Hamburger SV": "Hamburg",
+    "1. FC Köln": "Koln",
+    "SC Freiburg": "Freiburg",
+    "SC Paderborn": "Paderborn",
+    "Elversberg": "Elversberg",
+    # Serie A
+    "AC Milan": "Milan",
+    "Inter Milan": "Inter",
+    "AS Roma": "Roma",
+    "Atalanta BC": "Atalanta",
+    "Hellas Verona": "Verona",
+    "US Lecce": "Lecce",
+    "US Sassuolo": "Sassuolo",
+    "Cagliari Calcio": "Cagliari",
+    "Genoa CFC": "Genoa",
+    "Como": "Como",
+}
+
+# Teams genuinely not in historical data (renewed/promoted with no corner history).
+# The resolve function returns None for these — caller should use league-average prior.
+NO_DATA_TEAMS = {
+    "Elversberg", "Real Racing Club de Santander", "Deportivo La Coruña",
+    "Racing Santander", "Deportivo La Coru",
+}
+
+
+def _strip_accents(s: str) -> str:
+    """Remove accents for fuzzy matching (e.g. 'Alavés' -> 'Alaves')."""
+    import unicodedata
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+
+def resolve_team(name: str, known_teams: set[str]) -> str | None:
+    """Resolve an API team name to its historical equivalent.
+    
+    Returns None if the team genuinely has no historical data.
+    
+    1. Exact match (already in history)
+    2. Alias table lookup
+    3. Accent-insensitive match
+    4. Fuzzy: strip common suffixes (FC, CF, AFC, SC, etc.) and try again
+    5. Fuzzy: last-word match
+    6. Returns None if no match found (team has no data)
+    """
+    if name in known_teams:
+        return name
+    
+    # Alias table
+    if name in TEAM_ALIASES:
+        alias = TEAM_ALIASES[name]
+        if alias in known_teams:
+            return alias
+    
+    # Accent-insensitive match
+    name_asc = _strip_accents(name).lower()
+    for t in known_teams:
+        if _strip_accents(t).lower() == name_asc:
+            return t
+    
+    # Strip suffixes and try
+    stripped = name_asc
+    for suffix in [' fc', ' cf', ' afc', ' sc', ' ac', ' bc', ' sv', ' dfb']:
+        stripped = stripped.replace(suffix, '')
+    for t in known_teams:
+        if _strip_accents(t).lower() == stripped:
+            return t
+    
+    # Last-word match
+    name_parts = name_asc.split()
+    if len(name_parts) > 1:
+        last = name_parts[-1]
+        if len(last) > 3:
+            for t in known_teams:
+                t_parts = _strip_accents(t).lower().split()
+                if t_parts[-1] == last and len(t_parts[-1]) > 3:
+                    return t
+    
+    return None  # team has no historical data
+
 
 def load_historical_corners(data_dir: str) -> list[CornerMatch]:
     """Load all historical corner data to build team states."""
@@ -111,10 +234,14 @@ def predict_fixtures(
     away_model,
 ) -> list[dict]:
     """Predict corner counts for each fixture."""
+    known_teams = set(teams.keys())
     predictions = []
+    skipped = []
     for fx in fixtures:
-        home = fx.get("homeTeam", "")
-        away = fx.get("awayTeam", "")
+        home_raw = fx.get("homeTeam", "")
+        away_raw = fx.get("awayTeam", "")
+        home = resolve_team(home_raw, known_teams)
+        away = resolve_team(away_raw, known_teams)
         fid = fx.get("id", "")
         ts = fx.get("commenceTime", 0)
 
@@ -122,8 +249,7 @@ def predict_fixtures(
         as_ = teams.get(away)
 
         if not hs or not as_:
-            # Team not in historical data — use league average prior
-            print(f"  [warn] {home} or {away} not in historical data, skipping", file=sys.stderr)
+            skipped.append(f"{home_raw} vs {away_raw}")
             continue
 
         features = compute_corners_features(hs, as_, home, away, ts)
@@ -138,13 +264,13 @@ def predict_fixtures(
 
         predictions.append({
             "fixtureId": fid,
-            "home": home,
-            "away": away,
+            "home": home_raw,
+            "away": away_raw,
             "homeCorners": round(home_corners, 2),
             "awayCorners": round(away_corners, 2),
         })
 
-    return predictions
+    return predictions, skipped
 
 
 def main() -> int:
@@ -201,8 +327,14 @@ def main() -> int:
     upcoming = [fx for fx in fixtures if fx.get("commenceTime", 0) > now]
     print(f"[predict] {len(upcoming)} upcoming fixtures", file=sys.stderr)
 
-    preds = predict_fixtures(upcoming, teams, home_model, away_model)
+    preds, skipped = predict_fixtures(upcoming, teams, home_model, away_model)
     print(f"[predict] {len(preds)} predictions generated", file=sys.stderr)
+    if skipped:
+        print(f"[predict] {len(skipped)} skipped (team not in historical data):", file=sys.stderr)
+        for s in skipped[:10]:
+            print(f"  {s}", file=sys.stderr)
+        if len(skipped) > 10:
+            print(f"  ... and {len(skipped)-10} more", file=sys.stderr)
 
     # Output JSON to stdout
     print(json.dumps(preds, indent=2))

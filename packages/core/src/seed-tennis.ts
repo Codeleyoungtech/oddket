@@ -194,5 +194,6 @@ export function buildTennisSeedDatabase(): Database {
       maxSpreadPct: 0.50,
     },
     parlayBets: [],
+  cornerPredictions: [],
   };
 }

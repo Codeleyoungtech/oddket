@@ -221,6 +221,7 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     outcomes: (outcomes.results ?? []).map(toOutcome),
     settings,
     parlayBets: (parlayRows.results ?? []).map(toParlay),
+    cornerPredictions: [],
   };
 }
 
@@ -384,6 +385,7 @@ export async function loadTennisDatabase(db: D1Database): Promise<Database> {
     outcomes,
     settings,
     parlayBets: (parlayRows.results ?? []).map(toParlay),
+    cornerPredictions: [],
   };
 }
 
@@ -525,6 +527,49 @@ export async function upsertPredictions(db: D1Database, rows: Prediction[]): Pro
     stmt.bind(p.id, p.fixtureId, p.market, p.selection, p.probability, p.confidenceLow, p.confidenceHigh, p.modelVersion, p.createdAt),
   );
   if (batch.length) await db.batch(batch);
+}
+
+/* ---------------- corners predictions (isolated from h2h/totals) ---------------- */
+
+export async function upsertCornerPredictions(
+  db: D1Database,
+  rows: { id: string; fixtureId: string; team: string; side: string;
+    predictedCorners: number; confidenceLow: number; confidenceHigh: number;
+    lineProbs: string; modelVersion: string; createdAt: number }[],
+): Promise<void> {
+  const stmt = db.prepare(
+    `INSERT INTO corners_predictions
+       (id, fixture_id, team, side, predicted_corners, confidence_low, confidence_high, line_probs, model_version, created_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+     ON CONFLICT(id) DO UPDATE SET
+       predicted_corners = excluded.predicted_corners,
+       confidence_low = excluded.confidence_low,
+       confidence_high = excluded.confidence_high,
+       line_probs = excluded.line_probs,
+       model_version = excluded.model_version,
+       created_at = excluded.created_at`,
+  );
+  const batch = rows.map((r) =>
+    stmt.bind(r.id, r.fixtureId, r.team, r.side, r.predictedCorners,
+      r.confidenceLow, r.confidenceHigh, r.lineProbs, r.modelVersion, r.createdAt),
+  );
+  if (batch.length) await db.batch(batch);
+}
+
+export async function listCornerPredictions(db: D1Database): Promise<{
+  id: string; fixtureId: string; team: string; side: string;
+  predictedCorners: number; confidenceLow: number; confidenceHigh: number;
+  lineProbs: string; modelVersion: string; createdAt: number
+}[]> {
+  const { results } = await db.prepare(
+    `SELECT id, fixture_id as fixtureId, team, side,
+            predicted_corners as predictedCorners, confidence_low as confidenceLow,
+            confidence_high as confidenceHigh, line_probs as lineProbs,
+            model_version as modelVersion, created_at as createdAt
+     FROM corners_predictions
+     ORDER BY created_at DESC`,
+  ).all();
+  return results as any[];
 }
 
 export async function insertBet(db: D1Database, b: Bet): Promise<void> {

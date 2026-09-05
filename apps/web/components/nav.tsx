@@ -7,6 +7,7 @@ import { useData, type Sport } from "../lib/data-provider";
 const LINKS = [
   { href: "/", label: "Overview", icon: "home" },
   { href: "/slips", label: "Slips", icon: "ticket" },
+  { href: "/corners", label: "Corners", icon: "corners" },
   { href: "/calibration", label: "Calibration", icon: "gauge" },
   { href: "/bets", label: "Bet Log", icon: "receipt" },
   { href: "/backtest", label: "Backtest", icon: "flask" },
@@ -68,6 +69,14 @@ function Icon({ name, className = "h-[18px] w-[18px]" }: { name: string; classNa
         <svg {...common}>
           <circle cx="12" cy="12" r="3" />
           <path d="M12 2.5v3M12 18.5v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2.5 12h3M18.5 12h3M4.9 19.1 7 17M17 7l2.1-2.1" />
+        </svg>
+      );
+    case "corners":
+      return (
+        <svg {...common}>
+          <path d="M4 4h7v7H4z" />
+          <path d="M13 4h7v7h-7z" />
+          <path d="M4 13h7v7H4z" />
         </svg>
       );
     default:

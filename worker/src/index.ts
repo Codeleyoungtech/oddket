@@ -8,6 +8,7 @@ import {
   buildParlay,
   checkLegIndependence,
   enrichBets,
+  buildCornerPredictions,
   flagSlips,
   runBacktest,
   type Bet,
@@ -46,6 +47,8 @@ import {
   loadTennisDatabase,
   settleTennisBets,
   upsertTennisPredictions,
+  upsertCornerPredictions,
+  listCornerPredictions,
 } from "./db";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -307,6 +310,61 @@ app.post("/api/outcomes", async (c) => {
 app.get("/api/calibration", async (c) => {
   const db = await loadDatabase(c.env.DB);
   return c.json(buildCalibration(db.predictions, db.outcomes, db.fixtures));
+});
+
+/* ---------------- corners predictions ---------------- */
+
+app.get("/api/corners", async (c) => {
+  const preds = await listCornerPredictions(c.env.DB);
+  // Parse lineProbs JSON back to object for each prediction
+  const parsed = preds.map((p) => ({
+    ...p,
+    lineProbs: JSON.parse(p.lineProbs || "{}"),
+  }));
+  return c.json(parsed);
+});
+
+app.post("/api/corners/ingest", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized" }, 401);
+  try {
+    const body = await c.req.json();
+    const predictions = Array.isArray(body) ? body : body.predictions;
+    if (!Array.isArray(predictions)) {
+      return c.json({ ok: false, error: "Expected array of predictions" }, 400);
+    }
+    const { buildCornerPredictions } = await import("@oddket/core");
+    const db = c.env.DB;
+    // Load fixtures to get match details
+    const { results: fixtures } = await db.prepare(
+      `SELECT id, home_team as homeTeam, away_team as awayTeam FROM fixtures`
+    ).all();
+    const fixtureMap = new Map(fixtures.map((f: any) => [f.id, f]));
+
+    const rows: any[] = [];
+    const now = Math.floor(Date.now() / 1000);
+    for (const pred of predictions) {
+      const fixture = fixtureMap.get(pred.fixtureId);
+      if (!fixture) continue;
+      const cornerPreds = buildCornerPredictions(
+        { id: pred.fixtureId, homeTeam: fixture.homeTeam, awayTeam: fixture.awayTeam,
+          sport: "soccer", league: "", commenceTime: 0, status: "scheduled" },
+        pred.homeCorners, pred.awayCorners,
+      );
+      for (const cp of cornerPreds) {
+        rows.push({
+          id: cp.id, fixtureId: cp.fixtureId, team: cp.team, side: cp.side,
+          predictedCorners: cp.predictedCorners, confidenceLow: cp.confidenceLow,
+          confidenceHigh: cp.confidenceHigh,
+          lineProbs: JSON.stringify(cp.lineProbs),
+          modelVersion: cp.modelVersion, createdAt: now,
+        });
+      }
+    }
+    await upsertCornerPredictions(db, rows);
+    return c.json({ ok: true, ingested: rows.length });
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 500);
+  }
 });
 
 /* ---------------- backtest ---------------- */

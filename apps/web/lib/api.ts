@@ -68,10 +68,24 @@ export interface PushSubscriptionInput {
   keys: { p256dh: string; auth: string };
 }
 
+export interface CornerPrediction {
+  id: string;
+  fixtureId: string;
+  team: string;
+  side: "home" | "away";
+  predictedCorners: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  lineProbs: { over35: number; over45: number; over55: number; over65: number };
+  modelVersion: string;
+  createdAt: number;
+}
+
 export const api = {
   health: () => req<Health>("/api/health"),
   football: makeClient("/api"),
   tennis: makeClient("/api/tennis"),
+  corners: () => req<CornerPrediction[]>("/api/corners"),
   /** True parlays are cross-sport — one shared endpoint, not sport-scoped. */
   logParlay: (p: ParlayInput) =>
     req<{ ok: boolean; parlay: unknown }>("/api/parlays", { method: "POST", body: JSON.stringify(p) }),

@@ -39,6 +39,7 @@ export interface DataContextValue {
   clvSeries: ClvPoint[];
   slips: SlipLeg[];
   allPredictions: SlipLeg[];
+  cornerPredictions: any[];
   bets: BetWithClv[];
   backtest: BacktestResult | null;
   refresh: () => void;
@@ -110,6 +111,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [workerError, setWorkerError] = useState<string | null>(null);
   const [db, setDb] = useState<Database | null>(null);
   const [tick, setTick] = useState(0);
+  const [cornerPreds, setCornerPreds] = useState<any[]>([]);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
@@ -128,6 +130,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setDb(liveDb);
         setMode("live");
         setWorkerError(null);
+        // Fetch corners predictions (non-blocking, separate from main DB)
+        api.corners().then((cp) => { if (!cancelled) setCornerPreds(cp); }).catch(() => {});
       } catch {
         if (cancelled) return;
         setDb(sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
@@ -278,6 +282,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clvSeries: views?.clvSeries ?? [],
       slips: views?.slips ?? [],
       allPredictions: views?.allPredictions ?? [],
+      cornerPredictions: cornerPreds,
       bets: views?.bets ?? [],
       backtest: views?.backtest ?? null,
       refresh,
@@ -289,7 +294,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       recordOutcome,
       recordTennisOutcome,
     }),
-    [mode, sport, workerError, db, views, refresh, saveSettings, logBet, logParlay, deleteBet, recordOutcome, recordTennisOutcome],
+    [mode, sport, workerError, db, views, cornerPreds, refresh, saveSettings, logBet, logParlay, deleteBet, recordOutcome, recordTennisOutcome],
   );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;

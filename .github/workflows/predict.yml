@@ -59,6 +59,10 @@ jobs:
         working-directory: model
         run: python3 scripts/predict.py --source fixtures --data data/fixtures.json --market ou
 
+      - name: Predict corners (per-team corner totals)
+        working-directory: model
+        run: python3 scripts/predict_corners.py --fixtures data/fixtures.json > data/corners_predictions.json
+
       - name: Push predictions to the worker
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
@@ -71,6 +75,14 @@ jobs:
               --data-binary @"$f"
             echo
           done
+          # Corners predictions (isolated from h2h/totals)
+          if [ -s model/data/corners_predictions.json ]; then
+            curl -sS -m 60 -X POST "$WORKER_URL/api/corners/ingest" \
+              -H "Content-Type: application/json" \
+              -H "x-predict-key: $PREDICT_SECRET" \
+              --data-binary @"model/data/corners_predictions.json"
+            echo
+          fi
 
   predict-tennis:
     runs-on: ubuntu-latest

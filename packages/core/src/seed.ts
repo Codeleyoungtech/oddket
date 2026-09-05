@@ -214,5 +214,6 @@ export function buildSeedDatabase(): Database {
       maxSpreadPct: 0.50, // permissive for demo — live defaults to 0.10
     },
     parlayBets: [],
+  cornerPredictions: [],
   };
 }

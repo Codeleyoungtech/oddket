@@ -353,6 +353,55 @@ same code in production (see `wrangler.toml`).
     `bookmakers=bet365,sportybet,betway` filter may return just one book early on.
   - Re-running `POST /api/ingest` upserts by snapshot id; counts reported are per-call batches.
 
+## 13. Corners Predictions (V1 — isolated track)
+
+**Status:** Trained, ingested, UI live. NOT connected to the EV engine.
+
+**What it does:** Predicts per-team corner counts for upcoming matches and computes over/under line probabilities (O3.5, O4.5, O5.5, O6.5). No odds comparison, no EV filtering — raw model output only.
+
+**Data source:** football-data.co.uk historical corner data (HC/AC columns) — 14,007 matches across 11 leagues (EPL, Championship, La Liga, Bundesliga, Serie A, Super Lig) from 3 seasons (2012, 2020, 2021).
+
+**Model:** Two XGBoost regressors (one for home team corners, one for away). Features:
+- Team's corner rate (venue-filtered: home corners at home, away corners away)
+- Opponent's corners conceded (venue-filtered)
+- Baseline = avg of team rate + opponent conceded rate
+- Recency-weighted form on corner counts (EW decay 0.85)
+- Shots on target (proxy for attacking intent → corners)
+- Rest days between matches
+- Sample size (confidence proxy)
+
+**Honest backtest (time-ordered 80/20 split):**
+- Home MAE: 1.821 corners | Away MAE: 1.803 corners
+- 80% CI: ±2.3 corners (wide — corner counts are inherently noisy)
+- Line accuracy: Over 3.5 → 71%, Over 4.5 → 66%, Over 5.5 → 70%, Over 6.5 → 78%
+- **70% consistency rule: 35% — BELOW threshold.** Model is not reliable enough for blind betting.
+- The line probabilities are the useful output — compare to bookmaker's implied probability to find edge.
+
+**Isolation:** Completely separate from h2h/totals:
+- Separate D1 table: `corners_predictions`
+- Separate training script: `model/scripts/train_corners.py`
+- Separate prediction script: `model/scripts/predict_corners.py`
+- Separate TypeScript module: `packages/core/src/corners.ts`
+- Separate UI page: `/corners`
+- No shared models, no shared predictions, no shared bets
+
+**Pipeline:** GitHub Actions predict job → Python model → JSON → POST `/api/corners/ingest` → D1 → UI
+
+**API:**
+- `GET /api/corners` — returns all corner predictions (no auth needed)
+- `POST /api/corners/ingest` — ingests predictions (requires PREDICT_SECRET)
+
+**Secret:** PREDICT_SECRET starts with `odk` — stored in both Cloudflare Worker secrets and GitHub Actions secrets.
+
+**Gaps / future work:**
+- Deep injury history (only starting-XI confirmation available via API-Football free tier)
+- Weather data (real factor but not worth complexity until baseline proves signal)
+- Live/in-play corner betting (separate infrastructure needed)
+- Match-total corners (both teams combined) — V1 is individual team totals only
+- 70% consistency not met — model needs more features (tactical data, formation info) to improve
+
+---
+
 ## 8. Gotchas
 
 - `pnpm dev:web` demo mode needs no backend. If the worker is also running, the web app will use it

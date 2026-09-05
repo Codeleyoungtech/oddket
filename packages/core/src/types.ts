@@ -1,6 +1,10 @@
 /**
  * Canonical record shapes shared across the whole system.
  * These mirror the D1 tables in `worker/src/db/schema.ts` 1:1.
+ *
+ * CORNERS: Fully isolated from h2h/totals. New tables, new training script.
+ * Reuses only the fixture ingestion pipeline. No EV/odds layer — predictions
+ * are raw (predicted corner count + confidence interval + line probabilities).
  */
 
 /**
@@ -208,6 +212,34 @@ export interface BetWithClv extends Bet {
 }
 
 /** Everything the dashboards need, as raw records. */
+/**
+ * Per-team corner prediction. No EV/odds comparison — just raw model output.
+ * Isolated from h2h/totals entirely.
+ */
+export interface CornerPrediction {
+  id: string;
+  fixtureId: string;
+  /** team name (home or away) */
+  team: string;
+  /** 'home' or 'away' */
+  side: "home" | "away";
+  /** model's predicted corner count (e.g. 5.8) */
+  predictedCorners: number;
+  /** lower bound of 80% confidence interval */
+  confidenceLow: number;
+  /** upper bound of 80% confidence interval */
+  confidenceHigh: number;
+  /** probability of clearing common lines */
+  lineProbs: {
+    over35: number;
+    over45: number;
+    over55: number;
+    over65: number;
+  };
+  modelVersion: string;
+  createdAt: number;
+}
+
 export interface Database {
   fixtures: Fixture[];
   odds: OddsSnapshot[];
@@ -217,4 +249,5 @@ export interface Database {
   outcomes: Outcome[];
   settings: Settings;
   parlayBets: Parlay[];
+  cornerPredictions: CornerPrediction[];
 }

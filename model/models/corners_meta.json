@@ -1,0 +1,131 @@
+{
+  "version": "corners-xgb-v2",
+  "market": "corners",
+  "source": "football-data.co.uk EPL/LaLiga/Bundesliga/SerieA/Championship 2012-2022",
+  "features": [
+    "home_corners_for",
+    "away_corners_for",
+    "home_conceded",
+    "away_conceded",
+    "home_baseline",
+    "away_baseline",
+    "home_ew_corners",
+    "away_ew_corners",
+    "home_overall_avg",
+    "away_overall_avg",
+    "home_shots",
+    "away_shots",
+    "shots_diff",
+    "home_rest",
+    "away_rest",
+    "rest_diff",
+    "home_n",
+    "away_n"
+  ],
+  "n_train": 11205,
+  "n_test": 2802,
+  "holdout_range": "2021-04-05 -> 2021-05-30",
+  "home_metrics": {
+    "mae": 1.8208,
+    "rmse": 2.3449,
+    "r2": 0.2542,
+    "consistency_1": 0.3551,
+    "consistency_05": 0.1892,
+    "line_accuracy": {
+      "over_3.5": 0.733,
+      "over_4.5": 0.6759,
+      "over_5.5": 0.6938,
+      "over_6.5": 0.7527,
+      "over_7.5": 0.8319
+    },
+    "feature_importance": {
+      "home_corners_for": 0.0409,
+      "away_corners_for": 0.0288,
+      "home_conceded": 0.0288,
+      "away_conceded": 0.0631,
+      "home_baseline": 0.1814,
+      "away_baseline": 0.0296,
+      "home_ew_corners": 0.1711,
+      "away_ew_corners": 0.0326,
+      "home_overall_avg": 0.0381,
+      "away_overall_avg": 0.0297,
+      "home_shots": 0.0307,
+      "away_shots": 0.0288,
+      "shots_diff": 0.0319,
+      "home_rest": 0.0997,
+      "away_rest": 0.0664,
+      "rest_diff": 0.0283,
+      "home_n": 0.0313,
+      "away_n": 0.0388
+    },
+    "version": "corners-xgb-v2"
+  },
+  "away_metrics": {
+    "mae": 1.8026,
+    "rmse": 2.2881,
+    "r2": 0.2328,
+    "consistency_1": 0.3473,
+    "consistency_05": 0.1817,
+    "line_accuracy": {
+      "over_3.5": 0.6852,
+      "over_4.5": 0.6435,
+      "over_5.5": 0.717,
+      "over_6.5": 0.7987,
+      "over_7.5": 0.8694
+    },
+    "feature_importance": {
+      "home_corners_for": 0.0317,
+      "away_corners_for": 0.0413,
+      "home_conceded": 0.0531,
+      "away_conceded": 0.0295,
+      "home_baseline": 0.0317,
+      "away_baseline": 0.1777,
+      "home_ew_corners": 0.0369,
+      "away_ew_corners": 0.1715,
+      "home_overall_avg": 0.0333,
+      "away_overall_avg": 0.0334,
+      "home_shots": 0.0318,
+      "away_shots": 0.0314,
+      "shots_diff": 0.0359,
+      "home_rest": 0.1056,
+      "away_rest": 0.0628,
+      "rest_diff": 0.031,
+      "home_n": 0.0299,
+      "away_n": 0.0317
+    },
+    "version": "corners-xgb-v2"
+  },
+  "backtest_summary": {
+    "nMatches": 2802,
+    "home_mae": 1.8209,
+    "away_mae": 1.8025,
+    "total_mae": 2.2984,
+    "home_consistency": 0.3576,
+    "away_consistency": 0.3512,
+    "total_consistency": 0.4158,
+    "line_accuracy": {
+      "team_over_3.5": 0.7084,
+      "team_over_4.5": 0.6601,
+      "team_over_5.5": 0.7052,
+      "team_over_6.5": 0.7755
+    }
+  },
+  "seeds": [
+    "2012",
+    "2020",
+    "2021"
+  ],
+  "leagues": [
+    "EPL",
+    "Championship",
+    "League 1",
+    "League 2",
+    "La Liga",
+    "La Liga 2",
+    "Bundesliga",
+    "Bundesliga 2",
+    "Serie A",
+    "Serie B",
+    "Super Lig"
+  ]
+}

@@ -59,9 +59,9 @@ jobs:
         working-directory: model
         run: python3 scripts/predict.py --source fixtures --data data/fixtures.json --market ou
 
-      - name: Predict corners (per-team corner totals)
+      - name: Predict corners (per-team corner totals, V5 NB line probs)
         working-directory: model
-        run: python3 scripts/predict_corners.py --fixtures data/fixtures.json > data/corners_predictions.json
+        run: python3 scripts/predict_corners_v5.py --fixtures data/fixtures.json > data/corners_predictions.json
 
       - name: Push predictions to the worker
         env:
@@ -77,10 +77,21 @@ jobs:
           done
           # Corners predictions (isolated from h2h/totals)
           if [ -s model/data/corners_predictions.json ]; then
+            # Convert V5 format to worker ingest format
+            python3 -c "
+import json, sys
+with open('model/data/corners_predictions.json') as f:
+    content = f.read()
+start = content.index('{')
+data = json.loads(content[start:])
+ingest = [{'fixtureId': p['fixture_id'], 'homeCorners': p['home_team_corners']['expected'], 'awayCorners': p['away_team_corners']['expected']} for p in data.get('predictions', [])]
+json.dump(ingest, open('/tmp/corners_ingest.json', 'w'))
+print(f'Prepared {len(ingest)} corners for ingestion')
+"
             curl -sS -m 60 -X POST "$WORKER_URL/api/corners/ingest" \
               -H "Content-Type: application/json" \
               -H "x-predict-key: $PREDICT_SECRET" \
-              --data-binary @"model/data/corners_predictions.json"
+              --data-binary @/tmp/corners_ingest.json
             echo
           fi
 

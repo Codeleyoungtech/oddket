@@ -229,12 +229,29 @@ export interface CornerPrediction {
   confidenceLow: number;
   /** upper bound of 80% confidence interval */
   confidenceHigh: number;
-  /** probability of clearing common lines */
+  /** probability of clearing common team lines */
   lineProbs: {
+    over25: number;
     over35: number;
     over45: number;
     over55: number;
     over65: number;
+    over75: number;
+    over85: number;
+  };
+  /** total match corners prediction */
+  totalCorners?: {
+    expected: number;
+    lines: {
+      over55: number;
+      over65: number;
+      over75: number;
+      over85: number;
+      over95: number;
+      over105: number;
+      over115: number;
+      over125: number;
+    };
   };
   modelVersion: string;
   createdAt: number;

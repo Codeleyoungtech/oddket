@@ -353,45 +353,50 @@ same code in production (see `wrangler.toml`).
     `bookmakers=bet365,sportybet,betway` filter may return just one book early on.
   - Re-running `POST /api/ingest` upserts by snapshot id; counts reported are per-call batches.
 
-## 13. Corners Predictions (V1 — isolated track)
+## 13. Corners Predictions (V5 — 8-layer feature system)
 
 **Status:** Trained, ingested, UI live. NOT connected to the EV engine.
 
-**What it does:** Predicts per-team corner counts for upcoming matches and computes over/under line probabilities (O3.5, O4.5, O5.5, O6.5). No odds comparison, no EV filtering — raw model output only.
+**What it does:** Predicts per-team corner counts for upcoming matches and computes Negative Binomial line probabilities. Supports team lines (O2.5–O8.5) and total match corner lines (O5.5–O12.5). No odds comparison, no EV filtering — raw model output only.
 
-**Data source:** football-data.co.uk historical corner data (HC/AC columns) — 14,007 matches across 11 leagues (EPL, Championship, La Liga, Bundesliga, Serie A, Super Lig) from 3 seasons (2012, 2020, 2021).
+**Data source:** 17,351 matches from football-data.co.uk (12 seasons × 4 leagues: EPL, La Liga, Bundesliga, Serie A, 2014–2026). Includes shots, SOT, fouls, cards, goals, half-time data, and odds.
 
-**Model:** Two XGBoost regressors (one for home team corners, one for away). Features:
-- Team's corner rate (venue-filtered: home corners at home, away corners away)
-- Opponent's corners conceded (venue-filtered)
-- Baseline = avg of team rate + opponent conceded rate
-- Recency-weighted form on corner counts (EW decay 0.85)
-- Shots on target (proxy for attacking intent → corners)
-- Rest days between matches
-- Sample size (confidence proxy)
+**Model:** Two LightGBM regressors (home + away), 98 features across 8 layers:
+- **Layer 1:** Corner production (CF/CA L5/L10/L15/season, EW form)
+- **Layer 2:** Consistency (std dev, CV, over-rate %)
+- **Layer 3:** Home/away strength (venue-filtered stats)
+- **Layer 4:** Opponent interaction (attack × defense profiles)
+- **Layer 5:** Shots/fouls/cards/goals (attacking pressure)
+- **Layer 6:** Team strength Elo rating
+- **Layer 7:** Odds-derived features (1X2, O/U 2.5, Asian handicap)
+- **Layer 8:** Context (rest days, sample size, league encoding)
 
-**Honest backtest (time-ordered 80/20 split, V3 with V2 features):**
-- Home MAE: 1.688 corners | Away MAE: 1.682 corners (was 1.82/1.80 in V1)
-- R²: 0.34 (was 0.25 in V1 — 36% improvement)
-- 80% CI: ±2.1 corners
-- Line accuracy: Over 3.5 → 73%, Over 4.5 → 69%, Over 5.5 → 74%, Over 6.5 → 80%
-- **70% consistency rule: 39% — BELOW threshold.** Model is not reliable enough for blind betting.
-- The line probabilities are the useful output — compare to bookmaker's implied probability to find edge.
-- Top feature: H2H corner history (27% importance) — knowing how many corners teams get against each other is the strongest signal.
+**Honest backtest (time-ordered 80/20 split):**
+- Home MAE: 2.25 corners | Away MAE: 1.96 corners
+- Total MAE: 2.74 corners
+- Team line accuracy: O3.5 → 66%, O4.5 → 61%, O5.5 → 66%, O6.5 → 75%, O7.5 → 83%
+- Total line accuracy: O7.5 → 73%, O8.5 → 61%, O9.5 → 54%, O10.5 → 59%, O12.5 → 80%
+- **70% consistency rule: 29% — BELOW threshold.** The MAE is honest (not overfitting) — corner counts have inherent variance.
+- Line probabilities are the useful output — Negative Binomial distribution calibrated to model sigma.
+- σ_home = 2.85, σ_away = 2.46, σ_total = 3.76
+
+**Line probabilities:** Uses Negative Binomial distribution (handles overdispersion better than Poisson/Poisson). P(X > line) computed from predicted count + model sigma.
 
 **Isolation:** Completely separate from h2h/totals:
 - Separate D1 table: `corners_predictions`
-- Separate training script: `model/scripts/train_corners.py`
-- Separate prediction script: `model/scripts/predict_corners.py`
-- Separate TypeScript module: `packages/core/src/corners.ts`
+- Separate training script: `model/scripts/train_corners_v5.py`
+- Separate prediction script: `model/scripts/predict_corners_v5.py`
+- Separate TypeScript module: `packages/core/src/corners.ts` (NB CDF implementation)
 - Separate UI page: `/corners`
 - No shared models, no shared predictions, no shared bets
 
-**Pipeline:** GitHub Actions predict job → Python model → JSON → POST `/api/corners/ingest` → D1 → UI
+**Pipeline:** GitHub Actions predict job → Python V5 model → JSON → worker ingest endpoint → D1 → UI
 
 **API:**
-- `GET /api/corners` — returns all corner predictions (no auth needed)
-- `POST /api/corners/ingest` — ingests predictions (requires PREDICT_SECRET)
+- `GET /api/corners` — returns all corner predictions with line probs (no auth)
+- `POST /api/corners/ingest` — ingests `{fixtureId, homeCorners, awayCorners}` (requires PREDICT_SECRET)
+
+**PREDICT_SECRET:** `odk85c609b40dd43f4504b2a62b8913ac0e7e4fa3e` (Cloudflare + GitHub Actions)
 
 **Secret:** PREDICT_SECRET starts with `odk` — stored in both Cloudflare Worker secrets and GitHub Actions secrets.
 

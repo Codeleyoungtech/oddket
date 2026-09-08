@@ -134,9 +134,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         api.corners().then((cp) => { if (!cancelled) setCornerPreds(cp); }).catch(() => {});
       } catch {
         if (cancelled) return;
-        setDb(sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase());
+        const demoDb = sport === "tennis" ? buildTennisSeedDatabase() : buildSeedDatabase();
+        setDb(demoDb);
         setMode("demo");
         setWorkerError(null);
+        setCornerPreds(demoDb.cornerPredictions ?? []);
       }
     }
 

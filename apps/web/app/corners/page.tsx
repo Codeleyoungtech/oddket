@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import {
+  computeTeamCornerLines,
+  computeTotalCornerLines,
+  bestCornerLine,
+  bestTotalCornerLine,
+} from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
 
@@ -36,11 +42,12 @@ function probBg(p: number): string {
 
 /** Compact line badge */
 function LineBadge({ label, prob }: { label: string; prob: number }) {
+  const safeProb = typeof prob === "number" && !isNaN(prob) ? prob : 0;
   return (
-    <div className={`flex-1 rounded border px-1 py-0.5 text-center ${probBg(prob)}`}>
+    <div className={`flex-1 rounded border px-1 py-0.5 text-center ${probBg(safeProb)}`}>
       <div className="text-[8px] text-zinc-500 leading-none">{label}</div>
-      <div className={`text-[10px] font-bold tabular-nums leading-tight ${probColor(prob)}`}>
-        {(prob * 100).toFixed(0)}%
+      <div className={`text-[10px] font-bold tabular-nums leading-tight ${probColor(safeProb)}`}>
+        {(safeProb * 100).toFixed(0)}%
       </div>
     </div>
   );
@@ -51,31 +58,76 @@ function TeamColumn({
   pred,
   lines,
 }: {
-  pred: { predictedCorners: number; confidenceLow: number; confidenceHigh: number; team: string };
+  pred: { predictedCorners: number; confidenceLow?: number; confidenceHigh?: number; team: string; side?: "home" | "away" };
   lines: Record<string, number>;
 }) {
   const lineOrder = ["O2.5", "O3.5", "O4.5", "O5.5", "O6.5", "O7.5", "O8.5"] as const;
+  const low = typeof pred.confidenceLow === "number" ? pred.confidenceLow.toFixed(1) : Math.max(0, pred.predictedCorners - 1.28 * 2.85).toFixed(1);
+  const high = typeof pred.confidenceHigh === "number" ? pred.confidenceHigh.toFixed(1) : (pred.predictedCorners + 1.28 * 2.85).toFixed(1);
+
+  // Compute best line pick
+  const best = useMemo(() => {
+    const pRecord = {
+      ...pred,
+      id: "",
+      fixtureId: "",
+      side: pred.side || "home",
+      confidenceLow: parseFloat(low),
+      confidenceHigh: parseFloat(high),
+      lineProbs: {
+        over25: lines["O2.5"] ?? 0,
+        over35: lines["O3.5"] ?? 0,
+        over45: lines["O4.5"] ?? 0,
+        over55: lines["O5.5"] ?? 0,
+        over65: lines["O6.5"] ?? 0,
+        over75: lines["O7.5"] ?? 0,
+        over85: lines["O8.5"] ?? 0,
+      },
+      modelVersion: "corners-lgb-v5",
+      createdAt: 0,
+    };
+    return bestCornerLine(pRecord);
+  }, [pred, lines, low, high]);
+
   return (
     <div className="space-y-1.5">
-      <div className="flex items-baseline gap-2">
-        <span className="text-lg font-bold text-zinc-100 tabular-nums">
-          {pred.predictedCorners.toFixed(1)}
-        </span>
-        <span className="text-xs text-zinc-400 truncate">{pred.team}</span>
+      <div className="flex items-baseline justify-between gap-1">
+        <div className="flex items-baseline gap-2 min-w-0 truncate">
+          <span className="text-lg font-bold text-zinc-100 tabular-nums">
+            {(pred.predictedCorners ?? 0).toFixed(1)}
+          </span>
+          <span className="text-xs text-zinc-300 font-medium truncate">{pred.team}</span>
+        </div>
+        {best && best.probability >= 0.65 && (
+          <span className="shrink-0 rounded bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-400">
+            {best.over ? "O" : "U"}{best.line} ({(best.probability * 100).toFixed(0)}%)
+          </span>
+        )}
       </div>
-      <div className="text-[10px] text-zinc-600">
-        Range: {pred.confidenceLow.toFixed(1)} – {pred.confidenceHigh.toFixed(1)}
+      <div className="text-[10px] text-zinc-500">
+        80% Range: <span className="text-zinc-400">{low} – {high}</span>
       </div>
       <div className="flex gap-1">
         {lineOrder.map((key) => {
           const p = lines[key];
-          if (p === undefined) return null;
+          if (p === undefined || isNaN(p)) return null;
           return <LineBadge key={key} label={key} prob={p} />;
         })}
       </div>
     </div>
   );
 }
+
+const TOTAL_LINE_LABELS: Record<string, string> = {
+  over55: "O5.5",
+  over65: "O6.5",
+  over75: "O7.5",
+  over85: "O8.5",
+  over95: "O9.5",
+  over105: "O10.5",
+  over115: "O11.5",
+  over125: "O12.5",
+};
 
 export default function CornersPage() {
   const { cornerPredictions, db, mode } = useData();
@@ -97,7 +149,20 @@ export default function CornersPage() {
       if (pred.side === "home") g.home = pred;
       else g.away = pred;
     }
-    return Array.from(map.values()).filter((g) => g.fixture && g.home && g.away);
+    return Array.from(map.values())
+      .filter((g) => g.home && g.away)
+      .map((g) => {
+        const fixture = g.fixture ?? {
+          id: g.home.fixtureId,
+          homeTeam: g.home.team,
+          awayTeam: g.away.team,
+          league: g.home.league || "Football",
+          commenceTime: g.home.createdAt || Math.floor(Date.now() / 1000),
+          status: "scheduled",
+          sport: "soccer",
+        };
+        return { ...g, fixture };
+      });
   }, [cornerPredictions, fixtures]);
 
   // Available leagues
@@ -119,8 +184,8 @@ export default function CornersPage() {
     return fixtureGroups
       .filter((g) => {
         const t = g.fixture.commenceTime;
-        if (timeFilter === "today" && (t < today || t >= today + 86400)) return false;
-        if (timeFilter === "week" && (t < today || t >= weekEnd)) return false;
+        if (timeFilter === "today" && t > 0 && (t < today || t >= today + 86400)) return false;
+        if (timeFilter === "week" && t > 0 && (t < today || t >= weekEnd)) return false;
         if (leagueFilter !== "all" && g.fixture.league !== leagueFilter) return false;
         return true;
       })
@@ -149,7 +214,7 @@ export default function CornersPage() {
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300 self-start">
           <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-          Not EV-checked
+          Model Projections
         </span>
       </div>
 
@@ -193,22 +258,55 @@ export default function CornersPage() {
         </span>
       </div>
 
-      {/* How to read */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-500">
-        <span className="font-medium text-zinc-400">How to read:</span>{" "}
-        Each team gets a predicted corner count with{" "}
-        <span className="text-sky-400">over/under line probabilities</span>. The{" "}
-        <span className="text-emerald-400 font-medium">green %</span> = how likely they clear that line.
-        Compare to your bookmaker — if the model says 68% over 4.5 but the bookmaker implies 55%, that&apos;s
-        potential value.
+      {/* How to read & betting guide */}
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3.5 py-2.5 text-xs text-zinc-400 space-y-1">
+        <div>
+          <span className="font-semibold text-zinc-200">How to use in betting:</span>{" "}
+          Compare the model&apos;s <span className="text-emerald-400 font-medium">win %</span> against your sportsbook&apos;s implied odds.
+          If the model gives <span className="text-emerald-400 font-medium">Over 9.5 Total Corners 65%</span> (implied fair odds 1.54) and your book offers odds of <span className="text-sky-400 font-medium">1.75+ (implied 57%)</span>, that represents positive expected value (+EV).
+        </div>
+        <div className="text-[11px] text-zinc-500">
+          • <span className="text-zinc-300 font-medium">Team lines:</span> Individual team corner output • <span className="text-zinc-300 font-medium">Total lines:</span> Combined match corners • <span className="text-zinc-300 font-medium">Range:</span> 80% confidence interval.
+        </div>
       </div>
 
       {/* Fixture cards */}
       <div className="grid gap-3">
         {filtered.map(({ fixture, home, away }) => {
-          const totalExpected = (home.predictedCorners + away.predictedCorners).toFixed(1);
-          const totalLines = (home as any).totalCorners?.lines ?? {};
+          const totalExpectedNum = (home.predictedCorners || 0) + (away.predictedCorners || 0);
+          const totalExpected = totalExpectedNum.toFixed(1);
+
+          // Get or compute team lines
+          const homeLinesComputed = computeTeamCornerLines(home.predictedCorners, "home");
+          const awayLinesComputed = computeTeamCornerLines(away.predictedCorners, "away");
+
+          const homeLines = {
+            "O2.5": home.lineProbs?.over25 ?? home.lineProbs?.["O2.5"] ?? homeLinesComputed.over25,
+            "O3.5": home.lineProbs?.over35 ?? home.lineProbs?.["O3.5"] ?? homeLinesComputed.over35,
+            "O4.5": home.lineProbs?.over45 ?? home.lineProbs?.["O4.5"] ?? homeLinesComputed.over45,
+            "O5.5": home.lineProbs?.over55 ?? home.lineProbs?.["O5.5"] ?? homeLinesComputed.over55,
+            "O6.5": home.lineProbs?.over65 ?? home.lineProbs?.["O6.5"] ?? homeLinesComputed.over65,
+            "O7.5": home.lineProbs?.over75 ?? home.lineProbs?.["O7.5"] ?? homeLinesComputed.over75,
+            "O8.5": home.lineProbs?.over85 ?? home.lineProbs?.["O8.5"] ?? homeLinesComputed.over85,
+          };
+
+          const awayLines = {
+            "O2.5": away.lineProbs?.over25 ?? away.lineProbs?.["O2.5"] ?? awayLinesComputed.over25,
+            "O3.5": away.lineProbs?.over35 ?? away.lineProbs?.["O3.5"] ?? awayLinesComputed.over35,
+            "O4.5": away.lineProbs?.over45 ?? away.lineProbs?.["O4.5"] ?? awayLinesComputed.over45,
+            "O5.5": away.lineProbs?.over55 ?? away.lineProbs?.["O5.5"] ?? awayLinesComputed.over55,
+            "O6.5": away.lineProbs?.over65 ?? away.lineProbs?.["O6.5"] ?? awayLinesComputed.over65,
+            "O7.5": away.lineProbs?.over75 ?? away.lineProbs?.["O7.5"] ?? awayLinesComputed.over75,
+            "O8.5": away.lineProbs?.over85 ?? away.lineProbs?.["O8.5"] ?? awayLinesComputed.over85,
+          };
+
+          // Get or compute total lines
+          const totalLines = (home as any).totalCorners?.lines ?? computeTotalCornerLines(totalExpectedNum);
           const totalLineOrder = ["over55", "over65", "over75", "over85", "over95", "over105", "over115", "over125"];
+
+          // Best total line recommendation
+          const bestTotal = bestTotalCornerLine(totalExpectedNum);
+
           return (
             <Card key={fixture.id}>
               <div className="p-3 sm:p-4">
@@ -219,14 +317,13 @@ export default function CornersPage() {
                       {fixture.homeTeam} vs {fixture.awayTeam}
                     </h3>
                     <p className="text-[11px] text-zinc-500">
-                      {fixture.league} · {fmtDate(fixture.commenceTime)}{" "}
-                      {fmtTime(fixture.commenceTime)}
+                      {fixture.league} {fixture.commenceTime > 0 ? `· ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
                     </p>
                   </div>
                   <div className="text-right shrink-0 ml-3">
-                    <div className="text-[10px] text-zinc-500">Total corners</div>
+                    <div className="text-[10px] text-zinc-500">Total Expected</div>
                     <div className="text-lg font-bold text-zinc-200 tabular-nums">
-                      {totalExpected}
+                      {totalExpected} <span className="text-xs font-normal text-zinc-500">corners</span>
                     </div>
                   </div>
                 </div>
@@ -235,45 +332,36 @@ export default function CornersPage() {
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <TeamColumn
                     pred={home}
-                    lines={{
-                      "O2.5": home.lineProbs.over25,
-                      "O3.5": home.lineProbs.over35,
-                      "O4.5": home.lineProbs.over45,
-                      "O5.5": home.lineProbs.over55,
-                      "O6.5": home.lineProbs.over65,
-                      "O7.5": home.lineProbs.over75,
-                      "O8.5": home.lineProbs.over85,
-                    }}
+                    lines={homeLines}
                   />
                   <TeamColumn
                     pred={away}
-                    lines={{
-                      "O2.5": away.lineProbs.over25,
-                      "O3.5": away.lineProbs.over35,
-                      "O4.5": away.lineProbs.over45,
-                      "O5.5": away.lineProbs.over55,
-                      "O6.5": away.lineProbs.over65,
-                      "O7.5": away.lineProbs.over75,
-                      "O8.5": away.lineProbs.over85,
-                    }}
+                    lines={awayLines}
                   />
                 </div>
 
                 {/* Total corners lines */}
-                {Object.keys(totalLines).length > 0 && (
+                {totalLines && (
                   <div className="border-t border-zinc-800 pt-2">
-                    <div className="text-[10px] text-zinc-500 mb-1.5 font-medium">
-                      Total corners over/under
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="text-[10px] text-zinc-400 font-medium">
+                        Total Match Corners Over/Under
+                      </div>
+                      {bestTotal && (
+                        <div className="text-[10px] font-semibold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.2 rounded">
+                          Best: {bestTotal.label} ({(bestTotal.probability * 100).toFixed(0)}%)
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-1">
                       {totalLineOrder.map((key) => {
                         const p = totalLines[key];
-                        if (p === undefined) return null;
-                        const lineNum = key.replace("over", "");
+                        if (p === undefined || isNaN(p)) return null;
+                        const label = TOTAL_LINE_LABELS[key] || key;
                         return (
                           <LineBadge
                             key={key}
-                            label={`O${lineNum}`}
+                            label={label}
                             prob={p}
                           />
                         );

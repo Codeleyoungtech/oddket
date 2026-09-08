@@ -1,6 +1,7 @@
 import type {
   Bet,
   ClvResult,
+  CornerPrediction,
   Database,
   Fixture,
   OddsSnapshot,
@@ -8,6 +9,7 @@ import type {
   Prediction,
   Selection,
 } from "./types";
+import { buildCornerPredictions } from "./corners";
 
 /**
  * Deterministic demo dataset (fixed PRNG seed). 4 leagues, 80 fixtures,
@@ -214,6 +216,16 @@ export function buildSeedDatabase(): Database {
       maxSpreadPct: 0.50, // permissive for demo — live defaults to 0.10
     },
     parlayBets: [],
-  cornerPredictions: [],
+    cornerPredictions: (() => {
+      const preds: CornerPrediction[] = [];
+      for (const f of fixtures) {
+        if (f.status === "scheduled") {
+          const homeCorners = Math.round((4.2 + rand() * 3.6) * 10) / 10;
+          const awayCorners = Math.round((3.2 + rand() * 2.8) * 10) / 10;
+          preds.push(...buildCornerPredictions(f, homeCorners, awayCorners, "corners-lgb-v5"));
+        }
+      }
+      return preds;
+    })(),
   };
 }

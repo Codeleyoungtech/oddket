@@ -11,15 +11,15 @@
 import type { CornerPrediction, Fixture } from "./types";
 
 // V5 model sigma values from backtest (prediction error std)
-const HOME_SIGMA = 2.849;
-const AWAY_SIGMA = 2.456;
-const TOTAL_SIGMA = Math.sqrt(HOME_SIGMA ** 2 + AWAY_SIGMA ** 2); // ~3.76
+export const HOME_SIGMA = 2.849;
+export const AWAY_SIGMA = 2.456;
+export const TOTAL_SIGMA = Math.sqrt(HOME_SIGMA ** 2 + AWAY_SIGMA ** 2); // ~3.76
 
 /** Team corner lines to compute probabilities for. */
-const TEAM_LINES = [2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5] as const;
+export const TEAM_LINES = [2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5] as const;
 
 /** Total corner lines. */
-const TOTAL_LINES = [5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5] as const;
+export const TOTAL_LINES = [5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5] as const;
 
 /**
  * Negative Binomial CDF using direct PMF summation.
@@ -246,4 +246,70 @@ export function formatTotalLines(pred: CornerPrediction): string[] {
     `Total Over 11.5: ${(tl.over115 * 100).toFixed(0)}%`,
     `Total Over 12.5: ${(tl.over125 * 100).toFixed(0)}%`,
   ];
+}
+
+/**
+ * Compute team corner line probabilities from expected corners count.
+ */
+export function computeTeamCornerLines(
+  predicted: number,
+  side: "home" | "away" = "home",
+): Record<string, number> {
+  const sigma = side === "home" ? HOME_SIGMA : AWAY_SIGMA;
+  return {
+    over25: overProb(predicted, sigma, 2.5),
+    over35: overProb(predicted, sigma, 3.5),
+    over45: overProb(predicted, sigma, 4.5),
+    over55: overProb(predicted, sigma, 5.5),
+    over65: overProb(predicted, sigma, 6.5),
+    over75: overProb(predicted, sigma, 7.5),
+    over85: overProb(predicted, sigma, 8.5),
+  };
+}
+
+/**
+ * Compute match total corner line probabilities from expected total corners count.
+ */
+export function computeTotalCornerLines(totalExpected: number): Record<string, number> {
+  return {
+    over55: overProb(totalExpected, TOTAL_SIGMA, 5.5),
+    over65: overProb(totalExpected, TOTAL_SIGMA, 6.5),
+    over75: overProb(totalExpected, TOTAL_SIGMA, 7.5),
+    over85: overProb(totalExpected, TOTAL_SIGMA, 8.5),
+    over95: overProb(totalExpected, TOTAL_SIGMA, 9.5),
+    over105: overProb(totalExpected, TOTAL_SIGMA, 10.5),
+    over115: overProb(totalExpected, TOTAL_SIGMA, 11.5),
+    over125: overProb(totalExpected, TOTAL_SIGMA, 12.5),
+  };
+}
+
+/**
+ * Get the "recommended" total line for a match — the line where the model has
+ * the strongest opinion (furthest from 50%).
+ */
+export function bestTotalCornerLine(
+  totalExpected: number,
+): { line: number; label: string; over: boolean; probability: number } | null {
+  const lines = computeTotalCornerLines(totalExpected);
+  const candidates = [
+    { line: 7.5, label: "Total O7.5", over: true, probability: lines.over75 },
+    { line: 8.5, label: "Total O8.5", over: true, probability: lines.over85 },
+    { line: 9.5, label: "Total O9.5", over: true, probability: lines.over95 },
+    { line: 10.5, label: "Total O10.5", over: true, probability: lines.over105 },
+    { line: 11.5, label: "Total O11.5", over: true, probability: lines.over115 },
+    { line: 9.5, label: "Total U9.5", over: false, probability: 1 - lines.over95 },
+    { line: 10.5, label: "Total U10.5", over: false, probability: 1 - lines.over105 },
+    { line: 11.5, label: "Total U11.5", over: false, probability: 1 - lines.over115 },
+  ];
+
+  let best: (typeof candidates)[0] | null = null;
+  let bestDist = 0;
+  for (const item of candidates) {
+    const dist = Math.abs(item.probability - 0.5);
+    if (dist > bestDist && item.probability >= 0.58) {
+      bestDist = dist;
+      best = item;
+    }
+  }
+  return best;
 }

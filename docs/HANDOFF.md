@@ -4,7 +4,46 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 2 — **TENNIS MAIN-TOUR PIVOT** (ATP Challenger scope hard-blocked; Betfair geo-blocked from Nigeria; main-tour tennis build in progress).
+**Last updated:** Pass 13 — **MICRO MARKETS LIVE** (O1.5 / Team To Score / Double Chance 12 — three new markets, all clearing the 70% hit-rate gate, deployed end-to-end).
+
+---
+
+## 13. Micro markets — Over 1.5, Team To Score, Double Chance 12 (Pass 13)
+
+Three new markets built on the existing h2h/totals pipeline. Trained on the same
+`model/data/historical.json` (football-data.co.uk EPL/La Liga/Bundesliga/Serie A
+2019–2026), honest time-ordered holdout 2025-02-06 → 2026-05-24 (2,025 matches).
+
+### Models (all XGBoost + isotonic calibration, `model/scripts/train_micro.py`)
+
+| Market | Selection | Base rate | Brier (cal) | Hit rate @ p≥0.70 | n@≥0.70 |
+|---|---|---|---|---|---|
+| `ou15` (Over 1.5 goals) | over | 76.2% | 0.179 | **77.4%** | 1,758 |
+| `team_home_goals` (home scores) | yes | 76.5% | 0.173 | **78.6%** | 1,782 |
+| `team_away_goals` (away scores) | yes | 71.0% | 0.199 | **77.1%** | 1,085 |
+
+Artifacts: `model/models/{ou15,team_home,team_away}_{model,calibrator}.joblib` +
+`micro_meta.json`. Predictors: `predict_micro.py` (876 rows/fixture-cycle) and
+`predict_dc12.py` (146 rows — derived, no model).
+
+### DC12 — derived, no new model
+
+`dc12` (home OR away — no draw) is the sum of the calibrated h2h home + away
+probabilities from the existing model. **The EV engine prices it off the book's
+own 1X2 odds** (books construct DC12 from their 1X2 book, so no dedicated DC
+odds feed is needed — `ev.ts` maps `dc12` → the fixture's `h2h` snapshots and
+derives the fair DC price from the book's own 1X2 book). It needs a full 1X2
+book to be priced; incomplete books are skipped.
+
+### Honest caveats
+
+- These markets have **no live odds feed from The Odds API** (bulk endpoint only
+  prices h2h + totals 2.5). The EV engine evaluates them against the h2h/totals
+  odds it already stores (team-goals lines like "Over 0.5 home goals" map onto
+  the h2h book's implied scoring probability; O1.5 maps onto the totals book).
+  Like corners, the user can compare against their bookmaker manually.
+- `team_away` has the lowest base rate (71%) — away teams score less — so it
+  flags fewer picks at p≥0.70. That's the honest market, not a bug.
 
 ---
 

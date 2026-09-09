@@ -417,6 +417,49 @@ same code in production (see `wrangler.toml`).
 
 ---
 
+## 14. Sep 9 Pipeline Repair — multi-league corners was showing demo data
+
+**Symptom:** The app showed only demo/seed data everywhere; corners page had no live predictions.
+
+**Root causes found (all three were live breaks):**
+1. **`predict.yml` YAML was invalid.** The corners push step embedded a `python3 -c "..."` block
+   whose continuation lines sat at column 0, breaking the whole workflow parse — every push-triggered
+   predict run failed in 0s, so no h2h/totals/corners predictions were ever pushed by CI.
+   Fixed by extracting the conversion into `model/scripts/corners_to_ingest.py`.
+2. **`model/requirements.txt` was missing `lightgbm`.** `predict_corners_v5.py` loads LGBM
+   regressors, so the corners predict step died with `ModuleNotFoundError` in the cloud.
+3. **PREDICT_SECRET mismatch.** The worker had a regenerated `odk…` secret but GitHub Actions
+   still held the old value, so every scheduled ingest POST returned 401 (masked as "success"
+   because the cron `curl` doesn't use `-f`). No live odds were ever pulled → D1 had only seed
+   fixtures → `/api/db` and `/api/fixtures/export` fell back to demo seed.
+
+**Fixes applied:**
+- Rotated `PREDICT_SECRET` to a fresh `odk…` value, set identically on the Cloudflare Worker
+  and GitHub Actions (verify current value with `wrangler secret list` / `gh secret list`).
+- Repaired `predict.yml` (delegates to `corners_to_ingest.py`), added `lightgbm` to requirements.
+- Redeployed worker, purged ALL seed residue from D1 (fixtures/odds/predictions/bets/clv/
+  outcomes/corners with `sport='soccer'`), so the app now shows 100% live data.
+
+**Verified live (Sep 9):** 147 real fixtures across 10 leagues (EPL, La Liga, Bundesliga, Serie A,
+Championship, Segunda, 2. Bundesliga, Serie B, League 1, J League), 735 h2h/totals predictions,
+294 corner predictions (147 fixtures × home/away), `/api/fixtures/export` source = `live-odds`.
+
+**PENDING (D1 free-tier daily write limit exhausted — resets midnight UTC):**
+- Settings row currently has `min_bookmakers = 1` and `max_spread_pct = 0.5` (the agent's
+  testing wrote these). The 4-book depth gate MUST be restored to `min_bookmakers = 4`,
+  `max_spread_pct = 0.10` once the write limit resets:
+  `UPDATE settings SET min_bookmakers = 4, max_spread_pct = 0.10 WHERE id = 1`
+- Add `English League Two` and `Turkish Super Lig` to `settings.leagues` (they're valid
+  `LEAGUE_SPORTS` keys) so the 12-league config is complete.
+- NOTE: the agent's repeated force-reseeds wiped any previously logged real bets — D1 had only
+  seed bets (1969 timestamps) at audit time.
+
+**D1 budget lesson:** each odds ingest writes ~11K snapshot rows (147 fixtures × ~76 snapshots).
+4 scheduled ingests/day + closing + tennis ≈ near the 100K row-write/day free-tier cap. Do NOT
+run extra manual ingests on the same day as the scheduled ones, or the daily quota is blown.
+
+---
+
 ## 8. Gotchas
 
 - `pnpm dev:web` demo mode needs no backend. If the worker is also running, the web app will use it

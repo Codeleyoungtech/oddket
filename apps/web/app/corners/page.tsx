@@ -129,31 +129,63 @@ const TOTAL_LINE_LABELS: Record<string, string> = {
   over125: "O12.5",
 };
 
+// Keyed by BOTH the live The-Odds-API league titles (what /api/fixtures
+// returns) and the old seed names, so the badges survive either source.
 const LEAGUE_GOLDMINES: Record<string, { badge: string; note: string; color: string }> = {
+  "La Liga 2 - Spain": {
+    badge: "💎 Low-Block Defense",
+    note: "65.8% Under 2.5 · 69.9% Cards >3.5",
+    color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
+  },
   "Spanish Segunda": {
     badge: "💎 Low-Block Defense",
     note: "65.8% Under 2.5 · 69.9% Cards >3.5",
     color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
+  },
+  "Bundesliga 2 - Germany": {
+    badge: "⚽ High-Pace Transition",
+    note: "60.1% Over 2.5 · 57.8% BTTS",
+    color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
   },
   "German 2. Bundesliga": {
     badge: "⚽ High-Pace Transition",
     note: "60.1% Over 2.5 · 57.8% BTTS",
     color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
   },
+  "Serie B - Italy": {
+    badge: "🚩 Stalemate & Corners",
+    note: "34.5% Draws · 57.1% Over 9.5 Corners",
+    color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/30",
+  },
   "Italian Serie B": {
     badge: "🚩 Stalemate & Corners",
     note: "34.5% Draws · 57.1% Over 9.5 Corners",
     color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/30",
+  },
+  "League 1": {
+    badge: "🚩 High Cross Volume",
+    note: "54.2% Over 9.5 Corners",
+    color: "text-sky-400 bg-sky-400/10 border-sky-400/30",
   },
   "English League One": {
     badge: "🚩 High Cross Volume",
     note: "54.2% Over 9.5 Corners",
     color: "text-sky-400 bg-sky-400/10 border-sky-400/30",
   },
+  "Championship": {
+    badge: "⚡ Direct Wing Attack",
+    note: "High shot & cross frequency",
+    color: "text-purple-400 bg-purple-400/10 border-purple-400/30",
+  },
   "EFL Championship": {
     badge: "⚡ Direct Wing Attack",
     note: "High shot & cross frequency",
     color: "text-purple-400 bg-purple-400/10 border-purple-400/30",
+  },
+  "J League": {
+    badge: "🎯 Tactical Discipline",
+    note: "High consistency · Low ref variance",
+    color: "text-rose-400 bg-rose-400/10 border-rose-400/30",
   },
   "Japan J1 League": {
     badge: "🎯 Tactical Discipline",

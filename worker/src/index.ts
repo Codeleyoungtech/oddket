@@ -6,6 +6,7 @@ import {
   buildDashboard,
   buildMultiple,
   buildParlay,
+  buildSeedDatabase,
   checkLegIndependence,
   enrichBets,
   buildCornerPredictions,
@@ -85,7 +86,12 @@ app.get("/api/dashboard", async (c) => {
 
 /* ---------------- raw database (web app computes views via core) ---------------- */
 
-app.get("/api/db", async (c) => c.json(await loadDatabase(c.env.DB)));
+app.get("/api/db", async (c) => {
+  const d1db = await loadDatabase(c.env.DB);
+  const now = Math.floor(Date.now() / 1000);
+  const hasFuture = d1db.fixtures.some((f) => f.status === "scheduled" && f.commenceTime > now);
+  return c.json(hasFuture ? d1db : buildSeedDatabase());
+});
 
 /* ---------------- fixtures / predictions ---------------- */
 
@@ -110,16 +116,20 @@ app.get("/api/predictions", async (c) => {
  * in the cloud: fetch here -> predict.py -> POST /api/predictions/ingest.
  */
 app.get("/api/fixtures/export", async (c) => {
-  const db = await loadDatabase(c.env.DB);
+  const d1db = await loadDatabase(c.env.DB);
   const now = Math.floor(Date.now() / 1000);
-  let scheduled = db.fixtures
+  let scheduled = d1db.fixtures
     .filter((f) => f.status === "scheduled" && f.sport !== "soccer" && f.commenceTime > now)
     .sort((a, b) => a.commenceTime - b.commenceTime);
+
+  // If D1 has no future fixtures, fall back to fresh seed data (runtime dates)
+  const db = scheduled.length > 0 ? d1db : buildSeedDatabase();
   if (scheduled.length === 0) {
     scheduled = db.fixtures
       .filter((f) => f.status === "scheduled")
       .sort((a, b) => a.commenceTime - b.commenceTime);
   }
+
   const matches = scheduled.map((f) => {
     const best = (market: string, selection: string): number | null => {
       let b: number | null = null;
@@ -144,7 +154,7 @@ app.get("/api/fixtures/export", async (c) => {
       },
     };
   });
-  return c.json({ meta: { source: "live-odds", n_matches: matches.length }, matches });
+  return c.json({ meta: { source: scheduled.length > 0 && d1db === db ? "live-odds" : "demo-seed", n_matches: matches.length }, matches });
 });
 
 /** Ingest model output (from the Python sidecar): [{fixtureId, market, selection, probability, confidenceLow, confidenceHigh, modelVersion}]

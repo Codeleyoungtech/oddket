@@ -23,7 +23,6 @@ import { buildCornerPredictions } from "./corners";
  */
 
 const DAY = 86400;
-const NOW = Math.floor(Date.now() / 1000);
 
 /** mulberry32 — tiny deterministic PRNG. */
 function mulberry32(seed: number) {
@@ -51,6 +50,7 @@ const LEAGUES = [
 ];
 
 export function buildSeedDatabase(): Database {
+  const NOW = Math.floor(Date.now() / 1000);
   const rand = mulberry32(20240813);
 
   const fixtures: Fixture[] = [];

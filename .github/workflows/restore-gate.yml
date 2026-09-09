@@ -5,9 +5,15 @@ name: Restore EV gate settings (daily)
 # max_spread_pct=0.5 (from agent testing), which violates the locked-in
 # 4-bookmaker depth gate. This job runs a few minutes after the D1 reset and
 # restores those two gate values only — it preserves every other setting
-# (leagues, markets, bankroll, Kelly, etc.) exactly as the user left them.
+# (bankroll, Kelly, stakes, markets) exactly as the user left them.
 #
-# Safe to run daily: it is idempotent and only ever sets the two gate values.
+# It also ensures the two leagues that were missing from settings.leagues
+# (English League Two, Turkish Super Lig) are present so the 12-league config
+# actually pulls all 12. Merging is idempotent and never REMOVES a league the
+# user selected.
+#
+# Safe to run daily: it is idempotent and only ever sets the two gate values
+# and adds missing leagues.
 
 on:
   schedule:
@@ -18,14 +24,43 @@ jobs:
   restore-gate:
     runs-on: ubuntu-latest
     steps:
-      - name: Restore min_bookmakers + max_spread_pct on the worker
+      - name: Restore gate values + merge missing leagues
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
         run: |
-          # Read current settings, then PUT back with the gate values forced.
-          # The PUT handler merges partial bodies with current values, so we
-          # send only the two fields we need to enforce.
-          curl -sS -m 60 -X PUT "$WORKER_URL/api/settings" \
-            -H "Content-Type: application/json" \
-            --data '{"minBookmakers":4,"maxSpreadPct":0.10}' \
-            -w "\nHTTP %{http_code}\n"
+          set -euo pipefail
+
+          # Read current settings
+          CURRENT=$(curl -sS -m 60 "$WORKER_URL/api/settings")
+          echo "current: $CURRENT"
+
+          # Build the merged leagues list (add missing ones, keep everything else)
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          url = os.environ["WORKER_URL"] + "/api/settings"
+          with urllib.request.urlopen(url, timeout=60) as r:
+              cur = json.load(r)
+
+          want = ["English League Two", "Turkish Super Lig"]
+          leagues = list(cur.get("leagues") or [])
+          for lg in want:
+              if lg not in leagues:
+                  leagues.append(lg)
+
+          payload = {
+              "minBookmakers": 4,
+              "maxSpreadPct": 0.10,
+              "leagues": leagues,
+          }
+          body = json.dumps(payload).encode()
+          req = urllib.request.Request(
+              url,
+              data=body,
+              method="PUT",
+              headers={"Content-Type": "application/json"},
+          )
+          with urllib.request.urlopen(req, timeout=60) as r:
+              out = json.load(r)
+          print("updated:", json.dumps(out.get("settings", out), indent=2)[:800])
+          PY

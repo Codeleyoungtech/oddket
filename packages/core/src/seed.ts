@@ -12,7 +12,7 @@ import type {
 import { buildCornerPredictions } from "./corners";
 
 /**
- * Deterministic demo dataset (fixed PRNG seed). 4 leagues, 80 fixtures,
+ * Deterministic demo dataset (fixed PRNG seed). 10 leagues, 300 fixtures,
  * ~110 settled bets with CLV, predictions and closing/opening odds.
  * Powers every dashboard in demo mode — no API key required.
  *
@@ -63,19 +63,19 @@ export function buildSeedDatabase(): Database {
   let betSeq = 0;
 
   for (const league of LEAGUES) {
-    // 20 fixtures per league, oldest ~75 days ago, newest across the upcoming week.
-    for (let i = 0; i < 20; i++) {
+    // 30 fixtures per league, oldest ~90 days ago, 12 upcoming across the next week.
+    for (let i = 0; i < 30; i++) {
       const fixtureId = `${league.id}-${String(i + 1).padStart(2, "0")}`;
       const home = league.teams[(i * 7) % league.teams.length]!;
       let away = league.teams[(i * 7 + 3) % league.teams.length]!;
       if (away === home) away = league.teams[(i * 7 + 5) % league.teams.length]!;
 
-      // Index 15+ are scheduled (future), the rest are finished.
-      const finished = i < 15;
-      // Distribute scheduled fixtures across upcoming days:
-      // index 15: today, 16: +1d (Tue), 17: +2d (Wed), 18: +3d (Thu/Fri), 19: +4d (Fri/Sat)
-      const daysAhead = (i - 15) * 1.2 + ((i * 3) % 2) * 0.5;
-      const daysAgo = finished ? 75 - i * 5 : -daysAhead;
+      // Index 18+ are scheduled (future), the rest are finished.
+      const finished = i < 18;
+      // Distribute 12 scheduled fixtures across the upcoming week (~0-7 days out)
+      const slot = i - 18;
+      const daysAhead = slot * 0.6 + ((i * 3) % 3) * 0.3;
+      const daysAgo = finished ? 90 - i * 5 : -daysAhead;
       const commenceTime = Math.floor(NOW - daysAgo * DAY);
 
       fixtures.push({

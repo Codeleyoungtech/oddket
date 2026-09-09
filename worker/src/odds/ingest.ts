@@ -35,7 +35,9 @@ export async function ingestOdds(env: Env): Promise<IngestResult> {
     .map((name) => LEAGUE_SPORTS[name])
     .filter((k): k is string => Boolean(k));
   const sports =
-    selected.length > 0 ? selected : [env.ODDS_SPORT ?? "soccer_epl"];
+    selected.length > 0
+      ? selected
+      : (env.ODDS_SPORT ? env.ODDS_SPORT.split(",").map((s) => s.trim()).filter(Boolean) : ["soccer_epl"]);
 
   const events = await fetchOdds(apiKey, {
     sports,

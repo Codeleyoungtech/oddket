@@ -112,9 +112,14 @@ app.get("/api/predictions", async (c) => {
 app.get("/api/fixtures/export", async (c) => {
   const db = await loadDatabase(c.env.DB);
   const now = Math.floor(Date.now() / 1000);
-  const scheduled = db.fixtures
+  let scheduled = db.fixtures
     .filter((f) => f.status === "scheduled" && f.sport !== "soccer" && f.commenceTime > now)
     .sort((a, b) => a.commenceTime - b.commenceTime);
+  if (scheduled.length === 0) {
+    scheduled = db.fixtures
+      .filter((f) => f.status === "scheduled")
+      .sort((a, b) => a.commenceTime - b.commenceTime);
+  }
   const matches = scheduled.map((f) => {
     const best = (market: string, selection: string): number | null => {
       let b: number | null = null;
@@ -900,12 +905,14 @@ app.post("/api/push/test", async (c) => {
   return c.json({ ok: true });
 });
 
-/* ---------------- seed (demo / local dev) ---------------- */
-
 app.post("/api/seed", async (c) => {
-  const force = c.req.query("force") === "1";
-  const result = await seedDatabase(c.env.DB, force);
-  return c.json(result, result.seeded ? 200 : 409);
+  try {
+    const force = c.req.query("force") === "1";
+    const result = await seedDatabase(c.env.DB, force);
+    return c.json(result, result.seeded ? 200 : 409);
+  } catch (err: any) {
+    return c.json({ ok: false, error: err?.message || String(err), stack: err?.stack }, 500);
+  }
 });
 
 /* ---------------- manual CLV entry ---------------- */

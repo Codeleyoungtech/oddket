@@ -17,6 +17,14 @@ export const LEAGUE_SPORTS: Record<string, string> = {
   "La Liga": "soccer_spain_la_liga",
   "Bundesliga": "soccer_germany_bundesliga",
   "Serie A": "soccer_italy_serie_a",
+  "EFL Championship": "soccer_efl_champ",
+  "Spanish Segunda": "soccer_spain_segunda_division",
+  "German 2. Bundesliga": "soccer_germany_bundesliga2",
+  "Italian Serie B": "soccer_italy_serie_b",
+  "English League One": "soccer_england_league1",
+  "English League Two": "soccer_england_league2",
+  "Turkish Super Lig": "soccer_turkey_super_league",
+  "Japan J1 League": "soccer_japan_j_league",
 };
 
 /**

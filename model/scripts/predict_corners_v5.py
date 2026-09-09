@@ -618,6 +618,7 @@ def main():
     ap.add_argument("--data-dir", default=os.path.join(ROOT, "data", "corners"))
     ap.add_argument("--upcoming", default=None, help="JSON file with upcoming fixtures")
     ap.add_argument("--fixtures", default=None, help="Alias for --upcoming")
+    ap.add_argument("--output", default=None, help="Output JSON path")
     ap.add_argument("--api-url", default=None, help="Worker API URL to fetch fixtures")
     args = ap.parse_args()
 
@@ -626,13 +627,13 @@ def main():
     data_dir = os.path.join(project_root, "footballdata")
 
     # Load historical data for team states
-    print("[predict] Loading historical data for team states...")
+    print("[predict] Loading historical data for team states...", file=sys.stderr)
     historical = load_historical(data_dir)
-    print(f"[predict] {len(historical)} historical matches loaded")
+    print(f"[predict] {len(historical)} historical matches loaded", file=sys.stderr)
 
     teams = build_team_states(historical)
     elo = compute_elo(historical)
-    print(f"[predict] {len(teams)} teams, {len(elo)} Elo ratings")
+    print(f"[predict] {len(teams)} teams, {len(elo)} Elo ratings", file=sys.stderr)
 
     # Load models
     from joblib import load
@@ -648,7 +649,7 @@ def main():
     sigma_h = meta["home_metrics"]["sigma"]
     sigma_a = meta["away_metrics"]["sigma"]
     sigma_total = math.sqrt(sigma_h**2 + sigma_a**2)
-    print(f"[predict] Models loaded (σ_h={sigma_h:.2f}, σ_a={sigma_a:.2f}, σ_total={sigma_total:.2f})")
+    print(f"[predict] Models loaded (σ_h={sigma_h:.2f}, σ_a={sigma_a:.2f}, σ_total={sigma_total:.2f})", file=sys.stderr)
 
     # Get upcoming fixtures
     upcoming_file = args.upcoming or args.fixtures
@@ -663,9 +664,9 @@ def main():
         # Read from stdin
         fixtures = json.loads(sys.stdin.read())
 
-    # Normalize fixtures
-    if isinstance(fixtures, dict) and "fixtures" in fixtures:
-        fixtures = fixtures["fixtures"]
+    # Normalize fixtures (support {"matches": [...]}, {"fixtures": [...]}, or flat list)
+    if isinstance(fixtures, dict):
+        fixtures = fixtures.get("matches") or fixtures.get("fixtures") or []
 
     predictions = []
     for fx in fixtures:
@@ -683,7 +684,7 @@ def main():
 
         if not hs or not as_:
             # New team with no history — use league average
-            print(f"  [warn] No history for {home_name} or {away_name}, using defaults")
+            print(f"  [warn] No history for {home_name} or {away_name}, using defaults", file=sys.stderr)
             hs = hs or TeamState()
             as_ = as_ or TeamState()
 
@@ -746,7 +747,14 @@ def main():
         "predictions": predictions,
     }
 
-    print(json.dumps(output, indent=2))
+    json_str = json.dumps(output, indent=2)
+    if args.output:
+        os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+        with open(args.output, "w") as f:
+            f.write(json_str)
+        print(f"[predict] Saved {len(predictions)} corner predictions to {args.output}", file=sys.stderr)
+
+    print(json_str)
     return 0
 
 

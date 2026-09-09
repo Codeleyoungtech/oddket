@@ -61,7 +61,7 @@ jobs:
 
       - name: Predict corners (per-team corner totals, V5 NB line probs)
         working-directory: model
-        run: python3 scripts/predict_corners_v5.py --fixtures data/fixtures.json > data/corners_predictions.json
+        run: python3 scripts/predict_corners_v5.py --fixtures data/fixtures.json --output data/corners_predictions.json
 
       - name: Push predictions to the worker
         env:
@@ -69,11 +69,13 @@ jobs:
           PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}
         run: |
           for f in model/output/predictions.json model/output/predictions_ou.json; do
-            curl -sS -m 60 -X POST "$WORKER_URL/api/predictions/ingest" \
-              -H "Content-Type: application/json" \
-              -H "x-predict-key: $PREDICT_SECRET" \
-              --data-binary @"$f"
-            echo
+            if [ -f "$f" ]; then
+              curl -sS -m 60 -X POST "$WORKER_URL/api/predictions/ingest" \
+                -H "Content-Type: application/json" \
+                -H "x-predict-key: $PREDICT_SECRET" \
+                --data-binary @"$f"
+              echo
+            fi
           done
           # Corners predictions (isolated from h2h/totals)
           if [ -s model/data/corners_predictions.json ]; then
@@ -81,10 +83,8 @@ jobs:
             python3 -c "
 import json, sys
 with open('model/data/corners_predictions.json') as f:
-    content = f.read()
-start = content.index('{')
-data = json.loads(content[start:])
-ingest = [{'fixtureId': p['fixture_id'], 'homeCorners': p['home_team_corners']['expected'], 'awayCorners': p['away_team_corners']['expected']} for p in data.get('predictions', [])]
+    data = json.load(f)
+ingest = [{'fixtureId': p['fixture_id'], 'homeCorners': p['home_team_corners']['expected'], 'awayCorners': p['away_team_corners']['expected']} for p in data.get('predictions', []) if 'fixture_id' in p]
 json.dump(ingest, open('/tmp/corners_ingest.json', 'w'))
 print(f'Prepared {len(ingest)} corners for ingestion')
 "

@@ -284,7 +284,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       clvSeries: views?.clvSeries ?? [],
       slips: views?.slips ?? [],
       allPredictions: views?.allPredictions ?? [],
-      cornerPredictions: cornerPreds,
+      cornerPredictions: cornerPreds.length > 0 ? cornerPreds : (db?.cornerPredictions ?? []),
       bets: views?.bets ?? [],
       backtest: views?.backtest ?? null,
       refresh,

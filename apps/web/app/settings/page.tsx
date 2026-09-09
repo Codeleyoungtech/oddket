@@ -17,10 +17,18 @@ const MARKET_OPTIONS = [
 // Must match the seed LEAGUES names in packages/core/src/seed.ts and the
 // LEAGUE_SPORTS map in packages/core/src/types.ts.
 const LEAGUE_OPTIONS = [
-  { value: "English Premier League", label: "English Premier League" },
-  { value: "La Liga", label: "La Liga" },
-  { value: "Bundesliga", label: "Bundesliga" },
-  { value: "Serie A", label: "Serie A" },
+  { value: "English Premier League", label: "English Premier League (E0)" },
+  { value: "La Liga", label: "La Liga (SP1)" },
+  { value: "Bundesliga", label: "Bundesliga (D1)" },
+  { value: "Serie A", label: "Serie A (I1)" },
+  { value: "EFL Championship", label: "EFL Championship (E1)" },
+  { value: "Spanish Segunda", label: "Spanish Segunda (SP2)" },
+  { value: "German 2. Bundesliga", label: "German 2. Bundesliga (D2)" },
+  { value: "Italian Serie B", label: "Italian Serie B (I2)" },
+  { value: "English League One", label: "English League One (E2)" },
+  { value: "English League Two", label: "English League Two (E3)" },
+  { value: "Turkish Super Lig", label: "Turkish Süper Lig (T1)" },
+  { value: "Japan J1 League", label: "Japan J1 League (J1)" },
 ] as const;
 
 // Tennis tournaments come from the same TENNIS_SPORTS map the worker ingest

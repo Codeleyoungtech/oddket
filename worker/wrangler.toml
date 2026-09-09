@@ -31,7 +31,7 @@ migrations_dir = "migrations"
 
 # --- Vars (safe, non-secret). API key goes in .dev.vars / secret ---
 [vars]
-ODDS_SPORT = "soccer_epl"
+ODDS_SPORT = "soccer_epl,soccer_spain_la_liga,soccer_germany_bundesliga,soccer_italy_serie_a,soccer_efl_champ,soccer_spain_segunda_division,soccer_germany_bundesliga2,soccer_italy_serie_b,soccer_england_league1,soccer_england_league2,soccer_turkey_super_league,soccer_japan_j_league"
 ODDS_REGIONS = "eu"
 ODDS_MARKETS = "h2h,totals"
 # Client-side slice per sport key (the API charges per REQUEST, not per event),

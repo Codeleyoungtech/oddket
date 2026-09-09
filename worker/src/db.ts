@@ -1,6 +1,7 @@
 import type {
   Bet,
   ClvResult,
+  CornerPrediction,
   Database,
   Fixture,
   OddsSnapshot,
@@ -196,10 +197,47 @@ function toOutcome(r: OutcomeRow): Outcome {
   };
 }
 
+interface CornerRow {
+  id: string;
+  fixture_id: string;
+  team: string;
+  side: string;
+  predicted_corners: number;
+  confidence_low: number;
+  confidence_high: number;
+  line_probs: string;
+  model_version: string;
+  created_at: number;
+}
+
+function toCornerPrediction(r: CornerRow): CornerPrediction {
+  const lineProbs = safeParseJson(r.line_probs, {
+    over25: 0,
+    over35: 0,
+    over45: 0,
+    over55: 0,
+    over65: 0,
+    over75: 0,
+    over85: 0,
+  });
+  return {
+    id: r.id,
+    fixtureId: r.fixture_id,
+    team: r.team,
+    side: r.side as "home" | "away",
+    predictedCorners: r.predicted_corners,
+    confidenceLow: r.confidence_low,
+    confidenceHigh: r.confidence_high,
+    lineProbs,
+    modelVersion: r.model_version,
+    createdAt: r.created_at,
+  };
+}
+
 /* ---------------- queries ---------------- */
 
 export async function loadDatabase(db: D1Database): Promise<Database> {
-  const [fixtures, odds, predictions, bets, clv, outcomes, settingsRows, parlayRows] = await Promise.all([
+  const [fixtures, odds, predictions, bets, clv, outcomes, settingsRows, parlayRows, cornerRows] = await Promise.all([
     db.prepare("SELECT * FROM fixtures").all<FixtureRow>(),
     db.prepare("SELECT * FROM odds_snapshots").all<OddsRow>(),
     db.prepare("SELECT * FROM predictions").all<PredictionRow>(),
@@ -208,6 +246,7 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     db.prepare("SELECT * FROM outcomes").all<OutcomeRow>(),
     db.prepare("SELECT * FROM settings WHERE id = 1").first<SettingsRow>(),
     db.prepare("SELECT * FROM parlay_bets").all<ParlayRow>(),
+    db.prepare("SELECT * FROM corners_predictions").all<CornerRow>().catch(() => ({ results: [] })),
   ]);
 
   const settings = settingsRows ? rowToSettings(settingsRows) : defaultSettings();
@@ -221,7 +260,7 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     outcomes: (outcomes.results ?? []).map(toOutcome),
     settings,
     parlayBets: (parlayRows.results ?? []).map(toParlay),
-    cornerPredictions: [],
+    cornerPredictions: (cornerRows.results ?? []).map(toCornerPrediction),
   };
 }
 
@@ -401,7 +440,7 @@ export async function upsertTennisFixtures(db: D1Database, fixtures: Fixture[]):
   const batch = fixtures.map((f) =>
     stmt.bind(f.id, "tennis", f.league, f.homeTeam, f.awayTeam, f.commenceTime, f.status, null),
   );
-  await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 export async function upsertTennisOdds(db: D1Database, rows: OddsSnapshot[]): Promise<void> {
@@ -414,7 +453,7 @@ export async function upsertTennisOdds(db: D1Database, rows: OddsSnapshot[]): Pr
   const batch = rows.map((o) =>
     stmt.bind(o.id, o.fixtureId, o.market, o.selection, o.odds, o.bookmaker, o.capturedAt, o.isClosing ? 1 : 0),
   );
-  if (batch.length) await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 export async function upsertTennisPredictions(db: D1Database, rows: Prediction[]): Promise<void> {
@@ -429,7 +468,7 @@ export async function upsertTennisPredictions(db: D1Database, rows: Prediction[]
   const batch = rows.map((p) =>
     stmt.bind(p.id, p.fixtureId, p.market, p.selection, p.probability, p.confidenceLow, p.confidenceHigh, p.modelVersion, p.createdAt),
   );
-  if (batch.length) await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 export async function insertTennisBet(db: D1Database, b: Bet): Promise<void> {
@@ -486,6 +525,15 @@ export async function settleTennisBets(db: D1Database): Promise<number> {
 
 /* ---------------- writes ---------------- */
 
+export async function batchExecute(db: D1Database, stmts: D1PreparedStatement[], chunkSize = 40): Promise<void> {
+  for (let i = 0; i < stmts.length; i += chunkSize) {
+    const chunk = stmts.slice(i, i + chunkSize);
+    if (chunk.length > 0) {
+      await db.batch(chunk);
+    }
+  }
+}
+
 export async function upsertFixtures(db: D1Database, fixtures: Fixture[]): Promise<void> {
   const stmt = db.prepare(
     `INSERT INTO fixtures (id, sport, league, home_team, away_team, commence_time, status, home_score, away_score)
@@ -498,7 +546,7 @@ export async function upsertFixtures(db: D1Database, fixtures: Fixture[]): Promi
   const batch = fixtures.map((f) =>
     stmt.bind(f.id, f.sport, f.league, f.homeTeam, f.awayTeam, f.commenceTime, f.status, f.homeScore ?? null, f.awayScore ?? null),
   );
-  await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 export async function upsertOdds(db: D1Database, rows: OddsSnapshot[]): Promise<void> {
@@ -511,7 +559,7 @@ export async function upsertOdds(db: D1Database, rows: OddsSnapshot[]): Promise<
   const batch = rows.map((o) =>
     stmt.bind(o.id, o.fixtureId, o.market, o.selection, o.odds, o.bookmaker, o.capturedAt, o.isClosing ? 1 : 0),
   );
-  if (batch.length) await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 export async function upsertPredictions(db: D1Database, rows: Prediction[]): Promise<void> {
@@ -526,7 +574,7 @@ export async function upsertPredictions(db: D1Database, rows: Prediction[]): Pro
   const batch = rows.map((p) =>
     stmt.bind(p.id, p.fixtureId, p.market, p.selection, p.probability, p.confidenceLow, p.confidenceHigh, p.modelVersion, p.createdAt),
   );
-  if (batch.length) await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 /* ---------------- corners predictions (isolated from h2h/totals) ---------------- */
@@ -553,7 +601,7 @@ export async function upsertCornerPredictions(
     stmt.bind(r.id, r.fixtureId, r.team, r.side, r.predictedCorners,
       r.confidenceLow, r.confidenceHigh, r.lineProbs, r.modelVersion, r.createdAt),
   );
-  if (batch.length) await db.batch(batch);
+  if (batch.length) await batchExecute(db, batch);
 }
 
 export async function listCornerPredictions(db: D1Database): Promise<{

@@ -129,6 +129,39 @@ const TOTAL_LINE_LABELS: Record<string, string> = {
   over125: "O12.5",
 };
 
+const LEAGUE_GOLDMINES: Record<string, { badge: string; note: string; color: string }> = {
+  "Spanish Segunda": {
+    badge: "💎 Low-Block Defense",
+    note: "65.8% Under 2.5 · 69.9% Cards >3.5",
+    color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
+  },
+  "German 2. Bundesliga": {
+    badge: "⚽ High-Pace Transition",
+    note: "60.1% Over 2.5 · 57.8% BTTS",
+    color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
+  },
+  "Italian Serie B": {
+    badge: "🚩 Stalemate & Corners",
+    note: "34.5% Draws · 57.1% Over 9.5 Corners",
+    color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/30",
+  },
+  "English League One": {
+    badge: "🚩 High Cross Volume",
+    note: "54.2% Over 9.5 Corners",
+    color: "text-sky-400 bg-sky-400/10 border-sky-400/30",
+  },
+  "EFL Championship": {
+    badge: "⚡ Direct Wing Attack",
+    note: "High shot & cross frequency",
+    color: "text-purple-400 bg-purple-400/10 border-purple-400/30",
+  },
+  "Japan J1 League": {
+    badge: "🎯 Tactical Discipline",
+    note: "High consistency · Low ref variance",
+    color: "text-rose-400 bg-rose-400/10 border-rose-400/30",
+  },
+};
+
 export default function CornersPage() {
   const { cornerPredictions, db, mode } = useData();
   const fixtures = db?.fixtures ?? [];
@@ -207,9 +240,9 @@ export default function CornersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
-          <SectionTitle>Corners</SectionTitle>
+          <SectionTitle>Corners &amp; Micro-Markets</SectionTitle>
           <p className="text-xs text-zinc-500 mt-1">
-            Team &amp; total corner predictions — Negative Binomial line probabilities
+            Team &amp; total corner predictions across Tier 1 and Niche Lower-Tier leagues — Negative Binomial line probabilities
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/30 bg-amber-400/10 px-3 py-1 text-xs font-semibold text-amber-300 self-start">
@@ -246,7 +279,7 @@ export default function CornersPage() {
           onChange={(e) => setLeagueFilter(e.target.value)}
           className="rounded-lg border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-200 outline-none focus:border-sky-400/50"
         >
-          <option value="all">All Leagues</option>
+          <option value="all">All Leagues ({leagues.length})</option>
           {leagues.map((lg) => (
             <option key={lg} value={lg}>
               {lg}
@@ -261,9 +294,9 @@ export default function CornersPage() {
       {/* How to read & betting guide */}
       <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3.5 py-2.5 text-xs text-zinc-400 space-y-1">
         <div>
-          <span className="font-semibold text-zinc-200">How to use in betting:</span>{" "}
+          <span className="font-semibold text-zinc-200">Niche League Value Strategy:</span>{" "}
           Compare the model&apos;s <span className="text-emerald-400 font-medium">win %</span> against your sportsbook&apos;s implied odds.
-          If the model gives <span className="text-emerald-400 font-medium">Over 9.5 Total Corners 65%</span> (implied fair odds 1.54) and your book offers odds of <span className="text-sky-400 font-medium">1.75+ (implied 57%)</span>, that represents positive expected value (+EV).
+          Secondary leagues (Segunda, Serie B, 2. Bundesliga, League 1, J1) exhibit less quant pricing efficiency, giving sharper edges on Total Corners &amp; Micro-Markets.
         </div>
         <div className="text-[11px] text-zinc-500">
           • <span className="text-zinc-300 font-medium">Team lines:</span> Individual team corner output • <span className="text-zinc-300 font-medium">Total lines:</span> Combined match corners • <span className="text-zinc-300 font-medium">Range:</span> 80% confidence interval.
@@ -306,6 +339,7 @@ export default function CornersPage() {
 
           // Best total line recommendation
           const bestTotal = bestTotalCornerLine(totalExpectedNum);
+          const goldmine = LEAGUE_GOLDMINES[fixture.league];
 
           return (
             <Card key={fixture.id}>
@@ -313,10 +347,17 @@ export default function CornersPage() {
                 {/* Match header */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="min-w-0">
-                    <h3 className="font-semibold text-zinc-100 text-sm truncate">
-                      {fixture.homeTeam} vs {fixture.awayTeam}
-                    </h3>
-                    <p className="text-[11px] text-zinc-500">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-semibold text-zinc-100 text-sm truncate">
+                        {fixture.homeTeam} vs {fixture.awayTeam}
+                      </h3>
+                      {goldmine && (
+                        <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold ${goldmine.color}`}>
+                          {goldmine.badge} <span className="opacity-70 font-normal">({goldmine.note})</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">
                       {fixture.league} {fixture.commenceTime > 0 ? `· ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
                     </p>
                   </div>
@@ -389,7 +430,7 @@ export default function CornersPage() {
           probabilities · Pre-match only
         </div>
         <div>
-          Trained on 17,351 matches (12 seasons × 4 leagues) · Team lines O2.5–O8.5 · Total lines
+          Trained on 31,358 matches (238 teams across 11 leagues) · Team lines O2.5–O8.5 · Total lines
           O5.5–O12.5
         </div>
       </div>

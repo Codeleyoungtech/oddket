@@ -371,20 +371,57 @@ export function allPredictionsAsLegs(
     const fixtureOdds = snapshots.filter((s) => s.fixtureId === fixture.id);
     for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
       if (settings.markets.length > 0 && !settings.markets.includes(pred.market)) continue;
-      const marketOdds = fixtureOdds.filter((s) => s.market === pred.market);
-      if (marketOdds.length === 0) continue;
+
+      // DC12 is derived from the fixture's h2h odds (books construct DC from
+      // their own 1X2 book). Same logic as flagSlips.
+      const oddsMarket = pred.market === "dc12" ? "h2h" : pred.market;
+      const marketOdds = fixtureOdds.filter((s) => s.market === oddsMarket);
+
+      // Markets without a dedicated bookmaker feed (ou15, team_home_goals,
+      // team_away_goals) have no odds in the API bulk endpoint.  Show them
+      // as model-only predictions — probability + CI, no odds/edge — so the
+      // user can compare manually against their bookmaker.
+      if (marketOdds.length === 0) {
+        if (pred.market === "ou15" || pred.market === "team_home_goals" || pred.market === "team_away_goals") {
+          legs.push({
+            fixture,
+            market: pred.market,
+            selection: pred.selection,
+            probability: pred.probability,
+            confidenceLow: pred.confidenceLow,
+            confidenceHigh: pred.confidenceHigh,
+            odds: 0,
+            impliedProbability: 0,
+            edge: 0,
+            stake: 0,
+          });
+        }
+        continue;
+      }
+
+      // DC12: look for both home + away snapshots from the h2h market.
+      const selSnapshots = pred.market === "dc12"
+        ? marketOdds.filter((s) => s.selection === "home" || s.selection === "away")
+        : marketOdds.filter((s) => s.selection === pred.selection);
 
       const bestPerSel = bestOddsBySelection(marketOdds, pred.market);
       if (!hasCompleteMarketOdds(bestPerSel, pred.market, fixture)) continue;
-      const implied = marginAdjustedImplied(
-        [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
-        pred.selection,
-      );
-      if (implied <= 0) continue;
-      const edge = pred.probability - implied;
 
-      const odds = bestPerSel.get(pred.selection) ?? 0;
-      if (odds <= 1) continue;
+      let implied: number;
+      let odds: number;
+      if (pred.market === "dc12") {
+        const h2h = [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds }));
+        implied = marginAdjustedImplied(h2h, "home") + marginAdjustedImplied(h2h, "away");
+        odds = implied > 0 ? 1 / implied : 0;
+      } else {
+        implied = marginAdjustedImplied(
+          [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
+          pred.selection,
+        );
+        odds = bestPerSel.get(pred.selection) ?? 0;
+      }
+      if (implied <= 0 || odds <= 1) continue;
+      const edge = pred.probability - implied;
 
       legs.push({
         fixture,

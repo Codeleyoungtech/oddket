@@ -170,8 +170,8 @@ export default function SlipsPage() {
   const multiplesOn = db.settings.multiplesEnabled === true;
   const MAX_LEGS = Math.max(2, Math.min(db.settings.maxMultipleLegs ?? 3, 6));
 
-  const toggle = (key: string) => {
-    if (!multiplesOn) return; // selection is hidden when multiples are OFF
+  const toggle = (key: string, hasOdds: boolean) => {
+    if (!multiplesOn || !hasOdds) return; // skip model-only predictions (no odds = can't build a slip)
     setCapNotice(null);
     setSelected((prev) => {
       const next = new Set(prev);
@@ -385,14 +385,16 @@ export default function SlipsPage() {
                             key={key}
                             role="button"
                             tabIndex={0}
-                            onClick={() => toggle(key)}
-                            onKeyDown={(e) => e.key === "Enter" && toggle(key)}
-                            className={`group flex w-full cursor-pointer flex-col gap-3 p-4 text-left transition-all sm:flex-row sm:items-center sm:justify-between sm:py-3.5 ${
+                            onClick={() => toggle(key, leg.odds !== 0)}
+                            onKeyDown={(e) => e.key === "Enter" && toggle(key, leg.odds !== 0)}
+                            className={`group flex w-full flex-col gap-3 p-4 text-left transition-all sm:flex-row sm:items-center sm:justify-between sm:py-3.5 ${
+                              leg.odds === 0 ? "cursor-default" : "cursor-pointer"
+                            } ${
                               checked ? "bg-emerald-400/[0.04]" : "hover:bg-ink-800/30"
                             }`}
                           >
                             <div className="flex items-start gap-3 min-w-0 flex-1">
-                              {multiplesOn && (
+                              {multiplesOn && leg.odds !== 0 && (
                                 <span
                                   className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-bold transition-colors ${
                                     checked ? "border-emerald-400 bg-emerald-400 text-ink-950" : "border-ink-600 bg-ink-800/60 text-transparent"
@@ -406,57 +408,70 @@ export default function SlipsPage() {
                                   <span className="text-sm font-bold text-slate-100">
                                     {marketLabel(leg.market, leg.selection)}
                                   </span>
-                                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold border ${
-                                    leg.edge < 0 ? "bg-red-400/15 text-red-300 border-red-400/30" :
-                                    leg.edge >= 0.07 ? "bg-emerald-400/15 text-emerald-300 border-emerald-400/30" : "bg-sky-400/15 text-sky-300 border-sky-400/30"
-                                  }`}>
-                                    {fmtSignedPct(leg.edge)} EV
-                                  </span>
+                                  {leg.odds === 0 ? (
+                                    <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold border bg-amber-400/15 text-amber-300 border-amber-400/30">
+                                      📊 Model Only
+                                    </span>
+                                  ) : (
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold border ${
+                                      leg.edge < 0 ? "bg-red-400/15 text-red-300 border-red-400/30" :
+                                      leg.edge >= 0.07 ? "bg-emerald-400/15 text-emerald-300 border-emerald-400/30" : "bg-sky-400/15 text-sky-300 border-sky-400/30"
+                                    }`}>
+                                      {fmtSignedPct(leg.edge)} EV
+                                    </span>
+                                  )}
                                 </div>
                                 <p className="mt-1 text-xs text-slate-400">
                                   Win Prob: <span className="font-semibold text-slate-200">{fmtPct(leg.probability)}</span>
                                   <span className="text-slate-500"> ({fmtPct(leg.confidenceLow, 0)}–{fmtPct(leg.confidenceHigh, 0)} CI)</span>
                                 </p>
                               </div>
-                            </div>
-
-                            <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2.5 border-t border-ink-800/50 sm:border-0 sm:pt-0 shrink-0">
+                            </div>                            <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2.5 border-t border-ink-800/50 sm:border-0 sm:pt-0 shrink-0">
                               <div className="flex items-center gap-2">
-                                <span className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-2.5 py-1.5 text-xs font-bold text-slate-100">
-                                  @{fmtOdds(leg.odds)}
-                                </span>
-                                <div className="relative">
-                                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">₦</span>
-                                  <input
-                                    type="number"
-                                    min={MIN_STAKE}
-                                    step={10}
-                                    value={stakeOverrides[legKey(leg)] ?? String(displayStake(leg.stake).amount)}
-                                    onChange={(e) => {
-                                      e.stopPropagation();
-                                      setStakeOverrides((prev) => ({ ...prev, [legKey(leg)]: e.target.value }));
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onKeyDown={(e) => e.stopPropagation()}
-                                    className="w-20 rounded-lg border border-ink-700/60 bg-ink-800/80 py-1.5 pl-6 pr-2 text-right text-xs font-semibold text-slate-100 focus:border-sky-400/50 focus:outline-none"
-                                    title="Edit stake amount"
-                                  />
-                                </div>
+                                {leg.odds === 0 ? (
+                                  <span className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-2.5 py-1.5 text-xs font-bold text-amber-300">
+                                    Check bookmaker
+                                  </span>
+                                ) : (
+                                  <>
+                                    <span className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-2.5 py-1.5 text-xs font-bold text-slate-100">
+                                      @{fmtOdds(leg.odds)}
+                                    </span>
+                                    <div className="relative">
+                                      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">₦</span>
+                                      <input
+                                        type="number"
+                                        min={MIN_STAKE}
+                                        step={10}
+                                        value={stakeOverrides[legKey(leg)] ?? String(displayStake(leg.stake).amount)}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          setStakeOverrides((prev) => ({ ...prev, [legKey(leg)]: e.target.value }));
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onKeyDown={(e) => e.stopPropagation()}
+                                        className="w-20 rounded-lg border border-ink-700/60 bg-ink-800/80 py-1.5 pl-6 pr-2 text-right text-xs font-semibold text-slate-100 focus:border-sky-400/50 focus:outline-none"
+                                        title="Edit stake amount"
+                                      />
+                                    </div>
+                                  </>
+                                )}
                               </div>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleLogBet(leg);
-                                }}
-                                disabled={isLogged || loggingKeys.has(key)}
-                                className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition-all disabled:cursor-wait ${
-                                  isLogged
-                                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                                    : "border-sky-400/40 bg-sky-400/20 text-sky-200 hover:bg-sky-400/30 shadow-sm"
-                                }`}
-                              >
-                                {loggingKeys.has(key) ? "Logging…" : isLogged ? "✓ Logged" : "Log Bet"}
-                              </button>
+                              {leg.odds !== 0 && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleLogBet(leg);
+                                  }}
+                                  disabled={isLogged || loggingKeys.has(key)}
+                                  className={`rounded-lg border px-4 py-1.5 text-xs font-semibold transition-all disabled:cursor-wait ${
+                                    isLogged
+                                      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                                      : "border-sky-400/40 bg-sky-400/20 text-sky-200 hover:bg-sky-400/30 shadow-sm"
+                                  }`}>
+                                  {loggingKeys.has(key) ? "Logging…" : isLogged ? "✓ Logged" : "Log Bet"}
+                                </button>
+                              )}
                             </div>
                           </div>
                         );

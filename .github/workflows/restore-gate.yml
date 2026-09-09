@@ -1,0 +1,31 @@
+name: Restore EV gate settings (daily)
+
+# D1 free tier resets its daily row-write limit at midnight UTC. The Sep 9
+# pipeline repair found the settings row carrying min_bookmakers=1 /
+# max_spread_pct=0.5 (from agent testing), which violates the locked-in
+# 4-bookmaker depth gate. This job runs a few minutes after the D1 reset and
+# restores those two gate values only — it preserves every other setting
+# (leagues, markets, bankroll, Kelly, etc.) exactly as the user left them.
+#
+# Safe to run daily: it is idempotent and only ever sets the two gate values.
+
+on:
+  schedule:
+    - cron: "10 0 * * *"   # 00:10 UTC — after the D1 daily write-limit reset
+  workflow_dispatch:       # manual "Run workflow" button
+
+jobs:
+  restore-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore min_bookmakers + max_spread_pct on the worker
+        env:
+          WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
+        run: |
+          # Read current settings, then PUT back with the gate values forced.
+          # The PUT handler merges partial bodies with current values, so we
+          # send only the two fields we need to enforce.
+          curl -sS -m 60 -X PUT "$WORKER_URL/api/settings" \
+            -H "Content-Type: application/json" \
+            --data '{"minBookmakers":4,"maxSpreadPct":0.10}' \
+            -w "\nHTTP %{http_code}\n"

@@ -27,8 +27,32 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-ACTIVE_LEAGUES = ["EPL", "La Liga", "Bundesliga", "Serie A"]
-FILE_PREFIXES = {"EPL": "EPL", "La Liga": "LLL", "Bundesliga": "BDS", "Serie A": "SRA"}
+ACTIVE_LEAGUES = [
+    "EPL",
+    "La Liga",
+    "Bundesliga",
+    "Serie A",
+    "Championship",
+    "League One",
+    "League Two",
+    "2. Bundesliga",
+    "Segunda",
+    "Serie B",
+    "Super Lig",
+]
+FILE_PREFIXES = {
+    "EPL": ["EPL", "E0"],
+    "La Liga": ["LLL", "SP1"],
+    "Bundesliga": ["BDS", "D1"],
+    "Serie A": ["SRA", "I1"],
+    "Championship": ["E1"],
+    "League One": ["E2"],
+    "League Two": ["E3"],
+    "2. Bundesliga": ["D2"],
+    "Segunda": ["SP2"],
+    "Serie B": ["I2"],
+    "Super Lig": ["T1"],
+}
 SEASONS = [
     "2014_15", "2015_16", "2016_17", "2017_18", "2018_19",
     "2019_20", "2020_21", "2021_22", "2022_23", "2023_24",
@@ -333,34 +357,54 @@ def _elo_update(elo: float, expected: float, actual: float, k: float = 20.0) -> 
 def load_historical(data_dir: str) -> list[dict]:
     """Load all historical matches for building team state."""
     matches = []
+    seen = set()
+    dirs = [data_dir, os.path.join(ROOT, "data", "corners")]
     for league in ACTIVE_LEAGUES:
-        prefix = FILE_PREFIXES[league]
-        for season in SEASONS:
-            path = os.path.join(data_dir, f"{prefix}_{season}.csv")
-            if not os.path.exists(path):
-                continue
-            with open(path, encoding="utf-8-sig") as f:
-                reader = csv.DictReader(f)
-                for i, row in enumerate(reader):
-                    hc = row.get("HC", "").strip()
-                    ac = row.get("AC", "").strip()
-                    if not hc.isdigit() or not ac.isdigit():
+        prefixes = FILE_PREFIXES.get(league, [league])
+        if isinstance(prefixes, str):
+            prefixes = [prefixes]
+        for season in SEASONS + ["2012", "2020", "2021"]:
+            for d in dirs:
+                for prefix in prefixes:
+                    path = os.path.join(d, f"{prefix}_{season}.csv")
+                    if not os.path.exists(path):
                         continue
-                    date_str, ts = _parse_date(row.get("Date", ""))
-                    if not ts:
-                        continue
-                    matches.append({
-                        "home": normalize_name(row.get("HomeTeam", "").strip()),
-                        "away": normalize_name(row.get("AwayTeam", "").strip()),
-                        "hc": int(hc), "ac": int(ac),
-                        "hs": _int(row.get("HS", "0")), "as_": _int(row.get("AS", "0")),
-                        "hst": _int(row.get("HST", "0")), "ast": _int(row.get("AST", "0")),
-                        "hf": _int(row.get("HF", "0")), "af": _int(row.get("AF", "0")),
-                        "hy": _int(row.get("HY", "0")), "ay": _int(row.get("AY", "0")),
-                        "hr": _int(row.get("HR", "0")), "ar": _int(row.get("AR", "0")),
-                        "fthg": _int(row.get("FTHG", "0")), "ftag": _int(row.get("FTAG", "0")),
-                        "ts": ts, "league": league, "season": season,
-                    })
+                    with open(path, encoding="utf-8-sig") as f:
+                        reader = csv.DictReader(f)
+                        for i, row in enumerate(reader):
+                            hc = row.get("HC", "").strip()
+                            ac = row.get("AC", "").strip()
+                            if not hc.isdigit() or not ac.isdigit():
+                                continue
+                            date_str, ts = _parse_date(row.get("Date", ""))
+                            if not ts:
+                                continue
+                            h_name = normalize_name(row.get("HomeTeam", "").strip())
+                            a_name = normalize_name(row.get("AwayTeam", "").strip())
+                            match_key = f"{h_name}:{a_name}:{date_str}"
+                            if match_key in seen:
+                                continue
+                            seen.add(match_key)
+                            matches.append({
+                                "home": h_name,
+                                "away": a_name,
+                                "league": league,
+                                "date": date_str,
+                                "ts": ts,
+                                "hc": int(hc), "ac": int(ac),
+                                "hs": _int(row.get("HS", "0")), "as_": _int(row.get("AS", "0")),
+                                "hst": _int(row.get("HST", "0")), "ast": _int(row.get("AST", "0")),
+                                "hf": _int(row.get("HF", "0")), "af": _int(row.get("AF", "0")),
+                                "hy": _int(row.get("HY", "0")), "ay": _int(row.get("AY", "0")),
+                                "hr": _int(row.get("HR", "0")), "ar": _int(row.get("AR", "0")),
+                                "fthg": _int(row.get("FTHG", "0")), "ftag": _int(row.get("FTAG", "0")),
+                                "odds_h": _float(row.get("B365H", row.get("AvgH", "0"))),
+                                "odds_d": _float(row.get("B365D", row.get("AvgD", "0"))),
+                                "odds_a": _float(row.get("B365A", row.get("AvgA", "0"))),
+                                "ou_25_over": _float(row.get("B365>2.5", row.get("Avg>2.5", "0"))),
+                                "ah_home": _float(row.get("AHh", "0")),
+                                "total_corners": int(hc) + int(ac),
+                            })
     matches.sort(key=lambda m: m["ts"])
     return matches
 

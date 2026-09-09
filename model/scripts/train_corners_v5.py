@@ -47,12 +47,31 @@ LEAGUE_MAP = {
 }
 # Abbreviated file prefixes from footballdata/
 FILE_PREFIXES = {
-    "EPL": "EPL",
-    "La Liga": "LLL",
-    "Bundesliga": "BDS",
-    "Serie A": "SRA",
+    "EPL": ["EPL", "E0"],
+    "La Liga": ["LLL", "SP1"],
+    "Bundesliga": ["BDS", "D1"],
+    "Serie A": ["SRA", "I1"],
+    "Championship": ["E1"],
+    "League One": ["E2"],
+    "League Two": ["E3"],
+    "2. Bundesliga": ["D2"],
+    "Segunda": ["SP2"],
+    "Serie B": ["I2"],
+    "Super Lig": ["T1"],
 }
-ACTIVE_LEAGUES = ["EPL", "La Liga", "Bundesliga", "Serie A"]
+ACTIVE_LEAGUES = [
+    "EPL",
+    "La Liga",
+    "Bundesliga",
+    "Serie A",
+    "Championship",
+    "League One",
+    "League Two",
+    "2. Bundesliga",
+    "Segunda",
+    "Serie B",
+    "Super Lig",
+]
 
 SEASONS = [
     "2014_15", "2015_16", "2016_17", "2017_18", "2018_19",
@@ -255,18 +274,29 @@ def load_match_csv(path: str, league: str, season: str) -> list[Match]:
 
 
 def load_all_data(data_dir: str) -> list[Match]:
-    """Load all leagues and seasons."""
+    """Load all leagues and seasons from footballdata and model/data/corners."""
     all_matches = []
+    seen_ids = set()
+    dirs = [data_dir, os.path.join(ROOT, "data", "corners")]
     for league in ACTIVE_LEAGUES:
-        prefix = FILE_PREFIXES[league]
-        for season in SEASONS:
-            path = os.path.join(data_dir, f"{prefix}_{season}.csv")
-            if not os.path.exists(path):
-                continue
-            ms = load_match_csv(path, league, season)
-            if ms:
-                all_matches.extend(ms)
-                print(f"  {league} {season}: {len(ms)} matches")
+        prefixes = FILE_PREFIXES.get(league, [league])
+        if isinstance(prefixes, str):
+            prefixes = [prefixes]
+        for season in SEASONS + ["2012", "2020", "2021"]:
+            for d in dirs:
+                for prefix in prefixes:
+                    path = os.path.join(d, f"{prefix}_{season}.csv")
+                    if not os.path.exists(path):
+                        continue
+                    ms = load_match_csv(path, league, season)
+                    added = 0
+                    for m in ms:
+                        if m.id not in seen_ids:
+                            seen_ids.add(m.id)
+                            all_matches.append(m)
+                            added += 1
+                    if added > 0:
+                        print(f"  {league} {season} ({prefix}): {added} matches")
     all_matches.sort(key=lambda m: m.ts)
     return all_matches
 

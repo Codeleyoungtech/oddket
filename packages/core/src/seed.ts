@@ -42,6 +42,12 @@ const LEAGUES = [
   { id: "laliga", name: "La Liga", teams: ["Real Madrid", "Barcelona", "Atletico", "Sevilla", "Villarreal", "Real Sociedad", "Betis", "Valencia", "Athletic", "Girona"] },
   { id: "bundesliga", name: "Bundesliga", teams: ["Bayern", "Dortmund", "Leverkusen", "Leipzig", "Frankfurt", "Stuttgart", "Wolfsburg", "Gladbach", "Freiburg", "Hoffenheim"] },
   { id: "seriea", name: "Serie A", teams: ["Inter", "Milan", "Juventus", "Napoli", "Roma", "Lazio", "Atalanta", "Fiorentina", "Bologna", "Torino"] },
+  { id: "championship", name: "EFL Championship", teams: ["Leeds", "Leicester", "Southampton", "Ipswich", "Norwich", "West Brom", "Watford", "Coventry", "Middlesbrough", "Hull"] },
+  { id: "segunda", name: "Spanish Segunda", teams: ["Espanyol", "Valladolid", "Eibar", "Leganes", "Sporting Gijon", "Racing Santander", "Levante", "Burgos", "Elche", "Tenerife"] },
+  { id: "bundesliga2", name: "German 2. Bundesliga", teams: ["Hamburg", "St Pauli", "Fortuna Dusseldorf", "Hannover", "Karlsruhe", "Greuther Furth", "Hertha Berlin", "Schalke", "Paderborn", "Nurnberg"] },
+  { id: "serieb", name: "Italian Serie B", teams: ["Parma", "Como", "Venezia", "Cremonese", "Catanzaro", "Palermo", "Sampdoria", "Brescia", "Sudtirol", "Reggiana"] },
+  { id: "leagueone", name: "English League One", teams: ["Portsmouth", "Derby", "Bolton", "Peterborough", "Barnsley", "Oxford", "Lincoln", "Blackpool", "Stevenage", "Wycombe"] },
+  { id: "jleague", name: "Japan J1 League", teams: ["Vissel Kobe", "Yokohama FM", "Sanfrecce", "Kashima", "Machida", "Gamba Osaka", "Cerezo Osaka", "Urawa Reds", "FC Tokyo", "Nagoya"] },
 ];
 
 export function buildSeedDatabase(): Database {
@@ -57,7 +63,7 @@ export function buildSeedDatabase(): Database {
   let betSeq = 0;
 
   for (const league of LEAGUES) {
-    // 20 fixtures per league, oldest ~75 days ago, newest ~10 days ahead.
+    // 20 fixtures per league, oldest ~75 days ago, newest across the upcoming week.
     for (let i = 0; i < 20; i++) {
       const fixtureId = `${league.id}-${String(i + 1).padStart(2, "0")}`;
       const home = league.teams[(i * 7) % league.teams.length]!;
@@ -66,8 +72,11 @@ export function buildSeedDatabase(): Database {
 
       // Index 15+ are scheduled (future), the rest are finished.
       const finished = i < 15;
-      const daysAgo = finished ? 75 - i * 5 : -(i - 15) * 2;
-      const commenceTime = NOW - daysAgo * DAY;
+      // Distribute scheduled fixtures across upcoming days:
+      // index 15: today, 16: +1d (Tue), 17: +2d (Wed), 18: +3d (Thu/Fri), 19: +4d (Fri/Sat)
+      const daysAhead = (i - 15) * 1.2 + ((i * 3) % 2) * 0.5;
+      const daysAgo = finished ? 75 - i * 5 : -daysAhead;
+      const commenceTime = Math.floor(NOW - daysAgo * DAY);
 
       fixtures.push({
         id: fixtureId,

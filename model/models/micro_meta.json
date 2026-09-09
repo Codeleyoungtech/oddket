@@ -1,0 +1,148 @@
+{
+  "version": "micro-xgb-v1",
+  "source": "football-data.co.uk EPL/Bundesliga/LaLiga/SerieA 2019-2026 (historical.json)",
+  "feature_groups": [
+    "base",
+    "ou_odds",
+    "ew_form",
+    "rest"
+  ],
+  "features": [
+    "home_strength",
+    "away_strength",
+    "home_form",
+    "away_form",
+    "form_diff",
+    "home_adv",
+    "exp_home",
+    "exp_away",
+    "h2h_diff",
+    "home_sot",
+    "away_sot",
+    "sot_diff",
+    "home_tsr",
+    "away_tsr",
+    "tsr_diff",
+    "home_gd",
+    "away_gd",
+    "gd_diff",
+    "poi_h",
+    "poi_d",
+    "poi_a",
+    "poi_over",
+    "odd_over",
+    "odd_under",
+    "ew_home",
+    "ew_away",
+    "ew_diff",
+    "rest_home",
+    "rest_away",
+    "rest_diff",
+    "short_rest_home",
+    "short_rest_away"
+  ],
+  "n_train": 8097,
+  "n_test": 2025,
+  "holdout_range": "2025-02-06 -> 2026-05-24",
+  "markets": {
+    "ou15": {
+      "version": "micro-xgb-v1",
+      "label": "Over 1.5 goals",
+      "classes": [
+        "under",
+        "over"
+      ],
+      "baseRate": 0.7625,
+      "brier_raw": 0.1818,
+      "brier_calibrated": 0.1793,
+      "overall_positive_rate": 0.9951,
+      "overall_accuracy_at_0.5": 0.7585,
+      "hit_rate_at_threshold": {
+        "p>=0.65": {
+          "n": 1972,
+          "hitRate": 0.7642
+        },
+        "p>=0.70": {
+          "n": 1758,
+          "hitRate": 0.7742
+        },
+        "p>=0.75": {
+          "n": 1212,
+          "hitRate": 0.802
+        },
+        "p>=0.80": {
+          "n": 649,
+          "hitRate": 0.8197
+        }
+      },
+      "n_holdout": 2025,
+      "seed": 20260813
+    },
+    "team_home": {
+      "version": "micro-xgb-v1",
+      "label": "Home team to score (O0.5)",
+      "classes": [
+        "no",
+        "yes"
+      ],
+      "baseRate": 0.7649,
+      "brier_raw": 0.1733,
+      "brier_calibrated": 0.1725,
+      "overall_positive_rate": 0.998,
+      "overall_accuracy_at_0.5": 0.7659,
+      "hit_rate_at_threshold": {
+        "p>=0.65": {
+          "n": 1942,
+          "hitRate": 0.7745
+        },
+        "p>=0.70": {
+          "n": 1782,
+          "hitRate": 0.7856
+        },
+        "p>=0.75": {
+          "n": 1482,
+          "hitRate": 0.809
+        },
+        "p>=0.80": {
+          "n": 1002,
+          "hitRate": 0.8403
+        }
+      },
+      "n_holdout": 2025,
+      "seed": 20260813
+    },
+    "team_away": {
+      "version": "micro-xgb-v1",
+      "label": "Away team to score (O0.5)",
+      "classes": [
+        "no",
+        "yes"
+      ],
+      "baseRate": 0.7101,
+      "brier_raw": 0.1995,
+      "brier_calibrated": 0.1988,
+      "overall_positive_rate": 0.997,
+      "overall_accuracy_at_0.5": 0.7091,
+      "hit_rate_at_threshold": {
+        "p>=0.65": {
+          "n": 1393,
+          "hitRate": 0.7545
+        },
+        "p>=0.70": {
+          "n": 1085,
+          "hitRate": 0.7705
+        },
+        "p>=0.75": {
+          "n": 669,
+          "hitRate": 0.8072
+        },
+        "p>=0.80": {
+          "n": 261,
+          "hitRate": 0.8621
+        }
+      },
+      "n_holdout": 2025,
+      "seed": 20260813
+    }
+  }
+}

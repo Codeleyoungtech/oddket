@@ -63,13 +63,21 @@ jobs:
         working-directory: model
         run: python3 scripts/predict_corners_v5.py --fixtures data/fixtures.json --output data/corners_predictions.json
 
+      - name: Predict micro markets (O1.5 + team to score)
+        working-directory: model
+        run: python3 scripts/predict_micro.py --fixtures data/fixtures.json --output data/micro_predictions.json
+
+      - name: Derive double chance 12 (from h2h probabilities)
+        working-directory: model
+        run: python3 scripts/predict_dc12.py --fixtures data/fixtures.json --h2h output/predictions.json --output data/dc12_predictions.json
+
       - name: Push predictions to the worker
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}
           PREDICT_SECRET: ${{ secrets.PREDICT_SECRET }}
         run: |
-          for f in model/output/predictions.json model/output/predictions_ou.json; do
-            if [ -f "$f" ]; then
+          for f in model/output/predictions.json model/output/predictions_ou.json model/data/micro_predictions.json model/data/dc12_predictions.json; do
+            if [ -f "$f" ] && [ -s "$f" ]; then
               curl -sS -m 60 -X POST "$WORKER_URL/api/predictions/ingest" \
                 -H "Content-Type: application/json" \
                 -H "x-predict-key: $PREDICT_SECRET" \

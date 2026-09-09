@@ -12,6 +12,10 @@ const MARKET_OPTIONS = [
   { value: "h2h", label: "Match result (1X2)" },
   { value: "totals", label: "Over/Under 2.5" },
   { value: "btts", label: "Both teams to score" },
+  { value: "dc12", label: "Double chance 12 (no draw)" },
+  { value: "ou15", label: "Over/Under 1.5 goals" },
+  { value: "team_home_goals", label: "Home team to score" },
+  { value: "team_away_goals", label: "Away team to score" },
 ] as const;
 
 // Must match the seed LEAGUES names in packages/core/src/seed.ts and the

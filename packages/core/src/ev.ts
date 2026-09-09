@@ -24,6 +24,12 @@ import { stopLossViolation, suggestedStake } from "./kelly";
  */
 export const STRATEGY_MAX_ODDS: Partial<Record<Market, number>> = {
   totals: 1.95,
+  // O1.5/team-goal picks are short-priced by construction (the model only
+  // flags them at 70%+), so a tight band keeps the longshot-bleed out.
+  ou15: 1.75,
+  team_home_goals: 1.60,
+  team_away_goals: 1.60,
+  dc12: 1.60,
 };
 
 export const STRATEGY_MAX_ODDS_BY_SELECTION: Partial<Record<Market, Partial<Record<Selection, number>>>> = {
@@ -93,6 +99,11 @@ export function requiredSelectionsForMarket(market: Market, fixture?: Fixture): 
   }
   if (market === "totals") return ["over", "under"];
   if (market === "btts") return ["yes", "no"];
+  if (market === "ou15") return ["over", "under"];
+  if (market === "team_home_goals" || market === "team_away_goals") return ["yes", "no"];
+  // DC12 has no dedicated odds feed: bookmakers construct it from their own
+  // 1X2 book, so the required odds come from the SAME fixture's h2h market.
+  if (market === "dc12") return ["home", "draw", "away"];
   return [];
 }
 
@@ -190,14 +201,19 @@ export function flagSlips(
     const fixtureOdds = snapshots.filter((s) => s.fixtureId === fixture.id);
     for (const pred of predictions.filter((p) => p.fixtureId === fixture.id)) {
       if (settings.markets.length > 0 && !settings.markets.includes(pred.market)) continue;
-      const marketOdds = fixtureOdds.filter((s) => s.market === pred.market);
+      // DC12 has no dedicated odds feed — bookmakers construct it from their
+      // own 1X2 book, so the EV comparison uses the SAME fixture's h2h odds.
+      const oddsMarket = pred.market === "dc12" ? "h2h" : pred.market;
+      const marketOdds = fixtureOdds.filter((s) => s.market === oddsMarket);
 
       // ── Bookmaker-depth gate ─────────────────────────────────────────
       // Count unique bookmakers quoting THIS selection.  Edges backed by
       // only 1–2 books are likely stale data or a single-book margin quirk,
       // not real value.  The Odds API returns 15–24 books per EPL fixture,
       // so ≥4 is easily met for live data and only rejects stale rows.
-      const selSnapshots = marketOdds.filter((s) => s.selection === pred.selection);
+      const selSnapshots = pred.market === "dc12"
+        ? marketOdds.filter((s) => s.selection === "home" || s.selection === "away")
+        : marketOdds.filter((s) => s.selection === pred.selection);
       const uniqueBooks = new Set(selSnapshots.map((s) => s.bookmaker));
       if (uniqueBooks.size < minBooks) continue;
 
@@ -218,16 +234,26 @@ export function flagSlips(
       // counts as a separate market outcome and implied collapses to ~0.
       const bestPerSel = bestOddsBySelection(marketOdds, pred.market);
       if (!hasCompleteMarketOdds(bestPerSel, pred.market, fixture)) continue;
-      const implied = marginAdjustedImplied(
-        [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
-        pred.selection,
-      );
+
+      let implied: number;
+      let odds: number;
+      if (pred.market === "dc12") {
+        // P12 = margin-adjusted P(home) + P(away) from the h2h market.
+        const h2h = [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds }));
+        implied = marginAdjustedImplied(h2h, "home") + marginAdjustedImplied(h2h, "away");
+        // Fair DC12 price from the book's own 1X2 book (no extra margin).
+        odds = implied > 0 ? 1 / implied : 0;
+      } else {
+        implied = marginAdjustedImplied(
+          [...bestPerSel.entries()].map(([selection, odds]) => ({ selection, odds })),
+          pred.selection,
+        );
+        odds = bestPerSel.get(pred.selection) ?? bestOddsFor(fixtureOdds, fixture.id, pred.market, pred.selection)?.odds ?? 0;
+      }
       if (implied <= 0) continue;
       const edge = pred.probability - implied;
       if (edge < threshold) continue;
       if (pred.probability < minProb || pred.probability > maxProb) continue;
-
-      const odds = bestPerSel.get(pred.selection) ?? bestOddsFor(fixtureOdds, fixture.id, pred.market, pred.selection)?.odds ?? 0;
       if (odds <= 1) continue;
       const maxOdds = opts.maxOdds ?? strategyMaxOddsFor(pred.market, pred.selection);
       if (maxOdds > 0 && odds > maxOdds) continue;

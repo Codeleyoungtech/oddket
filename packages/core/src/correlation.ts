@@ -71,6 +71,14 @@ export function marketLabel(market: Market, selection: Selection): string {
       return selection === "over" ? "Over 2.5 goals" : "Under 2.5 goals";
     case "btts":
       return selection === "yes" ? "Both teams to score — Yes" : "Both teams to score — No";
+    case "dc12":
+      return selection === "12" ? "Double chance — Home or Away (no draw)" : "Double chance";
+    case "ou15":
+      return selection === "over" ? "Over 1.5 goals" : "Under 1.5 goals";
+    case "team_home_goals":
+      return selection === "yes" ? "Home team to score — Yes" : "Home team to score — No";
+    case "team_away_goals":
+      return selection === "yes" ? "Away team to score — Yes" : "Away team to score — No";
     case "spreads":
       return `${selection === "home" ? "Home" : "Away"} handicap`;
     default:

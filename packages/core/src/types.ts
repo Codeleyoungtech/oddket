@@ -65,8 +65,8 @@ export const TENNIS_SPORTS: Record<string, string> = {
 /** Tennis surface (for surface-specific ratings/features). */
 export type TennisSurface = "hard" | "clay" | "grass" | "carpet";
 
-export type Market = "h2h" | "totals" | "btts" | "spreads";
-export type Selection = "home" | "draw" | "away" | "over" | "under" | "yes" | "no";
+export type Market = "h2h" | "totals" | "btts" | "spreads" | "dc12" | "ou15" | "team_home_goals" | "team_away_goals";
+export type Selection = "home" | "draw" | "away" | "over" | "under" | "yes" | "no" | "12";
 export type FixtureStatus = "scheduled" | "live" | "finished";
 export type BetStatus = "pending" | "won" | "lost" | "void";
 export type BetSource = "model" | "manual";

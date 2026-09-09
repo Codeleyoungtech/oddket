@@ -24,6 +24,17 @@ export function selectionWon(market: Market, selection: Selection, home: number,
       const goals = home + away;
       return selection === "over" ? goals > 2 : goals <= 2;
     }
+    case "ou15": {
+      const goals = home + away;
+      return selection === "over" ? goals > 1.5 : goals <= 1.5;
+    }
+    case "team_home_goals":
+      return selection === "yes" ? home > 0 : home === 0;
+    case "team_away_goals":
+      return selection === "yes" ? away > 0 : away === 0;
+    case "dc12":
+      // Double chance 12 = home OR away wins (no draw).
+      return selection === "12" ? home !== away : false;
     case "btts":
       return selection === "yes" ? home > 0 && away > 0 : !(home > 0 && away > 0);
     case "spreads":

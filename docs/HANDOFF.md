@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 13 — **MICRO MARKETS LIVE** (O1.5 / Team To Score / Double Chance 12 — three new markets, all clearing the 70% hit-rate gate, deployed end-to-end).
+**Last updated:** Pass 14 — **EV ENGINE FIX** (DC12 + model-only predictions surfaced in Show All, D1 settings restored to 12 leagues + 4-book gate).
 
 ---
 
@@ -44,6 +44,49 @@ book to be priced; incomplete books are skipped.
   Like corners, the user can compare against their bookmaker manually.
 - `team_away` has the lowest base rate (71%) — away teams score less — so it
   flags fewer picks at p≥0.70. That's the honest market, not a bug.
+
+---
+
+## 14. EV engine fix — DC12 + model-only predictions (Pass 14)
+
+Fixed `allPredictionsAsLegs` in `ev.ts` so the "Show All" view on the slips
+page actually surfaces DC12 and the three model-only markets (ou15,
+team_home_goals, team_away_goals).
+
+### What was broken
+
+- `allPredictionsAsLegs` silently dropped ou15/team_home_goals/team_away_goals
+  because these markets have NO bookmaker odds in The Odds API bulk feed —
+  `marketOdds.length === 0` caused an early `continue`.
+- DC12 was missing from "Show All" because `allPredictionsAsLegs` had no h2h
+  odds derivation logic (unlike `flagSlips` which already handled it).
+
+### What was fixed
+
+- **DC12 in Show All:** derived from h2h market odds (same as flagSlips).
+- **Model-only markets:** ou15/team_home_goals/team_away_goals now appear with
+  an amber "📊 Model Only" badge, no odds/stake UI, non-selectable for
+  multiples. The user compares the model probability against their bookmaker's
+  line manually.
+- **D1 settings:** all 12 leagues restored (League Two + Turkish Super Lig
+  were missing), minBookmakers=4 restored, all 6 markets enabled.
+- **Worker deployed** with the fixed EV engine.
+
+### What DC12 looks like on slips
+
+```
+Cambridge United vs Reading — No Draw (DC12)
+  🟢 +3.7% EV  |  Win Prob: 75.6% (68%–83% CI)
+  @1.39  ₦329   [Log Bet]
+```
+
+### What model-only predictions look like in Show All
+
+```
+Arsenal vs Chelsea — Over 1.5 Goals
+  📊 Model Only  |  Win Prob: 85.2% (79%–91% CI)
+  [Check bookmaker]    ← no Log Bet button
+```
 
 ---
 

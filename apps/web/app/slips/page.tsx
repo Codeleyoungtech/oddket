@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   buildMultiple,
   checkLegIndependence,
@@ -44,12 +44,17 @@ export default function SlipsPage() {
   const [loggingParlay, setLoggingParlay] = useState<string | null>(null);
   const [parlayError, setParlayError] = useState<string | null>(null);
   const [loggedParlays, setLoggedParlays] = useState<Set<string>>(new Set());
-  // Share-as-image + Telegram state.
+  // Share-as-image + Telegram state. `legs`/`combined` record WHAT the rendered
+  // image represents, so sharing a suggested accumulator doesn't fall back to
+  // describing whatever happens to be selected in the manual builder.
   const [shareState, setShareState] = useState<{
     status: "idle" | "generating" | "ready" | "sending" | "sent" | "error";
     imageUrl?: string;
     error?: string;
+    legs?: SlipLeg[];
+    combined?: { odds: number; probability: number; fairOdds: number } | null;
   }>({ status: "idle" });
+  const sharePanelRef = useRef<HTMLDivElement | null>(null);
 
   // When showAll is on, use allPredictions instead of flagged slips.
   const activeLegs = showAll ? allPredictions : slips;
@@ -275,20 +280,32 @@ export default function SlipsPage() {
     return displayStake(leg.stake).amount;
   };
 
-  /** Plain-text version of the slip — used by Copy, share, and Telegram. */
-  const slipText = (): string => {
-    const lines = selectedLegs.map(
+  /** Combined-stats shape carried by a share (manual builder or a suggestion). */
+  type ShareCombined = { odds: number; probability: number; fairOdds: number };
+
+  /** The stats for whatever is currently selected in the manual builder. */
+  const selectionCombined: ShareCombined | null = multiple
+    ? { odds: multiple.advertisedOdds, probability: multiple.compoundProbability, fairOdds: multiple.compoundFairOdds }
+    : null;
+
+  /** Legs + stats the in-flight share refers to (falls back to the selection). */
+  const shareLegs = shareState.legs ?? selectedLegs;
+  const shareCombined = shareState.combined !== undefined ? shareState.combined : selectionCombined;
+
+  /** Plain-text version of a slip — used by Copy, share, and Telegram. */
+  const slipTextFor = (legs: SlipLeg[], combined: ShareCombined | null): string => {
+    const lines = legs.map(
       (l, i) =>
         `${i + 1}. ${l.fixture.homeTeam} vs ${l.fixture.awayTeam} — ${marketLabel(l.market, l.selection)} @ ${fmtOdds(l.odds)} (stake ₦${fmtMoney(stakeFor(l), 0)})`,
     );
-    const combined = multiple
-      ? `\nCombined ${multiple.advertisedOdds.toFixed(2)}x | true prob ${fmtPct(multiple.compoundProbability)} | fair odds ${multiple.compoundFairOdds.toFixed(2)}x`
+    const combinedLine = combined
+      ? `\nCombined ${combined.odds.toFixed(2)}x | true prob ${fmtPct(combined.probability)} | fair odds ${combined.fairOdds.toFixed(2)}x`
       : "";
-    return `OddKet slip — ${selectedLegs.length} leg${selectedLegs.length > 1 ? "s" : ""}\n${lines.join("\n")}${combined}\n\nPlace manually in SportyBet. No auto-betting.`;
+    return `OddKet slip — ${legs.length} leg${legs.length > 1 ? "s" : ""}\n${lines.join("\n")}${combinedLine}\n\nPlace manually in SportyBet. No auto-betting.`;
   };
 
   const copySlip = async () => {
-    const text = slipText();
+    const text = slipTextFor(selectedLegs, selectionCombined);
     try {
       await navigator.clipboard.writeText(text);
     } catch {
@@ -297,23 +314,32 @@ export default function SlipsPage() {
     }
   };
 
-  /** Render the slip to a PNG (client-side) and reveal the share panel. */
-  const openShare = async () => {
-    if (selectedLegs.length === 0) return;
+  /**
+   * Render a slip to a PNG (client-side) and reveal the share panel.
+   * Call with no args to share the manual builder selection, or with a
+   * suggested accumulator's legs + stats to share that ticket directly.
+   */
+  const openShare = async (legsArg?: SlipLeg[], combinedArg?: ShareCombined | null) => {
+    const legs = legsArg ?? selectedLegs;
+    if (legs.length === 0) return;
     setShareState({ status: "generating" });
     try {
       const stakes: Record<string, number> = {};
-      selectedLegs.forEach((l) => {
+      legs.forEach((l) => {
         stakes[legKey(l)] = stakeFor(l);
       });
+      const combined = combinedArg !== undefined ? combinedArg : selectionCombined;
       const imageUrl = await renderSlipImage({
-        legs: selectedLegs,
+        legs,
         stakes,
-        combinedOdds: multiple?.advertisedOdds ?? null,
-        combinedProbability: multiple?.compoundProbability ?? null,
-        combinedFairOdds: multiple?.compoundFairOdds ?? null,
+        combinedOdds: combined?.odds ?? null,
+        combinedProbability: combined?.probability ?? null,
+        combinedFairOdds: combined?.fairOdds ?? null,
       });
-      setShareState({ status: "ready", imageUrl });
+      setShareState({ status: "ready", imageUrl, legs, combined });
+      // The panel sits lower in the builder than the suggestion cards, so pull
+      // it into view when the share was started from a suggestion.
+      requestAnimationFrame(() => sharePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
     } catch (err) {
       setShareState({ status: "error", error: err instanceof Error ? err.message : "Couldn't render the slip image." });
     }
@@ -333,7 +359,7 @@ export default function SlipsPage() {
     if (!shareState.imageUrl) return;
     setShareState((s) => ({ ...s, status: "sending" }));
     try {
-      await api.telegramShare({ text: slipText(), imageDataUrl: shareState.imageUrl });
+      await api.telegramShare({ text: slipTextFor(shareLegs, shareCombined), imageDataUrl: shareState.imageUrl });
       setShareState((s) => ({ ...s, status: "sent" }));
     } catch (err) {
       setShareState({
@@ -352,9 +378,9 @@ export default function SlipsPage() {
       const file = new File([blob], "oddket-slip.png", { type: "image/png" });
       const nav = navigator as Navigator & { canShare?: (d: unknown) => boolean };
       if (nav.canShare?.({ files: [file] })) {
-        await navigator.share({ text: slipText(), files: [file] });
+        await navigator.share({ text: slipTextFor(shareLegs, shareCombined), files: [file] });
       } else {
-        await navigator.share({ text: slipText() });
+        await navigator.share({ text: slipTextFor(shareLegs, shareCombined) });
       }
     } catch {
       // user dismissed or share unsupported — fall back to Telegram + download
@@ -734,26 +760,43 @@ export default function SlipsPage() {
                                 ⚠ {w}
                               </p>
                             ))}
-                            <button
-                              onClick={() => void handleLogParlay(s)}
-                              disabled={done || loggingParlay === key}
-                              className={`w-full rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
-                                done
-                                  ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
-                                  : "border-emerald-400/40 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
-                              }`}
-                            >
-                              {loggingParlay === key ? (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-300/40 border-t-emerald-300" />
-                                  Logging…
-                                </span>
-                              ) : done ? (
-                                "✓ Parlay logged"
-                              ) : (
-                                `Log parlay · ₦${fmtMoney(Math.max(MIN_STAKE, Math.round(s.stake)), 0)}`
-                              )}
-                            </button>
+                            <div className="grid grid-cols-[1fr_auto] gap-2">
+                              <button
+                                onClick={() => void handleLogParlay(s)}
+                                disabled={done || loggingParlay === key}
+                                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-wait ${
+                                  done
+                                    ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                                    : "border-emerald-400/40 bg-emerald-400/10 text-emerald-300 hover:bg-emerald-400/20"
+                                }`}
+                              >
+                                {loggingParlay === key ? (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-emerald-300/40 border-t-emerald-300" />
+                                    Logging…
+                                  </span>
+                                ) : done ? (
+                                  "✓ Parlay logged"
+                                ) : (
+                                  `Log parlay · ₦${fmtMoney(Math.max(MIN_STAKE, Math.round(s.stake)), 0)}`
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void openShare(s.legs, {
+                                    odds: s.combinedOdds,
+                                    probability: s.combinedProbability,
+                                    fairOdds: s.fairOdds,
+                                  })
+                                }
+                                disabled={shareState.status === "generating"}
+                                title="Render this ticket as an image to save or send"
+                                className="rounded-lg border border-ink-600 bg-ink-800/60 px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors hover:border-ink-500 hover:text-slate-100 disabled:cursor-wait"
+                              >
+                                📤 Share
+                              </button>
+                            </div>
                           </li>
                         );
                       })}
@@ -866,7 +909,7 @@ export default function SlipsPage() {
                       : "📤 Share slip"}
                 </button>
                 {shareState.status === "ready" || shareState.status === "sent" ? (
-                  <div className="space-y-2 rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
+                  <div ref={sharePanelRef} className="space-y-2 rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
                     {shareState.imageUrl && (
                       <img
                         src={shareState.imageUrl}

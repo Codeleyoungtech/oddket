@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 19 — **Telegram bot** (@oddketbot): commands, button menu, daily digest + settlement alerts, deployed with the webhook registered and the owner's chat subscribed.
+**Last updated:** Pass 20 — **PREDICT_SECRET rotated** (the literal committed in this doc was leaked) and **share-as-image extended to suggested accumulators**.
 
 ---
 
@@ -347,15 +347,57 @@ returns secret values.
   which also proves the webhook → worker → D1 path works end to end.
 - Typecheck green, e2e **104/104** passing.
 
-### ⚠️ Known gotcha found during this pass
+### ⚠️ Gotcha found + resolved during this pass
 
-**The `PREDICT_SECRET` value recorded in section 13 of this doc is STALE.**
-`POST /api/telegram/setup` with it returns `{"ok":false,"error":"Unauthorized."}`.
-The live value is the one shared with GitHub Actions (`gh secret list`), which is
-why the scheduled crons still authenticate fine. The webhook was therefore
-registered directly against the Bot API instead. **Do not trust the literal
-secret in this doc** — verify with GitHub/Cloudflare before relying on it, and
-treat any committed secret as burned.
+**The `PREDICT_SECRET` literal recorded in section 13 was STALE**, so
+`POST /api/telegram/setup` returned `{"ok":false,"error":"Unauthorized."}` and the
+webhook had to be registered directly against the Bot API.
+
+Diagnosis: GitHub Actions held the *correct* (Sep 9) value while the doc and the
+doc-derived attempts used the old one — which is why the scheduled crons kept
+authenticating fine and only the doc-led path failed.
+
+**Resolved Sep 10, 2026:** `PREDICT_SECRET` rotated to a fresh value, set
+identically on Cloudflare and GitHub Actions, and the stale literal removed from
+this doc. Verified: old value → `401`, new value → `200`, webhook healthy.
+**Never record the value here again** — see section 13 for the rotation command.
+
+---
+
+## 20. Pass 20 — secret rotation + share from suggested accumulators
+
+### PREDICT_SECRET rotated (Sep 10, 2026)
+
+The value committed in this doc (`odk85c6…`) was **leaked by being in the repo**.
+Rotated to a fresh `odk…` value, set identically on the Cloudflare Worker and
+GitHub Actions. Verified: old value → `401`, new value → `200`. The literal was
+removed from section 13 — that section now documents *where* the secret lives
+and the exact rotation command instead of its value.
+
+**Leak audit result:** `docs/HANDOFF.md` was the only tracked file containing a
+secret-shaped literal. `.gitignore` already covers `.dev.vars`, `.env`,
+`.env.local` and `.env.*.local`; no env files are tracked.
+
+### Share any accumulator as an image
+
+`/slips` previously let you share the **manual builder** selection only — each
+*suggested* accumulator had a single "Log parlay" button, so the only way to
+share a suggested tier was to hand-pick all of its legs back into the builder.
+
+- Each suggestion card now has **📤 Share** beside "Log parlay".
+- `openShare(legs?, combined?)` is parameterised: no args shares the manual
+  selection, passing legs+stats shares that exact ticket.
+- `shareState` now records the `legs` + `combined` it rendered, so the copy
+  text, Telegram caption, and native share sheet all describe the ticket that
+  was actually rendered rather than the builder's current selection.
+- The share panel auto-scrolls into view (it sits lower in the builder than
+  the suggestion cards).
+
+### Verification (Pass 20)
+
+- web typecheck + production build green
+- worker e2e **104/104** passing
+- rotation verified against the live worker (401 old / 200 new)
 
 ---
 
@@ -747,9 +789,21 @@ same code in production (see `wrangler.toml`).
 - `GET /api/corners` — returns all corner predictions with line probs (no auth)
 - `POST /api/corners/ingest` — ingests `{fixtureId, homeCorners, awayCorners}` (requires PREDICT_SECRET)
 
-**PREDICT_SECRET:** `odk85c609b40dd43f4504b2a62b8913ac0e7e4fa3e` (Cloudflare + GitHub Actions)
+**PREDICT_SECRET:** value is **deliberately not recorded here.** It lives in exactly two
+places — the Cloudflare Worker (`wrangler secret list`) and GitHub Actions
+(`gh secret list`) — and the two must match. Format: `odk` + 40 hex chars.
 
-**Secret:** PREDICT_SECRET starts with `odk` — stored in both Cloudflare Worker secrets and GitHub Actions secrets.
+> **Why no literal:** a secret written into a tracked file is effectively burned —
+> anyone with repo read access can drive `/api/predictions/ingest`, `/api/settle`,
+> and the manual cron triggers. The value previously recorded in this doc leaked
+> and was rotated on **Sep 10, 2026**. Rotate again with:
+> ```bash
+> NEW="odk$(openssl rand -hex 20)"
+> echo "$NEW" | (cd worker && npx wrangler secret put PREDICT_SECRET)
+> gh secret set PREDICT_SECRET --body "$NEW"
+> ```
+> Then re-register the Telegram webhook (`POST /api/telegram/setup`) since that
+> route is gated by this secret.
 
 **Gaps / future work:**
 - Deep injury history (only starting-XI confirmation available via API-Football free tier)

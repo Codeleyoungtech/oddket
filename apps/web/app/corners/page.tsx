@@ -216,7 +216,7 @@ const LEAGUE_GOLDMINES: Record<string, { badge: string; note: string; color: str
 export default function CornersPage() {
   const { cornerPredictions, db, mode } = useData();
   const fixtures = db?.fixtures ?? [];
-  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "tomorrow" | "week">("all");
+  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "tomorrow" | "week" | "past">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
 
   // Build fixture groups from predictions
@@ -255,7 +255,8 @@ export default function CornersPage() {
     [fixtureGroups],
   );
 
-  // Filtered groups
+  // Filtered groups — finished matches are hidden from the normal views and
+  // only shown under "Past" (with their final score from the outcome table).
   const nowSec = Math.floor(Date.now() / 1000);
   const filtered = useMemo(() => {
     const startOfToday = (t: number) => {
@@ -265,8 +266,12 @@ export default function CornersPage() {
     };
     const today = startOfToday(nowSec);
     const weekEnd = today + 7 * 86400;
+    const outcomeByFixture = new Map((db?.outcomes ?? []).map((o) => [o.fixtureId, o]));
     return fixtureGroups
       .filter((g) => {
+        const isFinished = g.fixture.status === "finished" || outcomeByFixture.has(g.fixture.id);
+        if (timeFilter === "past") return isFinished; // past = settled matches only
+        if (isFinished) return false; // finished matches never show in upcoming views
         const t = g.fixture.commenceTime;
         if (timeFilter === "today" && t > 0 && (t < today || t >= today + 86400)) return false;
         if (timeFilter === "tomorrow" && t > 0 && (t < today + 86400 || t >= today + 2 * 86400)) return false;
@@ -275,7 +280,7 @@ export default function CornersPage() {
         return true;
       })
       .sort((a, b) => a.fixture.commenceTime - b.fixture.commenceTime);
-  }, [fixtureGroups, timeFilter, leagueFilter, nowSec]);
+  }, [fixtureGroups, timeFilter, leagueFilter, nowSec, db]);
 
   if (mode === "loading") return <Loading />;
   if (!cornerPredictions?.length) {
@@ -312,6 +317,7 @@ export default function CornersPage() {
               ["today", "Today"],
               ["tomorrow", "Tomorrow"],
               ["week", "This Week"],
+              ["past", "Past ✓"],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -359,6 +365,10 @@ export default function CornersPage() {
       {/* Fixture cards */}
       <div className="grid gap-3">
         {filtered.map(({ fixture, home, away }) => {
+          const outcome = (db?.outcomes ?? []).find((o) => o.fixtureId === fixture.id);
+          const isFinished = fixture.status === "finished" || !!outcome;
+          const homeScore = outcome?.homeScore ?? fixture.homeScore;
+          const awayScore = outcome?.awayScore ?? fixture.awayScore;
           const totalExpectedNum = (home.predictedCorners || 0) + (away.predictedCorners || 0);
           const totalExpected = totalExpectedNum.toFixed(1);
 
@@ -402,8 +412,23 @@ export default function CornersPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-zinc-100 text-sm truncate">
-                        {fixture.homeTeam} <span className="text-zinc-500 font-normal">vs</span> {fixture.awayTeam}
+                        {isFinished && homeScore !== undefined ? (
+                          <>
+                            {fixture.homeTeam}{" "}
+                            <span className="text-emerald-400 font-bold">{homeScore}–{awayScore}</span>{" "}
+                            {fixture.awayTeam}
+                          </>
+                        ) : (
+                          <>
+                            {fixture.homeTeam} <span className="text-zinc-500 font-normal">vs</span> {fixture.awayTeam}
+                          </>
+                        )}
                       </h3>
+                      {isFinished && (
+                        <span className="inline-flex items-center rounded border border-zinc-600/60 bg-zinc-800/60 px-1.5 py-0.5 text-[9px] font-bold text-zinc-400">
+                          FT
+                        </span>
+                      )}
                       {goldmine && (
                         <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold ${goldmine.color}`}>
                           {goldmine.badge}
@@ -411,7 +436,7 @@ export default function CornersPage() {
                       )}
                     </div>
                     <p className="text-[11px] text-zinc-500 mt-1">
-                      {fixture.league}{fixture.commenceTime > 0 ? ` · ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
+                      {fixture.league}{isFinished ? " · Finished" : fixture.commenceTime > 0 ? ` · ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
                     </p>
                     {goldmine && (
                       <p className="mt-1 text-[10px] text-zinc-500">{goldmine.note}</p>

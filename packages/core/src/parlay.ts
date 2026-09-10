@@ -1,5 +1,4 @@
-import type { BetStatus, Outcome, Parlay, ParlayLeg, Settings } from "./types";
-import { checkLegIndependence, legRefs } from "./correlation";
+import type { BetStatus, Fixture, Outcome, Parlay, ParlayLeg, Settings } from "./types";
 import type { SlipLeg } from "./ev";
 import { clamp01, round } from "./math";
 import { suggestedStake } from "./kelly";
@@ -66,6 +65,48 @@ const TIERS: Array<{ tier: ParlayTier; label: string; minLegs: number; maxLegs: 
   { tier: "risky", label: "Risky accumulator · 9–20 legs", minLegs: 9, maxLegs: 20, minProb: 0.50 },
 ];
 
+/** Kickoff correlation window — matches in the same league kicking off within
+ *  ~4h of each other share context (scheduling pressure, table stakes) and are
+ *  treated as one "window" for the same-league constraint. */
+const KICKOFF_WINDOW = 4 * 3600;
+
+/** A (league, kickoff-window) bucket key. */
+function kickoffWindowKey(f: Fixture): string {
+  return `${f.league}:${Math.floor(f.commenceTime / KICKOFF_WINDOW)}`;
+}
+
+/**
+ * Tier-aware correlation gate for the greedy picker.
+ *
+ * Same-Match (STRICT, all tiers): two legs from the exact same fixture are
+ * never allowed — they share outcome space and can directly conflict (e.g.
+ * Home Win + Away Win on one ticket).
+ *
+ * Same-League + Same-Kickoff (DYNAMIC BY TIER):
+ *   🟢 safe     — max 1 match per league per kickoff window
+ *   🟡 balanced — max 2 matches per league per kickoff window
+ *   🔴 risky    — constraint disabled (the pool needs freedom to reach 20 legs)
+ *
+ * Because same-match is already blocked above, counting legs in a window is
+ * exactly counting distinct matches in it.
+ */
+function canAddLeg(leg: SlipLeg, chosen: SlipLeg[], tier: ParlayTier): boolean {
+  for (const c of chosen) {
+    if (c.fixture.id === leg.fixture.id) return false; // same match — always strict
+  }
+  const maxPerWindow = tier === "safe" ? 1 : tier === "balanced" ? 2 : Infinity;
+  if (!Number.isFinite(maxPerWindow)) return true; // risky: no league/window restriction
+  const key = kickoffWindowKey(leg.fixture);
+  let sameWindow = 0;
+  for (const c of chosen) {
+    if (kickoffWindowKey(c.fixture) === key) {
+      sameWindow++;
+      if (sameWindow >= maxPerWindow) return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Auto-suggest rule-compliant parlays from the flagged singles pool.
  *
@@ -74,8 +115,9 @@ const TIERS: Array<{ tier: ParlayTier; label: string; minLegs: number; maxLegs: 
  *    (not by EV — EV-chasing floats longshots to the top and produces
  *    parlays that mathematically never land);
  *  - for each tier (safe 2–4 / balanced 5–8 / risky 9–20 legs) it greedily
- *    takes the next highest-probability leg that is still independent of the
- *    picks so far (no same-match legs, no same-league same-kickoff legs);
+ *    takes the next highest-probability leg that passes the tier's correlation
+ *    gate — never same-match; same-league same-kickoff limited to 1 (safe) / 2
+ *    (balanced) matches per window, and unlimited for risky;
  *  - legs below the tier's minimum probability are skipped — a 20-leg
  *    accumulator built from 50%+ legs is the "risky but live" profile;
  *  - one suggestion per tier, ranked by combined probability (chance of
@@ -99,10 +141,10 @@ export function suggestParlays(
     for (const leg of pool) {
       if (leg.probability < tier.minProb) continue;
       if (chosen.length >= tier.maxLegs) break;
-      // Independence is checked incrementally — same-match and same-kickoff
-      // legs are skipped, so the greedy run never builds a correlated stack.
-      const probe = checkLegIndependence(legRefs([...chosen, leg]));
-      if (!probe.independent) continue;
+      // Correlation is checked incrementally with the tier's own rule — the
+      // greedy run never builds a same-match stack, and same-league windows
+      // stay within the tier's limit (or are unlimited for risky).
+      if (!canAddLeg(leg, chosen, tier.tier)) continue;
       chosen.push(leg);
     }
     if (chosen.length < tier.minLegs) continue; // not enough eligible legs for this tier

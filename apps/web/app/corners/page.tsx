@@ -66,8 +66,11 @@ function LineStrip({ items }: { items: Array<{ label: string; prob: number }> })
   );
 }
 
-/** One team's row in the fixture card — full-width, mobile-first. */
-function TeamColumn({
+/** One team's compact row in the fixture card — mobile-first: chip + name +
+ *  predicted corners on a single line, then range + best-line pill. The full
+ *  line strip is hidden on phones (the best pill already surfaces the pick)
+ *  and shows on sm+ where there's room. */
+function TeamRow({
   pred,
   lines,
   sideLabel,
@@ -105,34 +108,34 @@ function TeamColumn({
   }, [pred, lines, low, high]);
 
   return (
-    <div className="space-y-2 rounded-xl border border-zinc-800/70 bg-zinc-900/30 p-3">
+    <div className="min-w-0 rounded-lg border border-zinc-800/70 bg-zinc-900/30 p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-            sideLabel === "Home" ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20" : "bg-sky-400/10 text-sky-400 border border-sky-400/20"
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+            sideLabel === "Home" ? "bg-emerald-400/10 text-emerald-400" : "bg-sky-400/10 text-sky-400"
           }`}>
             {sideLabel}
           </span>
-          <span className="text-sm font-semibold text-zinc-100 truncate">{pred.team}</span>
+          <span className="truncate text-[13px] font-semibold text-zinc-100">{pred.team}</span>
         </div>
-        <div className="flex items-baseline gap-1.5 shrink-0">
-          <span className="text-xl font-bold text-zinc-100 tabular-nums">
-            {(pred.predictedCorners ?? 0).toFixed(1)}
-          </span>
-          <span className="text-[10px] text-zinc-500">corners</span>
-        </div>
+        <span className="shrink-0 text-lg font-bold tabular-nums leading-none text-zinc-100">
+          {(pred.predictedCorners ?? 0).toFixed(1)}
+          <span className="ml-1 text-[9px] font-normal text-zinc-500">ck</span>
+        </span>
       </div>
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[10px] text-zinc-500">
-          80% range <span className="text-zinc-400 font-medium">{low}–{high}</span>
-        </div>
+      <div className="mt-1.5 flex items-center justify-between gap-2">
+        <span className="text-[10px] text-zinc-500">
+          80% <span className="text-zinc-400 font-medium">{low}–{high}</span>
+        </span>
         {best && best.probability >= 0.65 && (
-          <span className="shrink-0 rounded-md bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
-            Best: {best.over ? "O" : "U"}{best.line} · {(best.probability * 100).toFixed(0)}%
+          <span className="shrink-0 rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+            Best {best.over ? "O" : "U"}{best.line} · {(best.probability * 100).toFixed(0)}%
           </span>
         )}
       </div>
-      <LineStrip items={[...lineOrder].map((k) => ({ label: k, prob: lines[k] ?? 0 }))} />
+      <div className="hidden sm:block">
+        <LineStrip items={[...lineOrder].map((k) => ({ label: k, prob: lines[k] ?? 0 }))} />
+      </div>
     </div>
   );
 }
@@ -436,8 +439,8 @@ export default function CornersPage() {
           const goldmine = LEAGUE_GOLDMINES[fixture.league];
 
           return (
-            <Card key={fixture.id}>
-              <div className="p-2.5 sm:p-4">
+            <Card key={fixture.id} className="min-w-0 overflow-hidden">
+              <div className="p-3 sm:p-4">
                 {/* Match header — compact on mobile */}
                 <div className="mb-2.5 flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -483,13 +486,13 @@ export default function CornersPage() {
                 </div>
 
                 {/* Team rows — full-width, stack on mobile, side-by-side on sm+ */}
-                <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
-                  <TeamColumn
+                <div className="grid gap-2 sm:grid-cols-2 sm:gap-2.5">
+                  <TeamRow
                     pred={home}
                     lines={homeLines}
                     sideLabel="Home"
                   />
-                  <TeamColumn
+                  <TeamRow
                     pred={away}
                     lines={awayLines}
                     sideLabel="Away"

@@ -137,19 +137,20 @@ export function suggestParlays(
 
   const suggestions: ParlaySuggestion[] = [];
   for (const tier of TIERS) {
-    // Generate multiple alternative parlays per tier by iteratively excluding
-    // previously chosen legs, forcing the greedy picker to find different
-    // high-probability combos.
-    const perTierCount = tier.tier === "risky" ? 1 : 2;
+    // Generate up to 3 ALTERNATIVE parlays per tier. Each pass skips the top
+    // `pass` eligible legs, so pass 0 builds the best combo, pass 1 the
+    // second-best, pass 2 the third — genuinely different tickets instead of
+    // near-duplicates of the same one.
+    const perTierCount = tier.tier === "risky" ? 1 : 3;
     const usedLegKeys = new Set<string>();
+    const eligible = pool.filter((l) => l.probability >= tier.minProb);
 
     for (let pass = 0; pass < perTierCount; pass++) {
       const chosen: SlipLeg[] = [];
-      for (const leg of pool) {
-        if (leg.probability < tier.minProb) continue;
-        if (chosen.length >= tier.maxLegs) break;
+      for (let i = pass; i < eligible.length && chosen.length < tier.maxLegs; i++) {
+        const leg = eligible[i]!;
         const lk = `${leg.fixture.id}:${leg.market}:${leg.selection}`;
-        if (usedLegKeys.has(lk)) continue; // skip legs already in a prior pass for this tier
+        if (usedLegKeys.has(lk)) continue; // skip legs already used by an earlier pass
         if (!canAddLeg(leg, chosen, tier.tier)) continue;
         chosen.push(leg);
       }
@@ -174,7 +175,7 @@ export function suggestParlays(
         stake,
         warnings,
         tier: tier.tier,
-        tierLabel: pass === 0 ? tier.label : `${tier.label} (alt)`,
+        tierLabel: pass === 0 ? tier.label : `${tier.label} (option ${pass + 1})`,
       });
       // Mark these legs so the next pass picks a different combo
       for (const l of chosen) {

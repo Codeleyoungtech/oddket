@@ -30,6 +30,10 @@ export default function SlipsPage() {
   const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
   const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState("");
+  // Mobile only: the multiple builder is an accordion, collapsed on first
+  // load so it doesn't push predictions off-screen. Desktop (lg+) always
+  // shows it. Auto-opens when the first leg is selected.
+  const [multiplesOpen, setMultiplesOpen] = useState(false);
   // Per-leg stake override (₦). Defaults to the Kelly suggestion; lets the
   // user log what they ACTUALLY staked on SportyBet instead of what the
   // model suggested. Keyed by legKey.
@@ -176,7 +180,7 @@ export default function SlipsPage() {
    */
   const suggestions = useMemo(() => {
     if (!db || !db.settings.multiplesEnabled) return [];
-    return suggestParlays(slips, db.settings, sport, 5);
+    return suggestParlays(slips, db.settings, sport, 9);
   }, [db, slips, sport]);
 
   if (!db)
@@ -212,10 +216,14 @@ export default function SlipsPage() {
       const next = new Set(prev);
       if (next.has(key)) {
         next.delete(key);
-      } else if (next.size >= MAX_LEGS) {
-        setCapNotice(`Max ${MAX_LEGS} legs per multiple — pick ${MAX_LEGS} and deselect one to swap.`);
-        return prev;
       } else {
+        if (next.size >= MAX_LEGS) {
+          setCapNotice(`Max ${MAX_LEGS} legs per multiple — pick ${MAX_LEGS} and deselect one to swap.`);
+          return prev;
+        }
+        // First selection on mobile → surface the builder so the user sees
+        // the slip they're building without scrolling back up.
+        setMultiplesOpen(true);
         next.add(key);
       }
       return next;
@@ -481,9 +489,12 @@ export default function SlipsPage() {
             <VirtualList
               items={groupedSlips}
               estimatedHeight={160}
-              overscan={3}
+              overscan={10}
               keyFn={(item) => item[0]}
-              className="max-h-[calc(100vh-12rem)]"
+              // min-h on desktop guarantees the left column always fills the
+              // viewport, so the sticky multiple builder next to it has room
+              // to scroll — with one slip the card used to get clipped.
+              className="max-h-[calc(100vh-12rem)] lg:min-h-[calc(100vh-14rem)]"
               renderItem={([fixtureId, legs]) => {
                 const first = legs[0]!;
                 return (
@@ -611,7 +622,40 @@ export default function SlipsPage() {
             users see parlays without scrolling through all predictions.
             On desktop it stays in the right column. */}
         <div className="order-first min-w-0 lg:order-last lg:col-span-1">
-          <SectionTitle sub="Opt-in only — the true math always shown">Multiple builder</SectionTitle>
+          {/* Mobile accordion header — collapsed by default, expanded on lg+ */}
+          <button
+            type="button"
+            onClick={() => setMultiplesOpen((v) => !v)}
+            aria-expanded={multiplesOpen}
+            className="mb-3 flex w-full items-center justify-between gap-2 rounded-xl border border-ink-700/60 bg-ink-900/60 px-4 py-3 text-left transition-colors lg:hidden"
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="text-base">🎯</span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-slate-100">Multiple builder</span>
+                <span className="block truncate text-[10px] text-slate-500">
+                  {multiplesOn
+                    ? selectedLegs.length > 0
+                      ? `${selectedLegs.length} leg${selectedLegs.length > 1 ? "s" : ""} selected`
+                      : "Suggestions & manual combos — tap to open"
+                    : "Disabled — enable in Settings → Multiples"}
+                </span>
+              </span>
+            </span>
+            <span className={`flex shrink-0 items-center gap-1.5 text-slate-400 transition-transform ${multiplesOpen ? "rotate-180" : ""}`}>
+              {selectedLegs.length > 0 && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-emerald-400/15 px-1.5 text-[10px] font-bold text-emerald-300">
+                  {selectedLegs.length}
+                </span>
+              )}
+              <span className="text-sm">▾</span>
+            </span>
+          </button>
+
+          <div className={`${multiplesOpen ? "block" : "hidden"} lg:block`}>
+          <div className="hidden lg:block">
+            <SectionTitle sub="Opt-in only — the true math always shown">Multiple builder</SectionTitle>
+          </div>
           <Card className="card-pad lg:sticky lg:top-20">
             {!multiplesOn ? (
               <div className="space-y-3">
@@ -870,6 +914,7 @@ export default function SlipsPage() {
               </div>
             )}
           </Card>
+          </div>
         </div>
       </div>
     </div>

@@ -38,6 +38,7 @@ export function VirtualList<T>({
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(0);
   const heightsRef = useRef<Map<number, number>>(new Map());
+  const rafRef = useRef<number | null>(null);
 
   const totalHeight =
     items.length > 0
@@ -56,11 +57,20 @@ export function VirtualList<T>({
     });
     ro.observe(el);
     setContainerHeight(el.clientHeight);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
+  // Throttle scroll state updates to one per animation frame — without this,
+  // a fast flick scroll fires setState on every pixel and janks the list.
   const handleScroll = useCallback(() => {
-    setScrollTop(containerRef.current?.scrollTop ?? 0);
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      setScrollTop(containerRef.current?.scrollTop ?? 0);
+    });
   }, []);
 
   // Compute which items are visible.

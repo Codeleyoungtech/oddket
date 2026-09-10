@@ -22,7 +22,7 @@ export default function SlipsPage() {
   // a slow request can't be double-fired by impatient tapping.
   const [loggingKeys, setLoggingKeys] = useState<Set<string>>(new Set());
   const [logError, setLogError] = useState<string | null>(null);
-  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
+  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "tomorrow" | "week">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
   const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
   const [showAll, setShowAll] = useState(false);
@@ -69,6 +69,7 @@ export default function SlipsPage() {
     return activeLegs.filter((l) => {
       const t = l.fixture.commenceTime;
       if (timeFilter === "today" && (t < today || t >= today + 86400)) return false;
+      if (timeFilter === "tomorrow" && (t < today + 86400 || t >= today + 2 * 86400)) return false;
       if (timeFilter === "week" && (t < today || t >= weekEnd)) return false;
       if (leagueFilter !== "all" && l.fixture.league !== leagueFilter) return false;
       if (strategyFilter === "high_prob" && l.probability < 0.60) return false;
@@ -276,6 +277,7 @@ export default function SlipsPage() {
                 [
                   ["all", "All"],
                   ["today", "Today"],
+                  ["tomorrow", "Tomorrow"],
                   ["week", "This Week"],
                 ] as const
               ).map(([key, label]) => (

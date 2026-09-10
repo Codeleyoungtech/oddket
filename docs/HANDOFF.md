@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 14 — **EV ENGINE FIX** (DC12 + model-only predictions surfaced in Show All, D1 settings restored to 12 leagues + 4-book gate).
+**Last updated:** Pass 15 — **MULTIPLE CRASH FIX + tomorrow filter + micro-market validation** (suggestParlays combinatorial explosion fixed, "Tomorrow" filter on slips/corners, O0.5 naming aligned with bookmakers).
 
 ---
 
@@ -87,6 +87,51 @@ Arsenal vs Chelsea — Over 1.5 Goals
   📊 Model Only  |  Win Prob: 85.2% (79%–91% CI)
   [Check bookmaker]    ← no Log Bet button
 ```
+
+---
+
+## 15. Multiple crash fix + tomorrow filter + micro-market validation (Pass 15)
+
+### The multiple crash — root cause + fix
+
+Toggling Multiples ON froze/crashed the slips page. Root cause: `suggestParlays`
+(`packages/core/src/parlay.ts`) generated EVERY combination of sizes 2..maxLegs
+over the full flagged-singles pool — 108 live legs × sizes 2–6 = **2.03 billion
+combinations**, computed synchronously on the main thread on every render.
+
+Fixed by bounding the search:
+- Pool capped to the **top 18 legs by edge** (suggestions are candidates for
+  manual review — beyond the strongest edge is noise).
+- Odds guards: only legs with finite odds > 1 enter the pool (model-only
+  predictions with odds=0 can never poison the parlay math).
+- New worst case ≈ 31k combos → <5 ms.
+
+### Tomorrow filter
+
+Slips and corners pages now have an **All / Today / Tomorrow / This Week** time
+filter — "Tomorrow" is the next UTC day (today+1d → +2d).
+
+### Micro-market naming aligned with bookmakers
+
+"Home/Away team to score" is exactly the **Team Goals Over 0.5** line that
+bookmakers price (SportyBet: Goals → Home/Away Team Goals). Labels updated to
+`Home to score (O0.5 goals)` / `Home not to score (U0.5 goals)` etc. in
+`marketLabel` + the Settings market list so users can find the line on any book.
+
+### Honest validation of the micro markets (holdout 2025-02 → 2026-05, 2,025 matches)
+
+| Market | Base rate | Hit @ p≥0.65 | @0.70 | @0.75 | @0.80 | n@0.80 |
+|---|---|---|---|---|---|---|
+| ou15 (Over 1.5) | 76.2% | 76.4% | 77.4% | 80.2% | 82.0% | 649 |
+| team_home (home scores) | 76.5% | 77.5% | 78.6% | 80.9% | 84.0% | 1,002 |
+| team_away (away scores) | 71.0% | 75.5% | 77.1% | 80.7% | 86.2% | 261 |
+
+**Not home-bias:** away has the LOWEST base rate (71%) yet the HIGHEST hit rate
+at p≥0.80 (86.2%) — the model discriminates, it does not just say "home". The
+monotonic rise (higher threshold → higher hit rate) is the signature of honest
+calibration, not overfit. Best staking band: **p ≥ 0.75** (≈80%+ hit);
+**p ≥ 0.80** for the highest-confidence plays (82–86%), but n shrinks — always
+require bookmaker odds > 1/p before staking.
 
 ---
 

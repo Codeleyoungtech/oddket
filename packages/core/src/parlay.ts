@@ -64,8 +64,17 @@ export function suggestParlays(
   sport: "football" | "tennis",
   maxSuggestions = 8,
 ): ParlaySuggestion[] {
+  // Auto-suggestion is bounded on purpose: generating every combination of
+  // sizes 2..maxLegs from the full slips pool is combinatorial (108 legs →
+  // ~2B combos at 6 legs) and froze the page on the main thread. We rank the
+  // pool by edge first and only explore the top contenders — suggestions are
+  // candidates for manual review, so depth beyond the strongest edge is noise.
   const maxLegs = Math.max(2, Math.min(settings.maxMultipleLegs ?? 3, 6));
-  const pool = legs.filter((l) => l.fixture.status === "scheduled");
+  const POOL_CAP = 18;
+  const pool = legs
+    .filter((l) => l.fixture.status === "scheduled" && l.odds > 1 && Number.isFinite(l.odds))
+    .sort((a, b) => b.edge - a.edge)
+    .slice(0, POOL_CAP);
 
   // Only cross-match combinations are safe: reject any combo with two legs
   // on the same fixture, and drop soft-correlated same-kickoff combos too.

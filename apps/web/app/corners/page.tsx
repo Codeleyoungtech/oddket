@@ -197,7 +197,7 @@ const LEAGUE_GOLDMINES: Record<string, { badge: string; note: string; color: str
 export default function CornersPage() {
   const { cornerPredictions, db, mode } = useData();
   const fixtures = db?.fixtures ?? [];
-  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "week">("all");
+  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "tomorrow" | "week">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
 
   // Build fixture groups from predictions
@@ -250,6 +250,7 @@ export default function CornersPage() {
       .filter((g) => {
         const t = g.fixture.commenceTime;
         if (timeFilter === "today" && t > 0 && (t < today || t >= today + 86400)) return false;
+        if (timeFilter === "tomorrow" && t > 0 && (t < today + 86400 || t >= today + 2 * 86400)) return false;
         if (timeFilter === "week" && t > 0 && (t < today || t >= weekEnd)) return false;
         if (leagueFilter !== "all" && g.fixture.league !== leagueFilter) return false;
         return true;
@@ -290,6 +291,7 @@ export default function CornersPage() {
             [
               ["all", "All"],
               ["today", "Today"],
+              ["tomorrow", "Tomorrow"],
               ["week", "This Week"],
             ] as const
           ).map(([key, label]) => (

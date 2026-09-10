@@ -76,9 +76,11 @@ export function marketLabel(market: Market, selection: Selection): string {
     case "ou15":
       return selection === "over" ? "Over 1.5 goals" : "Under 1.5 goals";
     case "team_home_goals":
-      return selection === "yes" ? "Home team to score — Yes" : "Home team to score — No";
+      // Bookmaker naming: this is the "Home Team Over 0.5 Goals" line under
+      // Team Totals / Team Goals (SportyBet: Goals → Home Team Goals).
+      return selection === "yes" ? "Home to score (O0.5 goals)" : "Home not to score (U0.5 goals)";
     case "team_away_goals":
-      return selection === "yes" ? "Away team to score — Yes" : "Away team to score — No";
+      return selection === "yes" ? "Away to score (O0.5 goals)" : "Away not to score (U0.5 goals)";
     case "spreads":
       return `${selection === "home" ? "Home" : "Away"} handicap`;
     default:

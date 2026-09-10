@@ -14,8 +14,8 @@ const MARKET_OPTIONS = [
   { value: "btts", label: "Both teams to score" },
   { value: "dc12", label: "Double chance 12 (no draw)" },
   { value: "ou15", label: "Over/Under 1.5 goals" },
-  { value: "team_home_goals", label: "Home team to score" },
-  { value: "team_away_goals", label: "Away team to score" },
+  { value: "team_home_goals", label: "Home to score (O0.5 goals)" },
+  { value: "team_away_goals", label: "Away to score (O0.5 goals)" },
 ] as const;
 
 // Must match the seed LEAGUES names in packages/core/src/seed.ts and the

@@ -857,6 +857,62 @@ app.post("/api/parlays", async (c) => {
   return c.json({ ok: true, parlay }, 201);
 });
 
+/* ---------------- telegram share (slip → your chat) ---------------- */
+
+/**
+ * Send a slip (text + optional PNG data URL) to the owner's Telegram chat.
+ * The web app renders the slip image client-side (canvas) and POSTs it here;
+ * the worker forwards it via the Bot API sendPhoto / sendMessage. Requires
+ * TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID on the worker.
+ */
+app.post("/api/telegram/share", async (c) => {
+  const token = c.env.TELEGRAM_BOT_TOKEN;
+  const chatId = c.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    return c.json({ ok: false, error: "Telegram isn't configured on the worker yet (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)." }, 501);
+  }
+
+  const body = await c.req.json().catch(() => ({}));
+  const text = typeof body.text === "string" ? body.text : "";
+  const imageDataUrl = typeof body.imageDataUrl === "string" ? body.imageDataUrl : "";
+  if (!text && !imageDataUrl) {
+    return c.json({ ok: false, error: "text or imageDataUrl is required." }, 400);
+  }
+
+  try {
+    const base = `https://api.telegram.org/bot${token}`;
+    if (imageDataUrl) {
+      const m = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(imageDataUrl);
+      if (!m) return c.json({ ok: false, error: "imageDataUrl must be a base64 PNG/JPEG data URL." }, 400);
+      const binary = atob(m[2]);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const form = new FormData();
+      form.append("chat_id", chatId);
+      form.append("photo", new Blob([bytes], { type: m[1] === "jpeg" ? "image/jpeg" : "image/png" }), "oddket-slip.png");
+      if (text) form.append("caption", text.slice(0, 1024));
+      const res = await fetch(`${base}/sendPhoto`, { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.text().catch(() => res.statusText);
+        return c.json({ ok: false, error: `Telegram sendPhoto failed (${res.status}): ${err.slice(0, 200)}` }, 502);
+      }
+    } else {
+      const res = await fetch(`${base}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
+      });
+      if (!res.ok) {
+        const err = await res.text().catch(() => res.statusText);
+        return c.json({ ok: false, error: `Telegram sendMessage failed (${res.status}): ${err.slice(0, 200)}` }, 502);
+      }
+    }
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
 /* ---------------- settlement alerts ---------------- */
 
 /** Recent settlement events — powers the in-app banner + the SW notification

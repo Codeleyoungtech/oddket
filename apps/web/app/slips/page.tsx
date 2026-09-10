@@ -11,8 +11,10 @@ import {
   type SlipLeg,
 } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
-import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle } from "../../components/ui";
+import { api } from "../../lib/api";
+import { Badge, Card, CardHeader, EmptyState, PageSkeleton, SectionTitle, Skeleton, SkeletonList } from "../../components/ui";
 import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
+import { renderSlipImage } from "../../lib/slip-image";
 import { VirtualList } from "../../components/virtual-list";
 
 export default function SlipsPage() {
@@ -38,6 +40,12 @@ export default function SlipsPage() {
   const [loggingParlay, setLoggingParlay] = useState<string | null>(null);
   const [parlayError, setParlayError] = useState<string | null>(null);
   const [loggedParlays, setLoggedParlays] = useState<Set<string>>(new Set());
+  // Share-as-image + Telegram state.
+  const [shareState, setShareState] = useState<{
+    status: "idle" | "generating" | "ready" | "sending" | "sent" | "error";
+    imageUrl?: string;
+    error?: string;
+  }>({ status: "idle" });
 
   // When showAll is on, use allPredictions instead of flagged slips.
   const activeLegs = showAll ? allPredictions : slips;
@@ -171,7 +179,24 @@ export default function SlipsPage() {
     return suggestParlays(slips, db.settings, sport, 5);
   }, [db, slips, sport]);
 
-  if (!db) return <Loading />;
+  if (!db)
+    return (
+      <PageSkeleton>
+        <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-2.5">
+          <div className="flex gap-2">
+            <Skeleton className="h-8 flex-1" />
+            <Skeleton className="h-8 w-28" />
+            <Skeleton className="h-8 w-16" />
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Skeleton className="h-6 w-16" />
+            <Skeleton className="h-6 w-16" />
+            <Skeleton className="h-6 w-16" />
+          </div>
+        </div>
+        <SkeletonList rows={5} />
+      </PageSkeleton>
+    );
 
   // Gated behind Settings → Multiples. OFF = the builder is completely hidden;
   // ON = opt-in selection with a configurable leg cap (Settings → max legs,
@@ -242,7 +267,8 @@ export default function SlipsPage() {
     return displayStake(leg.stake).amount;
   };
 
-  const copySlip = async () => {
+  /** Plain-text version of the slip — used by Copy, share, and Telegram. */
+  const slipText = (): string => {
     const lines = selectedLegs.map(
       (l, i) =>
         `${i + 1}. ${l.fixture.homeTeam} vs ${l.fixture.awayTeam} — ${marketLabel(l.market, l.selection)} @ ${fmtOdds(l.odds)} (stake ₦${fmtMoney(stakeFor(l), 0)})`,
@@ -250,12 +276,81 @@ export default function SlipsPage() {
     const combined = multiple
       ? `\nCombined ${multiple.advertisedOdds.toFixed(2)}x | true prob ${fmtPct(multiple.compoundProbability)} | fair odds ${multiple.compoundFairOdds.toFixed(2)}x`
       : "";
-    const text = `OddKet slip — ${selectedLegs.length} leg${selectedLegs.length > 1 ? "s" : ""}\n${lines.join("\n")}${combined}\n\nPlace manually in SportyBet. No auto-betting.`;
+    return `OddKet slip — ${selectedLegs.length} leg${selectedLegs.length > 1 ? "s" : ""}\n${lines.join("\n")}${combined}\n\nPlace manually in SportyBet. No auto-betting.`;
+  };
+
+  const copySlip = async () => {
+    const text = slipText();
     try {
       await navigator.clipboard.writeText(text);
     } catch {
       // clipboard unavailable (http context) — fall back to select-able textarea
       window.prompt("Copy your slip:", text);
+    }
+  };
+
+  /** Render the slip to a PNG (client-side) and reveal the share panel. */
+  const openShare = async () => {
+    if (selectedLegs.length === 0) return;
+    setShareState({ status: "generating" });
+    try {
+      const stakes: Record<string, number> = {};
+      selectedLegs.forEach((l) => {
+        stakes[legKey(l)] = stakeFor(l);
+      });
+      const imageUrl = await renderSlipImage({
+        legs: selectedLegs,
+        stakes,
+        combinedOdds: multiple?.advertisedOdds ?? null,
+        combinedProbability: multiple?.compoundProbability ?? null,
+        combinedFairOdds: multiple?.compoundFairOdds ?? null,
+      });
+      setShareState({ status: "ready", imageUrl });
+    } catch (err) {
+      setShareState({ status: "error", error: err instanceof Error ? err.message : "Couldn't render the slip image." });
+    }
+  };
+
+  /** Save the rendered PNG to the device (mobile downloads / desktop <a>). */
+  const downloadSlipImage = () => {
+    if (!shareState.imageUrl) return;
+    const a = document.createElement("a");
+    a.href = shareState.imageUrl;
+    a.download = `oddket-slip-${Date.now()}.png`;
+    a.click();
+  };
+
+  /** Send the slip (image + text) to your Telegram chat via the worker. */
+  const shareToTelegram = async () => {
+    if (!shareState.imageUrl) return;
+    setShareState((s) => ({ ...s, status: "sending" }));
+    try {
+      await api.telegramShare({ text: slipText(), imageDataUrl: shareState.imageUrl });
+      setShareState((s) => ({ ...s, status: "sent" }));
+    } catch (err) {
+      setShareState({
+        status: "error",
+        imageUrl: shareState.imageUrl,
+        error: err instanceof Error ? err.message : "Telegram share failed — is it configured on the worker?",
+      });
+    }
+  };
+
+  /** Native share sheet (mobile) with the image attached, fallback to Telegram. */
+  const nativeShare = async () => {
+    if (!shareState.imageUrl) return;
+    try {
+      const blob = await (await fetch(shareState.imageUrl)).blob();
+      const file = new File([blob], "oddket-slip.png", { type: "image/png" });
+      const nav = navigator as Navigator & { canShare?: (d: unknown) => boolean };
+      if (nav.canShare?.({ files: [file] })) {
+        await navigator.share({ text: slipText(), files: [file] });
+      } else {
+        await navigator.share({ text: slipText() });
+      }
+    } catch {
+      // user dismissed or share unsupported — fall back to Telegram + download
+      await shareToTelegram();
     }
   };
 
@@ -713,6 +808,57 @@ export default function SlipsPage() {
                     {loggingKeys.size > 0 ? "Logging…" : "Log all bets"}
                   </button>
                 </div>
+
+                {/* Share: image + Telegram + native sheet */}
+                <button
+                  className="btn-ghost w-full"
+                  onClick={() => void openShare()}
+                  disabled={shareState.status === "generating" || shareState.status === "sending"}
+                >
+                  {shareState.status === "generating"
+                    ? "Rendering image…"
+                    : shareState.status === "sending"
+                      ? "Sending to Telegram…"
+                      : "📤 Share slip"}
+                </button>
+                {shareState.status === "ready" || shareState.status === "sent" ? (
+                  <div className="space-y-2 rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
+                    {shareState.imageUrl && (
+                      <img
+                        src={shareState.imageUrl}
+                        alt="OddKet slip preview"
+                        className="max-h-48 w-full rounded-lg border border-ink-700/50 object-contain"
+                      />
+                    )}
+                    {shareState.status === "sent" && (
+                      <p className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-1.5 text-[11px] font-medium text-emerald-300">
+                        ✓ Sent to your Telegram
+                      </p>
+                    )}
+                    <div className="grid grid-cols-3 gap-2">
+                      <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={downloadSlipImage}>
+                        💾 Save
+                      </button>
+                      <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={() => void shareToTelegram()}>
+                        ✈️ Telegram
+                      </button>
+                      <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={() => void nativeShare()}>
+                        📤 Share…
+                      </button>
+                    </div>
+                    <button
+                      className="w-full text-center text-[10px] text-slate-500 hover:text-slate-300"
+                      onClick={() => setShareState({ status: "idle" })}
+                    >
+                      Close
+                    </button>
+                  </div>
+                ) : shareState.status === "error" ? (
+                  <p className="rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-2 text-[11px] font-medium text-red-300">
+                    ⚠ {shareState.error}
+                  </p>
+                ) : null}
+
                 <button className="btn-ghost w-full" onClick={() => setSelected(new Set())}>
                   Clear selection
                 </button>

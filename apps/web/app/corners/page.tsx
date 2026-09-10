@@ -8,7 +8,7 @@ import {
   bestTotalCornerLine,
 } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
-import { Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
+import { Card, EmptyState, PageSkeleton, SectionTitle, SkeletonList } from "../../components/ui";
 
 function fmtDate(ts: number): string {
   if (!ts) return "";
@@ -290,7 +290,12 @@ export default function CornersPage() {
       .sort((a, b) => a.fixture.commenceTime - b.fixture.commenceTime);
   }, [fixtureGroups, timeFilter, leagueFilter, search, nowSec, db]);
 
-  if (mode === "loading") return <Loading />;
+  if (mode === "loading")
+    return (
+      <PageSkeleton>
+        <SkeletonList rows={4} />
+      </PageSkeleton>
+    );
   if (!cornerPredictions?.length) {
     return (
       <EmptyState

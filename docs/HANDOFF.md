@@ -227,6 +227,63 @@ rows on mobile and More/Settings vanished on desktop. Now:
 
 ---
 
+## 18. Pass 18 — PWA reliability, share-as-image, Telegram share, skeletons, hero picks
+
+### PWA — install reliability
+
+- `public/sw.js` bumped to `oddket-v2` cache:
+  - **Install:** precaches the app shell (`/`, `/slips`, `/corners`, `/bets`,
+    manifest, icons) so the installed PWA opens instantly and works offline
+    even on first launch.
+  - **Fetch:** hashed static assets (`/_next/static/*`, `/icons/*`) are now
+    cache-first (stale-while-revalidate) so the installed app renders fully
+    offline; navigations stay network-first so fresh deploys always win.
+- Old `oddket-v1` caches are purged on activate.
+
+### Share-as-image
+
+- New `apps/web/lib/slip-image.ts`: zero-dep canvas renderer that draws the
+  slip as a dark-themed PNG (header, per-leg rows with odds/stake/prob,
+  combined-odds footer). Client-side only; returns a data URL.
+- `/slips` multiple builder: **📤 Share slip** button renders the image and
+  opens a panel with preview + **Save** (download), **Telegram**, and
+  **Share…** (native share sheet with the image attached).
+
+### Telegram share (backend-sent)
+
+- Worker `POST /api/telegram/share`: forwards a text + optional base64 PNG
+  data URL to your chat via the Bot API `sendPhoto`/`sendMessage`. Requires
+  two new worker secrets:
+  - `TELEGRAM_BOT_TOKEN` — bot token from @BotFather
+  - `TELEGRAM_CHAT_ID` — your chat id (e.g. via @userinfobot)
+  - Not configured → 501 with a clear message (UI shows the error instead of
+    failing silently). No client-side keys anywhere.
+- Client: `api.telegramShare({ text, imageDataUrl })` in `lib/api.ts`.
+
+### Skeleton loaders
+
+- `ui.tsx` gained `Skeleton`, `PageSkeleton`, `SkeletonStatGrid`,
+  `SkeletonCard`, `SkeletonList` (pulsing placeholders matching the card
+  layout). All 7 pages (Overview, Slips, Corners, Bets, Calibration,
+  Backtest, Settings) now render page-shaped skeletons instead of the bare
+  spinner while data loads.
+
+### Home screen hero picks
+
+- Overview now shows a **Today's Picks** hero row above the stat grid:
+  💎 **Best edge** and 🎯 **Highest probability** from today's flagged slips,
+  each card showing fixture, pick, odds, win prob, EV, and kickoff — tapping
+  jumps to `/slips`. Friendly nudge card when nothing is flagged today.
+
+### Verification (Pass 18)
+
+- core + web + worker typechecks green
+- web production build green
+- worker e2e **104/104** passing
+- Committed (no co-author)
+
+---
+
 ## 11. Tennis build — scope blockers + pivot (Pass 2)
 
 The Tennis PRD/Build-Prompt called for **ATP Challenger** tennis with CLV

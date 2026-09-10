@@ -2,13 +2,19 @@
 
 import { useData } from "../../lib/data-provider";
 import { BankrollChart, ByMarketChart, ClvChart } from "../../components/charts";
-import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle, StatCard } from "../../components/ui";
+import { Badge, Card, CardHeader, EmptyState, PageSkeleton, SectionTitle, SkeletonCard, SkeletonStatGrid, StatCard } from "../../components/ui";
 import { fmtMoney, fmtPct, fmtSignedPct } from "../../lib/format";
 
 export default function BacktestPage() {
   const { backtest, db } = useData();
 
-  if (!backtest || !db) return <Loading />;
+  if (!backtest || !db)
+    return (
+      <PageSkeleton>
+        <SkeletonStatGrid cols={4} />
+        <SkeletonCard lines={8} />
+      </PageSkeleton>
+    );
 
   const b = backtest;
   const series = b.clvSeries.length ? b.clvSeries : [];

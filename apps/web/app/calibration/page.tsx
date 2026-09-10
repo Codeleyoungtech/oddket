@@ -2,13 +2,19 @@
 
 import { useData } from "../../lib/data-provider";
 import { CalibrationChart } from "../../components/charts";
-import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle, StatCard } from "../../components/ui";
+import { Badge, Card, CardHeader, EmptyState, PageSkeleton, SectionTitle, SkeletonCard, SkeletonStatGrid, StatCard } from "../../components/ui";
 import { fmtPct } from "../../lib/format";
 
 export default function CalibrationPage() {
   const { calibration } = useData();
 
-  if (!calibration) return <Loading />;
+  if (!calibration)
+    return (
+      <PageSkeleton>
+        <SkeletonStatGrid cols={4} />
+        <SkeletonCard lines={8} />
+      </PageSkeleton>
+    );
 
   const brier = calibration.brier;
   const good = brier <= 0.25;

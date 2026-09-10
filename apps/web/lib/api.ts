@@ -100,4 +100,8 @@ export const api = {
     req<{ ok: boolean }>("/api/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint }) }),
   pushTest: (endpoint: string) =>
     req<{ ok: boolean }>("/api/push/test", { method: "POST", body: JSON.stringify({ endpoint }) }),
+  /** Forward a rendered slip (text + optional PNG data URL) to your Telegram
+   *  chat. The worker sends it via the Bot API — no client-side keys. */
+  telegramShare: (payload: { text: string; imageDataUrl?: string }) =>
+    req<{ ok: boolean }>("/api/telegram/share", { method: "POST", body: JSON.stringify(payload) }),
 };

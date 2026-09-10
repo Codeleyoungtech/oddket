@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { TENNIS_SPORTS, type Settings } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { api } from "../../lib/api";
-import { Badge, Card, CardHeader, Loading, SectionTitle } from "../../components/ui";
+import { Badge, Card, CardHeader, PageSkeleton, SectionTitle, SkeletonCard, SkeletonStatGrid } from "../../components/ui";
 import { InstallApp } from "../../components/install-app";
 import { fmtMoney, fmtPct } from "../../lib/format";
 
@@ -105,7 +105,14 @@ export default function SettingsPage() {
     return (bets || []).filter((b) => b.status === "pending");
   }, [bets]);
 
-  if (!db || !form) return <Loading />;
+  if (!db || !form)
+    return (
+      <PageSkeleton>
+        <SkeletonStatGrid cols={3} />
+        <SkeletonCard lines={5} />
+        <SkeletonCard lines={4} />
+      </PageSkeleton>
+    );
 
   const update = (patch: Partial<Settings>) => {
     setForm((f) => (f ? { ...f, ...patch } : f));

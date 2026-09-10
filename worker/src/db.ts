@@ -47,6 +47,11 @@ export interface Env {
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
+  /** Telegram Bot API — bot token + the chat to deliver shared slips to.
+   *  Missing either = POST /api/telegram/share returns 501 (UI shows a
+   *  clear "not configured" instead of a silent failure). */
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 /* ---------------- row mappers ---------------- */

@@ -16,9 +16,31 @@
  *     (postMessage), so the SW knows where the worker lives even when
  *     NEXT_PUBLIC_API_URL is set (Vercel → cross-origin worker).
  */
-const CACHE = "oddket-v1";
+const CACHE = "oddket-v2";
 
-self.addEventListener("install", () => {
+/* App shell precached at install so the installed PWA opens instantly and
+ * works offline even on the very first visit (no dependency on pages having
+ * been cached by a previous visit). Hash-suffixed static assets are served
+ * cache-first; navigations stay network-first so fresh builds always win. */
+const PRECACHE = [
+  "/",
+  "/slips",
+  "/corners",
+  "/bets",
+  "/manifest.webmanifest",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((c) => c.addAll(PRECACHE))
+      .catch(() => {
+        /* best-effort — a failed precache (offline install) must not block the SW */
+      })
+  );
   self.skipWaiting();
 });
 
@@ -41,6 +63,27 @@ self.addEventListener("fetch", (event) => {
   if (!/^https?:$/.test(url.protocol)) return;
   if (url.origin !== self.location.origin) return;
 
+  // Hash-suffixed static assets + icons: cache-first (stale-while-revalidate)
+  // so the installed app renders fully offline.
+  if (url.pathname.startsWith("/_next/static/") || url.pathname.startsWith("/icons/")) {
+    event.respondWith(
+      caches.match(req).then((cached) => {
+        const network = fetch(req)
+          .then((res) => {
+            if (res && res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(req, copy));
+            }
+            return res;
+          })
+          .catch(() => cached);
+        return cached || network;
+      })
+    );
+    return;
+  }
+
+  // Navigations + everything else: network-first, cache fallback.
   event.respondWith(
     fetch(req)
       .then((res) => {

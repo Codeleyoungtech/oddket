@@ -1,15 +1,27 @@
 "use client";
 
 import Link from "next/link";
+import { marketLabel } from "@oddket/core";
 import { useData } from "../lib/data-provider";
 import { BankrollChart, ByMarketChart, ClvChart } from "../components/charts";
-import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle, StatCard } from "../components/ui";
-import { clvClass, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../lib/format";
+import { Badge, Card, CardHeader, EmptyState, PageSkeleton, SectionTitle, Skeleton, SkeletonCard, SkeletonStatGrid, StatCard } from "../components/ui";
+import { clvClass, fmtDateShort, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../lib/format";
 
 export default function OverviewPage() {
-  const { mode, dashboard, clvSeries, bets } = useData();
+  const { mode, dashboard, clvSeries, bets, slips } = useData();
 
-  if (!dashboard) return <Loading />;
+  if (!dashboard)
+    return (
+      <PageSkeleton>
+        <SkeletonStatGrid />
+        <SkeletonCard lines={6} />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <SkeletonCard lines={6} />
+          <SkeletonCard lines={6} />
+        </div>
+        <SkeletonCard lines={4} />
+      </PageSkeleton>
+    );
 
   const s = dashboard.summary;
   const recent = bets.slice(0, 6);
@@ -30,6 +42,9 @@ export default function OverviewPage() {
           Build a slip →
         </Link>
       </div>
+
+      {/* Today's hero picks — the two bets worth looking at right now */}
+      <TodayPicks />
 
       {/* Headline stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -127,6 +142,109 @@ export default function OverviewPage() {
           Demo mode — deterministic seed data. Start the worker (<span className="num">cd worker && pnpm dev</span>) and it switches to LIVE automatically.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * Today's hero cards — "Best Edge" and "Highest Probability" from today's
+ * flagged slips. Tapping either jumps to the Slip Builder. If there's nothing
+ * flagged today, shows a friendly nudge instead of an empty card.
+ */
+function TodayPicks() {
+  const { slips } = useData();
+  const nowSec = Math.floor(Date.now() / 1000);
+  const startOfToday = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return Math.floor(d.getTime() / 1000);
+  })();
+
+  const today = slips.filter((l) => l.fixture.commenceTime >= startOfToday && l.fixture.commenceTime < startOfToday + 86400 && l.odds !== 0);
+
+  const bestEdge = today.reduce<(typeof today)[number] | null>(
+    (best, l) => (!best || l.edge > best.edge ? l : best),
+    null,
+  );
+  const highestProb = today.reduce<(typeof today)[number] | null>(
+    (best, l) => (!best || l.probability > best.probability ? l : best),
+    null,
+  );
+
+  if (!bestEdge || !highestProb) {
+    return (
+      <Link
+        href="/slips"
+        className="card card-pad block transition-colors hover:border-emerald-400/40"
+      >
+        <p className="text-sm font-semibold text-slate-200">
+          🔥 No flagged picks for today yet
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          Open the Slip Builder to see the full pool of value opportunities — odds update throughout the day.
+        </p>
+      </Link>
+    );
+  }
+
+  const card = (
+    l: (typeof today)[number],
+    opts: { title: string; icon: string; badge: string; badgeTone: string },
+  ) => (
+    <Link
+      key={opts.title}
+      href="/slips"
+      className="card card-pad group block transition-all hover:-translate-y-0.5 hover:border-emerald-400/40"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="label">{opts.icon} {opts.title}</p>
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${opts.badgeTone}`}>
+          {opts.badge}
+        </span>
+      </div>
+      <p className="mt-2 truncate text-sm font-semibold text-slate-100">
+        {l.fixture.homeTeam} <span className="font-normal text-slate-500">vs</span> {l.fixture.awayTeam}
+      </p>
+      <p className="mt-0.5 truncate text-xs text-slate-400">
+        {marketLabel(l.market, l.selection)} · <span className="num">@{fmtOdds(l.odds)}</span> · {l.fixture.league}
+      </p>
+      <div className="mt-3 flex items-end justify-between gap-2">
+        <div>
+          <p className="text-[10px] text-slate-500">Win prob</p>
+          <p className="num text-lg font-bold text-slate-200">{fmtPct(l.probability)}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] text-slate-500">{fmtDateShort(l.fixture.commenceTime)}</p>
+          <p className={`num text-lg font-bold ${l.edge >= 0.07 ? "text-emerald-400" : l.edge > 0 ? "text-sky-400" : "text-red-400"}`}>
+            {fmtSignedPct(l.edge)}
+          </p>
+        </div>
+      </div>
+    </Link>
+  );
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Today&apos;s picks</p>
+        <Link href="/slips" className="text-xs font-medium text-emerald-400 hover:text-emerald-300">
+          See all →
+        </Link>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {card(bestEdge, {
+          title: "Best edge",
+          icon: "💎",
+          badge: `${fmtPct(bestEdge.probability)} win`,
+          badgeTone: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+        })}
+        {card(highestProb, {
+          title: "Highest probability",
+          icon: "🎯",
+          badge: `${fmtSignedPct(highestProb.edge)} EV`,
+          badgeTone: "border-sky-400/30 bg-sky-400/10 text-sky-300",
+        })}
+      </div>
     </div>
   );
 }

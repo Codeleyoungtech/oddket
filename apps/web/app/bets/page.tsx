@@ -8,7 +8,7 @@ import { useData } from "../../lib/data-provider";
 // Bets logged in the last 24h can be undone (mistaken logs). Older rows are
 // kept immutable — undoing settled/CLV-scored history would corrupt the scoreboard.
 const UNDO_WINDOW_SEC = 24 * 3600;
-import { Badge, Card, EmptyState, Loading, SectionTitle } from "../../components/ui";
+import { Badge, Card, EmptyState, PageSkeleton, SectionTitle, SkeletonCard, SkeletonStatGrid } from "../../components/ui";
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../../lib/format";
 
 /** Format a unix timestamp into kickoff info with EDT (UTC-4) and WAT (UTC+1).
@@ -274,7 +274,14 @@ export default function BetsPage() {
     return { n: settled.length, staked, ret, cumClv, nClv: withClv.length, manualN: manualSettled.length };
   }, [bets]);
 
-  if (!db) return <Loading />;
+  if (!db)
+    return (
+      <PageSkeleton>
+        <SkeletonStatGrid cols={4} />
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={3} />
+      </PageSkeleton>
+    );
   const pnlTotal = totals.ret - totals.staked;
 
   const toggleExpand = (id: string) => {

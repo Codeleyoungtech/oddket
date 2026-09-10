@@ -79,3 +79,66 @@ export function Loading() {
     </div>
   );
 }
+
+/* ---------------- skeleton loaders (pulsing placeholders) ---------------- */
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div aria-hidden className={`animate-pulse rounded-lg bg-ink-800/70 ${className}`} />;
+}
+
+/** Page shell: title block + whatever page-specific skeleton you pass. */
+export function PageSkeleton({ children }: { children?: React.ReactNode }) {
+  return (
+    <div className="animate-fade-in space-y-6">
+      <div className="space-y-2.5">
+        <Skeleton className="h-7 w-44" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+export function SkeletonStatGrid({ cols = 6 }: { cols?: number }) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {Array.from({ length: cols }).map((_, i) => (
+        <div key={i} className="card card-pad">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="mt-3 h-7 w-24" />
+          <Skeleton className="mt-2 h-3 w-16" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function SkeletonCard({ lines = 4, title = true }: { lines?: number; title?: boolean }) {
+  return (
+    <div className="card card-pad space-y-3">
+      {title && <Skeleton className="h-4 w-1/3" />}
+      {Array.from({ length: lines }).map((_, i) => (
+        <Skeleton key={i} className={`h-3 ${i === lines - 1 ? "w-2/3" : "w-full"}`} />
+      ))}
+    </div>
+  );
+}
+
+export function SkeletonList({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-ink-800/80 bg-ink-800/40 px-4 py-3">
+            <Skeleton className="h-4 w-44" />
+            <Skeleton className="h-3 w-28" />
+          </div>
+          <div className="space-y-3 p-4">
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

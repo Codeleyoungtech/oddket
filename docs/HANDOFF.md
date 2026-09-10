@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 15 — **MULTIPLE CRASH FIX + tomorrow filter + micro-market validation** (suggestParlays combinatorial explosion fixed, "Tomorrow" filter on slips/corners, O0.5 naming aligned with bookmakers).
+**Last updated:** Pass 16 — **INTELLIGENT PARLAY PICKER + corners/mobile UI + nav consolidation** (risk-tiered suggestions safe 2-4 / balanced 5-8 / risky 9-20 legs, corners page mobile-first revamp, 5-tab bottom nav + More sheet, e2e suite repaired to 104 passing).
 
 ---
 
@@ -132,6 +132,55 @@ monotonic rise (higher threshold → higher hit rate) is the signature of honest
 calibration, not overfit. Best staking band: **p ≥ 0.75** (≈80%+ hit);
 **p ≥ 0.80** for the highest-confidence plays (82–86%), but n shrinks — always
 require bookmaker odds > 1/p before staking.
+
+---
+
+## 16. Intelligent parlay picker + UI/mobile pass (Pass 16)
+
+### suggestParlays v2 — risk-tiered, probability-first (replaces EV-combo picker)
+
+The old picker ranked combinations by EV, which floats longshots (high edge,
+low probability) to the top — producing parlays that mathematically never
+land. New algorithm in `packages/core/src/parlay.ts`:
+
+- Pool = flagged singles sorted by **model probability descending** (not EV).
+- Three tiers, each built greedily from the next highest-probability
+  independent leg (correlation checked incrementally — same-match and
+  same-league same-kickoff legs skipped):
+  - 🟢 **Safe accumulator** — 2–4 legs, legs ≥ 68%
+  - 🟡 **Balanced accumulator** — 5–8 legs, legs ≥ 58%
+  - 🔴 **Risky accumulator** — 9–20 legs, legs ≥ 50% (honest warning shown:
+    big multiplier = low chance of ALL landing)
+- One suggestion per tier, ranked by **chance to land** (combined
+  probability), not by EV. 20-leg risky is built from the highest-probability
+  legs available so it's the "risky but live" profile the owner asked for.
+- Verified: 60-leg pool → 2ms, 3 suggestions; 200-leg pool → 20-leg risky at
+  ~2.9% combined chance; odds=0 model-only legs can't poison the pool.
+
+### Corners page — mobile-first revamp
+
+- Team cards now full-width rows (stack on mobile, 2-up on sm+) with Home/
+  Away chips, big corner count, 80% range, "Best:" line callout.
+- Line probabilities moved to **horizontally scrollable pill strips**
+  (`.scrollbar-none`) — no more 14 cramped badges crammed into 2 columns.
+- Total Expected moved to a highlighted badge; league goldmine note moved
+  under the match header.
+
+### Mobile bottom nav — 5 tabs + More sheet
+
+Was 7 items in the bottom bar (cluttered). Now: Overview, Slips, Corners,
+Bet Log, Settings + a **More** button opening a bottom sheet with
+Calibration and Backtest (with descriptions). Desktop top bar unchanged.
+
+### e2e suite repaired (pre-existing breakage, now 104/104)
+
+- `test/e2e.mjs` MIGRATIONS list was missing `0001_corners.sql` → seed
+  crashed on `no such table: corners_predictions`.
+- `d1-adapter.mjs` returned SYNC results but the worker (since the Sep 8
+  pipeline fix) calls `.all().catch()` — made `all/first/run` async to match
+  the real D1 API.
+- `losingScore` for a **draw** selection returned 1-1 (a draw = the leg
+  WINS) — fixed to 2-0 so a draw leg genuinely loses.
 
 ---
 

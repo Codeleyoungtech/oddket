@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -226,7 +226,7 @@ console.log("\n[6b] parlays (true all-or-nothing units)");
   const losingScore = (l) => {
     if (l.selection === "home") return { homeScore: 0, awayScore: 1 };
     if (l.selection === "away") return { homeScore: 1, awayScore: 0 };
-    if (l.selection === "draw") return { homeScore: 1, awayScore: 1 };
+    if (l.selection === "draw") return { homeScore: 2, awayScore: 0 }; // not a draw → draw leg loses
     if (l.selection === "under") return { homeScore: 0, awayScore: 1 };
     return { homeScore: 2, awayScore: 2 }; // over loses
   };

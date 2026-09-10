@@ -24,11 +24,16 @@ export class D1Adapter {
       run: () => new BoundStmt(this.sqlite, sql, []).run(),
     };
   }
-  batch(stmts) {
+  async batch(stmts) {
     return stmts.map((s) => s.run());
   }
 }
 
+/**
+ * Bound statement whose all/first/run return PROMISES, matching the real
+ * Cloudflare D1 API (the worker calls `.all().catch(...)` and `await`s the
+ * results). node:sqlite itself is synchronous — we resolve immediately.
+ */
 class BoundStmt {
   constructor(sqlite, sql, params) {
     this.sqlite = sqlite;
@@ -39,14 +44,14 @@ class BoundStmt {
     this.params = params;
     return this;
   }
-  all() {
+  async all() {
     return { results: this.sqlite.prepare(this.sql).all(...this.params) };
   }
-  first() {
+  async first() {
     const row = this.sqlite.prepare(this.sql).get(...this.params);
     return row === undefined ? null : row;
   }
-  run() {
+  async run() {
     const info = this.sqlite.prepare(this.sql).run(...this.params);
     return { meta: { changes: info.changes } };
   }

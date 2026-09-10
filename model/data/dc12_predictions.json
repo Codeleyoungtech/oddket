@@ -1,0 +1,1316 @@
+[
+  {
+    "fixtureId": "6596b1e9434721f41c369ef2f79ed6c2",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7356,
+    "confidenceLow": 0.4261,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "3ce54113a5a6e54cbe802c99c46c06a6",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7397,
+    "confidenceLow": 0.4632,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "20e5e342bef4776fd004fc2db67147fd",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7803,
+    "confidenceLow": 0.4079,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "f1724928da55e743f9fcde7159333075",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7557,
+    "confidenceLow": 0.4837,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "1c4199d805db0ccac673777729a862d1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6576,
+    "confidenceLow": 0.3344,
+    "confidenceHigh": 0.9807,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a4c5dee9ebdcdeb3b7c2b1962cab7b7a",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7779,
+    "confidenceLow": 0.4512,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "115c6679a72c5a360640b6baaa16e78c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6835,
+    "confidenceLow": 0.3706,
+    "confidenceHigh": 0.9966,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "16e97f3fd25131867e10213ad69ffbc6",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7563,
+    "confidenceLow": 0.4607,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a9656d25ca6b06be9e477a098333bd70",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6909,
+    "confidenceLow": 0.3995,
+    "confidenceHigh": 0.9822,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "79bc2eff76fa09664659765d5b1ded1a",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6681,
+    "confidenceLow": 0.3533,
+    "confidenceHigh": 0.9829,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "4d6a4a477e15b56242dd5dc7537cb649",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7873,
+    "confidenceLow": 0.451,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "34f8f53d8423fd55dc1edd67ee11d04b",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6875,
+    "confidenceLow": 0.3756,
+    "confidenceHigh": 0.9995,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "5094d9773f1abc8227b8543a9859af13",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7815,
+    "confidenceLow": 0.4562,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "614dde3eacd620b53feede86bdcb7e6b",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7597,
+    "confidenceLow": 0.4338,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "19cb3678f794c543f381a7509a3b5685",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7455,
+    "confidenceLow": 0.4693,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "3622ce4c0671fab11aaddec0429ff8f1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7668,
+    "confidenceLow": 0.4706,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "560d614137590d3f4eaf49df9df7681c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7569,
+    "confidenceLow": 0.4557,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "2e6a8e47c85704c8fb3f344fbb1af9d6",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7656,
+    "confidenceLow": 0.4198,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "8f51db48041320bed2c6e0efdc0a8f91",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7627,
+    "confidenceLow": 0.445,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ce964ee1b800009bbf354f4be8753f44",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7386,
+    "confidenceLow": 0.4494,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a90df47cf7d5b8f6d7f181bd2a71acc3",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.745,
+    "confidenceLow": 0.4556,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "26820be5aef839bd1bff02c760ed712d",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6645,
+    "confidenceLow": 0.3318,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "6e331bf9937ddca8e79c21c7865bee15",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7339,
+    "confidenceLow": 0.4341,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "5e97dee9c098c04279092ee541a7c3ec",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7466,
+    "confidenceLow": 0.4623,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ae873cf4f1e3cefa5745f213a002e049",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7605,
+    "confidenceLow": 0.429,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "2cc491d72a4c1f1b9883eee0ff7e010e",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7445,
+    "confidenceLow": 0.4682,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "8200b611154e0336351f95f207537606",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7434,
+    "confidenceLow": 0.4666,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "50cc233d42943dcf77315adb0aaa6c09",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7253,
+    "confidenceLow": 0.4466,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "2075346d43aa6d69c08adbe99a5565cd",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7416,
+    "confidenceLow": 0.4381,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "3dba40cdf22e962c0f6f6c940ef01850",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6676,
+    "confidenceLow": 0.3414,
+    "confidenceHigh": 0.9938,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "10b54687f856d44183201b75e4c1b4b4",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7354,
+    "confidenceLow": 0.4418,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "75f2578cb32eb50a7889627a031a76e2",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7668,
+    "confidenceLow": 0.4434,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "54d9e7cfdc9fe9475525c14c79a9c52b",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7148,
+    "confidenceLow": 0.4144,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "98133182ffe74da0bd09dd9483a05dbb",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.734,
+    "confidenceLow": 0.4067,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "2dfdb71b06263027a0823882bf1661d8",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8049,
+    "confidenceLow": 0.4679,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a46f280a4c99eda4631e09ae7a7b50d0",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.712,
+    "confidenceLow": 0.4378,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "467fe6e71bc34a255dfb47e13b8fa34e",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6414,
+    "confidenceLow": 0.3753,
+    "confidenceHigh": 0.9881,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "6d6a930505b05067ef8f6bc14a48bcc8",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7136,
+    "confidenceLow": 0.4336,
+    "confidenceHigh": 0.9936,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "d09677edcf1fb82ad75a8df58bb26eab",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.632,
+    "confidenceLow": 0.3158,
+    "confidenceHigh": 0.9482,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "d856d4353db0b4cca2a49b96dfd19c92",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7123,
+    "confidenceLow": 0.4083,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "5163190733dcaaea80474e43cbe20a51",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8231,
+    "confidenceLow": 0.4975,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "14f6639178a943ac614c7b872bf6e4d6",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6909,
+    "confidenceLow": 0.3561,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "63da4075a4ae406575fd3086b839fe49",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7432,
+    "confidenceLow": 0.4803,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "7d0898a3bbbda4a17714f7f858864fd1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.723,
+    "confidenceLow": 0.4294,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "91abef6f4f3063cb6b88e0faf9ed084f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7909,
+    "confidenceLow": 0.4742,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "09271ecb5e5aeb1245c1611254f741bf",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6867,
+    "confidenceLow": 0.3834,
+    "confidenceHigh": 0.99,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "47ff26574f91f0a98af6b3ed0089c8fb",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7467,
+    "confidenceLow": 0.4609,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "c5e3d0f01b559176cae23df6eedb490c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7315,
+    "confidenceLow": 0.4377,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "42e05dd76773b7115a611f5889df4fec",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7502,
+    "confidenceLow": 0.4658,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "df4674e265ece6abc5bab0fe0dddf9e0",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7398,
+    "confidenceLow": 0.4357,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "575c64d50eb0beecbce81f91b9328625",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7329,
+    "confidenceLow": 0.439,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ab1ea61c51a01a9239e99cf9f0156410",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7607,
+    "confidenceLow": 0.453,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "23f5f9b9ec96113d3cee5fcf411724f9",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7716,
+    "confidenceLow": 0.4582,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "f6fb60afd5570cadba1beea5085d8cfd",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7555,
+    "confidenceLow": 0.4484,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ec97cf41b4803b11fe3c30cbe2b3eeb1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7382,
+    "confidenceLow": 0.457,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "2e2956543332112b1afa6155eb21030c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.759,
+    "confidenceLow": 0.4266,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "1927b30280e08112b1d4090af37bfe4f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.741,
+    "confidenceLow": 0.4448,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "1ba30be1292e4fc106594991fba89a11",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7442,
+    "confidenceLow": 0.4583,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "057cbcbabc5a6c8154f8b6714f3ae1d9",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7225,
+    "confidenceLow": 0.4264,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "988bf24f295c26c84ff1890b0df16cdf",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6417,
+    "confidenceLow": 0.3305,
+    "confidenceHigh": 0.9981,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "871eda3d36981f25efeb1f3599964d3b",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7522,
+    "confidenceLow": 0.4644,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "62a439f069dc33b28ca0042de92a4420",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7255,
+    "confidenceLow": 0.4272,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b412817739a87e18bf391bf6ccff6560",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6344,
+    "confidenceLow": 0.2961,
+    "confidenceHigh": 0.9726,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "cbbc88759fe3e2f1677a0c6ee40955af",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6688,
+    "confidenceLow": 0.3716,
+    "confidenceHigh": 0.9871,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "69178ef705263258d50abce330d9101f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7619,
+    "confidenceLow": 0.4767,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "18baacacc5a12ecb59e6088aa2d95337",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6604,
+    "confidenceLow": 0.3286,
+    "confidenceHigh": 0.9923,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "aeaf1d8f14d8f87f1ddc9bfaa2e14e76",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7528,
+    "confidenceLow": 0.4247,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "0b0e48a48afe5673e76c1558a94a8fe5",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7797,
+    "confidenceLow": 0.4333,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "89d0308c3918aeb01d47e7828dc4882e",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6938,
+    "confidenceLow": 0.396,
+    "confidenceHigh": 0.9916,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ff99bb358bccef09234870e0df02406a",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6826,
+    "confidenceLow": 0.3731,
+    "confidenceHigh": 0.9921,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "fd30ca2b96bfa088e51bffddeb3b6e56",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7024,
+    "confidenceLow": 0.4388,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "082f74fe6a8bc5826555b76e9e114dab",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7629,
+    "confidenceLow": 0.4497,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "fc0154734861d4a222bdb50e15d2bee2",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.794,
+    "confidenceLow": 0.482,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "5b5c56d92d248d88b24eeddf7c37fc7f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7446,
+    "confidenceLow": 0.467,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ecce544d5dfd80c3491b9859ce916ed1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7292,
+    "confidenceLow": 0.4376,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "5c67ef0d7273af9fb18a0ab7f6148b07",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7429,
+    "confidenceLow": 0.4639,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "daaf99f01cb6c822ef263918b831912c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6772,
+    "confidenceLow": 0.371,
+    "confidenceHigh": 0.9835,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "3dc0f9ea50e1c322c2096c98a6fbb9fd",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7202,
+    "confidenceLow": 0.3967,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "91ffcd0e1557fb4ecd3b3eda9902213d",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7681,
+    "confidenceLow": 0.4606,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a668b0de6b94c33626210d8ed15ed8e5",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7777,
+    "confidenceLow": 0.4085,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "0eba3c2d3bcf1d1fe4ab3180a3d03152",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8032,
+    "confidenceLow": 0.4768,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a1ca5ec5e662539a99f637761f90efcc",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7436,
+    "confidenceLow": 0.4469,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "8a036dbba6da633e84da783f6ac6fd95",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7543,
+    "confidenceLow": 0.4516,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "c97a93b915115f2b4659fb88262b71f8",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7917,
+    "confidenceLow": 0.4243,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "e66df35062d3cc1c59258406374c2e76",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6988,
+    "confidenceLow": 0.3935,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "8e0da6fa2f319904413062fbeee58b0e",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7627,
+    "confidenceLow": 0.3948,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "f12855726aa78ca369db8df744bed8ae",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.805,
+    "confidenceLow": 0.4831,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "6406438af00a2a42a81d6b2f1656d474",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8019,
+    "confidenceLow": 0.4807,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "26a6fd3a15cde19cde06392799b329ae",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7591,
+    "confidenceLow": 0.5068,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "4fb04ede34b0a12b8e4885a2ca8a7506",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7262,
+    "confidenceLow": 0.4351,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "e40d0fb44319f7bd0ebe1ffbc61fa661",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6936,
+    "confidenceLow": 0.3856,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "ad302261f1c495cae58942a092f0344e",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.825,
+    "confidenceLow": 0.4867,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "27eaaab4498bb2984321e5f81f0ff9fd",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6744,
+    "confidenceLow": 0.4057,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "15e3bf25540c88237a06c03df1cb334b",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7887,
+    "confidenceLow": 0.4228,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "fd2c728eb7e2aaf42e2bc41e5ea4a475",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7859,
+    "confidenceLow": 0.4382,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "0a91f850039ce571eb6e90b2eed15548",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7975,
+    "confidenceLow": 0.4646,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "14e37b5aaf6fec05a01f7e1309025a66",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6454,
+    "confidenceLow": 0.3117,
+    "confidenceHigh": 0.9792,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "1d2e0acdf62c6f724387986621f0a8cd",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7467,
+    "confidenceLow": 0.47,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "eb07ad346d2b78840e289d11461cc2a1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7223,
+    "confidenceLow": 0.427,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "17a081148b714450797ef8d6a29d16e6",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7444,
+    "confidenceLow": 0.4201,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "9da3aa4b46166eb4ccd1e600d67080a6",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7538,
+    "confidenceLow": 0.4457,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "247343bc379dfe120732d07d0106e412",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7153,
+    "confidenceLow": 0.4159,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "7ea3ea9925ae0f1d149965fb9769c7dc",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7486,
+    "confidenceLow": 0.435,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b7a2cad26d908a943a27340b4b607068",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6744,
+    "confidenceLow": 0.3682,
+    "confidenceHigh": 0.9807,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "aa0e2541144928205ab6d870953d42c2",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6952,
+    "confidenceLow": 0.3636,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b9a6e597fd597637efa24b92d51dda62",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6712,
+    "confidenceLow": 0.3841,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "d6474326396cdd0e300afd0193c7c93d",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6502,
+    "confidenceLow": 0.3495,
+    "confidenceHigh": 0.9626,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "21d88940bcffa4f27418eaa338d9ed53",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.727,
+    "confidenceLow": 0.424,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "bf9470f21ec6041779e159c45f581465",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7238,
+    "confidenceLow": 0.4223,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "0b57607f4a514ee24df31b0c2db9ddc5",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7962,
+    "confidenceLow": 0.473,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "32e9c1d63aed0abb71f90e02f91f4e10",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6966,
+    "confidenceLow": 0.4281,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "e8d1b34cb3e1f52f67538ad554811b56",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7057,
+    "confidenceLow": 0.4182,
+    "confidenceHigh": 0.9931,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "4ef67376b662c2859f73bde7f7210388",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6536,
+    "confidenceLow": 0.3209,
+    "confidenceHigh": 0.9862,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "4a3400b0763bcc367171537f40b27a4f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8312,
+    "confidenceLow": 0.4834,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "7f644eca099054612d9a7e7e5d8787da",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6748,
+    "confidenceLow": 0.376,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "56c5e4d30fc27dedb3ae48a80b81346d",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7349,
+    "confidenceLow": 0.3931,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b2d41e20e9485a8ad28e7534d389a37d",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8229,
+    "confidenceLow": 0.4808,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "8bc1f4d74cf888c97c0216fd26c4ece7",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7348,
+    "confidenceLow": 0.4409,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "82d8b6a005d78bac0b1508abc17a7d39",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6395,
+    "confidenceLow": 0.3016,
+    "confidenceHigh": 0.9773,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "da3d3fec3e0b6b939910427a76ecfb76",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6648,
+    "confidenceLow": 0.3777,
+    "confidenceHigh": 0.9851,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "d02ff636f652d5b5bb65f6b24330c4fe",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6534,
+    "confidenceLow": 0.3182,
+    "confidenceHigh": 0.9885,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "c7b8233ea02650f1055ae086b169b7a1",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7129,
+    "confidenceLow": 0.4293,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "c11148f7ed032d5e99313ee1942fd4c2",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6551,
+    "confidenceLow": 0.3215,
+    "confidenceHigh": 0.9887,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "446a7bee22ecf469e0b162fb28ebdc0f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6658,
+    "confidenceLow": 0.3569,
+    "confidenceHigh": 0.9748,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "6040ea7490bde14e3c257f8db37045e2",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6608,
+    "confidenceLow": 0.3513,
+    "confidenceHigh": 0.9703,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "4c1106958327b544267f1040c84b4acb",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7487,
+    "confidenceLow": 0.4594,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "1c490e2c6acab28c33d0021b15d3c93a",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.683,
+    "confidenceLow": 0.3499,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b5b058d0a95f9742548f789d1c564a78",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7237,
+    "confidenceLow": 0.4063,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "88519a51012811476c9b4724eafc96c5",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6633,
+    "confidenceLow": 0.3675,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "f65c4eaf0f94a569f06d768f737dad2e",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.8045,
+    "confidenceLow": 0.4666,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b455cbf28072fc1f1a46796b1b652f69",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6832,
+    "confidenceLow": 0.3714,
+    "confidenceHigh": 0.9949,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "75133fdcd4fc3067b303a8f166f974e4",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7894,
+    "confidenceLow": 0.4584,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "c10576ed56099cd6e81827896f9aca4f",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7137,
+    "confidenceLow": 0.4081,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "6fb54fd5b3da95e4f4bbef62b7022bd7",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6933,
+    "confidenceLow": 0.3827,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "65acc2445541a5ed803ef0ce1a270097",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6784,
+    "confidenceLow": 0.3587,
+    "confidenceHigh": 0.9981,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "784f777f5181e1efdad7a6ecb2cfde15",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6853,
+    "confidenceLow": 0.3703,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b63aef4291a066e32644e591c19a235a",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6312,
+    "confidenceLow": 0.315,
+    "confidenceHigh": 0.9475,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "f923236e69ed946fdc55163494ee88db",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7852,
+    "confidenceLow": 0.4805,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "f9e4aaa82676652e339be6c9b5ca44fb",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7489,
+    "confidenceLow": 0.4188,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a48070d7ed928431ebe0d8ca2d6a8540",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.6432,
+    "confidenceLow": 0.2976,
+    "confidenceHigh": 0.9888,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "a4b92030b5b48bceea0474e4d8066355",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7222,
+    "confidenceLow": 0.4154,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "182b81a9e220b2347235107c42802fd8",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.731,
+    "confidenceLow": 0.4053,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "b437f1c16c351016133cef7395600f84",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7454,
+    "confidenceLow": 0.3967,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "58ed47e545ec3e4235ed8c1955cfdd42",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7541,
+    "confidenceLow": 0.4497,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "9f5cd3de78cf482a77b4571fe363d04c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7052,
+    "confidenceLow": 0.3843,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  },
+  {
+    "fixtureId": "32989e446cccc9a7f71ece00c93da57c",
+    "market": "dc12",
+    "selection": "12",
+    "probability": 0.7619,
+    "confidenceLow": 0.4725,
+    "confidenceHigh": 1.0,
+    "modelVersion": "h2h-xgb-v3-dc12"
+  }
+]

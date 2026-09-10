@@ -514,19 +514,33 @@ export default function SlipsPage() {
                   </div>
                 )}
 
-                {/* Auto-suggest: EV-ranked, rule-compliant groupings. Selection
-                    stays manual — these are candidates, not auto-bets. */}
+                {/* Auto-suggest: risk-tiered, independent-legs-only groupings,
+                    built from the HIGHEST-probability flagged singles (never
+                    EV-chasing longshots). Selection stays manual — these are
+                    candidates, not auto-bets. */}
                 {suggestions.length > 0 && (
                   <div>
                     <p className="label mb-2">
-                      Suggested parlays <span className="font-normal text-slate-600">· independent legs only, ranked by EV</span>
+                      Suggested parlays <span className="font-normal text-slate-600">· highest-probability legs, ranked by chance of landing</span>
                     </p>
                     <ul className="space-y-2">
                       {suggestions.map((s) => {
                         const key = parlayKey(s);
                         const done = loggedParlays.has(key);
+                        const tierStyle =
+                          s.tier === "safe"
+                            ? { border: "border-emerald-400/40", chip: "bg-emerald-400/15 text-emerald-300 border-emerald-400/40", prob: "text-emerald-300" }
+                            : s.tier === "balanced"
+                              ? { border: "border-sky-400/40", chip: "bg-sky-400/15 text-sky-300 border-sky-400/40", prob: "text-sky-300" }
+                              : { border: "border-rose-400/40", chip: "bg-rose-400/15 text-rose-300 border-rose-400/40", prob: "text-rose-300" };
                         return (
-                          <li key={key} className="rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
+                          <li key={key} className={`rounded-lg border bg-ink-800/40 p-3 ${tierStyle.border}`}>
+                            <div className="mb-2 flex items-center justify-between gap-2">
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${tierStyle.chip}`}>
+                                {s.tier === "safe" ? "🟢" : s.tier === "balanced" ? "🟡" : "🔴"} {s.tierLabel}
+                              </span>
+                              <span className="text-[10px] text-slate-500">{s.legs.length} legs</span>
+                            </div>
                             <div className="mb-2 space-y-1">
                               {s.legs.map((l) => (
                                 <p key={legKey(l)} className="truncate text-xs text-slate-400">
@@ -541,14 +555,19 @@ export default function SlipsPage() {
                                 <p className="num font-semibold text-slate-200">{s.combinedOdds.toFixed(2)}x</p>
                               </div>
                               <div>
-                                <p className="text-slate-600">True prob</p>
-                                <p className="num font-semibold text-sky-300">{fmtPct(s.combinedProbability)}</p>
+                                <p className="text-slate-600">Chance to land</p>
+                                <p className={`num font-semibold ${tierStyle.prob}`}>{fmtPct(s.combinedProbability)}</p>
                               </div>
                               <div>
                                 <p className="text-slate-600">EV</p>
                                 <p className={`num font-semibold ${edgeClass(s.ev)}`}>{fmtSignedPct(s.ev)}</p>
                               </div>
                             </div>
+                            {s.warnings.map((w, i) => (
+                              <p key={i} className="mb-2 rounded border border-amber-400/30 bg-amber-400/[0.06] px-2 py-1.5 text-[10px] leading-relaxed text-amber-200/80">
+                                ⚠ {w}
+                              </p>
+                            ))}
                             <button
                               onClick={() => void handleLogParlay(s)}
                               disabled={done || loggingParlay === key}

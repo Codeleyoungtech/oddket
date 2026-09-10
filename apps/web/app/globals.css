@@ -29,6 +29,27 @@ body {
   background: #2a3444;
 }
 
+@keyframes slide-up {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Hide scrollbars on horizontal line strips (corners page) while keeping
+   touch scrolling — the pills are self-explanatory, no scrollbar chrome. */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Number inputs without the browser up/down spinner (used by the stake
    override fields — a spinner is useless for a quick edit). */
 input[type="number"].no-spinner::-webkit-outer-spin-button,

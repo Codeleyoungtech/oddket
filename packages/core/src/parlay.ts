@@ -4,6 +4,12 @@ import type { SlipLeg } from "./ev";
 import { clamp01, round } from "./math";
 import { suggestedStake } from "./kelly";
 
+/** Risk tier of a suggested parlay — safe parlays are few legs with high
+ *  per-leg probability; risky parlays chase the big multiplier with more
+ *  legs. Every tier still only uses legs that clear the singles EV gate, so
+ *  the extra risk is variance, not negative-EV picks. */
+export type ParlayTier = "safe" | "balanced" | "risky";
+
 export interface ParlaySuggestion {
   legs: SlipLeg[];
   combinedOdds: number;
@@ -13,6 +19,9 @@ export interface ParlaySuggestion {
   ev: number;
   stake: number;
   warnings: string[];
+  tier: ParlayTier;
+  /** human label, e.g. "Safe accumulator · 2–4 legs" */
+  tierLabel: string;
 }
 
 /** Product of leg odds / probabilities, with a guard for empty input. */
@@ -45,16 +54,32 @@ export function buildParlay(legs: SlipLeg[], sport: Parlay["sport"]): Omit<Parla
   };
 }
 
+/** Tier configs — the smarter picker builds ONE parlay per tier, greedily
+ *  taking the HIGHEST-probability independent legs (never EV-chasing
+ *  longshots, which is what made the old combos "never occur"). Every leg
+ *  still comes from the flagged pool, so each one clears the singles EV gate
+ *  by construction. More legs = bigger multiplier = higher variance — that's
+ *  the honest trade labelled on each tier. */
+const TIERS: Array<{ tier: ParlayTier; label: string; minLegs: number; maxLegs: number; minProb: number }> = [
+  { tier: "safe", label: "Safe accumulator · 2–4 legs", minLegs: 2, maxLegs: 4, minProb: 0.68 },
+  { tier: "balanced", label: "Balanced accumulator · 5–8 legs", minLegs: 5, maxLegs: 8, minProb: 0.58 },
+  { tier: "risky", label: "Risky accumulator · 9–20 legs", minLegs: 9, maxLegs: 20, minProb: 0.50 },
+];
+
 /**
  * Auto-suggest rule-compliant parlays from the flagged singles pool.
  *
- * Rules (from the multiples prompt):
- *  - max `settings.maxMultipleLegs` legs (default 3)
- *  - every leg individually clears the EV threshold (they come from the
- *    flagged-singles pool, so this holds by construction)
- *  - legs must be independent (correlation filter: no same-match legs, no
- *    same-league same-kickoff-window legs)
- *  - ranked by combined EV, most transparent first
+ * How this picks (v2 — intelligent, risk-tiered):
+ *  - the pool is the flagged singles, sorted by MODEL PROBABILITY descending
+ *    (not by EV — EV-chasing floats longshots to the top and produces
+ *    parlays that mathematically never land);
+ *  - for each tier (safe 2–4 / balanced 5–8 / risky 9–20 legs) it greedily
+ *    takes the next highest-probability leg that is still independent of the
+ *    picks so far (no same-match legs, no same-league same-kickoff legs);
+ *  - legs below the tier's minimum probability are skipped — a 20-leg
+ *    accumulator built from 50%+ legs is the "risky but live" profile;
+ *  - one suggestion per tier, ranked by combined probability (chance of
+ *    landing) so the UI shows the most-likely pick first.
  *
  * Selection + logging stays MANUAL — this only surfaces candidate groupings.
  */
@@ -64,60 +89,48 @@ export function suggestParlays(
   sport: "football" | "tennis",
   maxSuggestions = 8,
 ): ParlaySuggestion[] {
-  // Auto-suggestion is bounded on purpose: generating every combination of
-  // sizes 2..maxLegs from the full slips pool is combinatorial (108 legs →
-  // ~2B combos at 6 legs) and froze the page on the main thread. We rank the
-  // pool by edge first and only explore the top contenders — suggestions are
-  // candidates for manual review, so depth beyond the strongest edge is noise.
-  const maxLegs = Math.max(2, Math.min(settings.maxMultipleLegs ?? 3, 6));
-  const POOL_CAP = 18;
   const pool = legs
     .filter((l) => l.fixture.status === "scheduled" && l.odds > 1 && Number.isFinite(l.odds))
-    .sort((a, b) => b.edge - a.edge)
-    .slice(0, POOL_CAP);
-
-  // Only cross-match combinations are safe: reject any combo with two legs
-  // on the same fixture, and drop soft-correlated same-kickoff combos too.
-  const combinations = generateCombinations(pool, 2, maxLegs);
+    .sort((a, b) => b.probability - a.probability);
 
   const suggestions: ParlaySuggestion[] = [];
-  for (const combo of combinations) {
-    const corr = checkLegIndependence(legRefs(combo));
-    if (!corr.independent) continue; // rule-compliant only
+  for (const tier of TIERS) {
+    const chosen: SlipLeg[] = [];
+    for (const leg of pool) {
+      if (leg.probability < tier.minProb) continue;
+      if (chosen.length >= tier.maxLegs) break;
+      // Independence is checked incrementally — same-match and same-kickoff
+      // legs are skipped, so the greedy run never builds a correlated stack.
+      const probe = checkLegIndependence(legRefs([...chosen, leg]));
+      if (!probe.independent) continue;
+      chosen.push(leg);
+    }
+    if (chosen.length < tier.minLegs) continue; // not enough eligible legs for this tier
 
-    const p = clamp01(product(combo.map((l) => l.probability)));
-    const odds = product(combo.map((l) => l.odds));
+    const p = clamp01(product(chosen.map((l) => l.probability)));
+    const odds = product(chosen.map((l) => l.odds));
     const fairOdds = p > 0 ? 1 / p : 0;
     const stake = suggestedStake(p, odds, settings.bankroll, settings);
+    const warnings: string[] = [];
+    if (tier.tier === "risky") {
+      warnings.push(
+        "Risky tier: a big multiplier comes from compounding many legs — the true chance of ALL of them landing is low. Only stake money you can afford to lose.",
+      );
+    }
     suggestions.push({
-      legs: combo,
+      legs: chosen,
       combinedOdds: round(odds, 4),
       combinedProbability: round(p, 4),
       fairOdds: round(fairOdds, 4),
       ev: round(p * odds - 1, 4),
       stake,
-      warnings: [],
+      warnings,
+      tier: tier.tier,
+      tierLabel: tier.label,
     });
   }
 
-  return suggestions.sort((a, b) => b.ev - a.ev).slice(0, maxSuggestions);
-}
-
-/** All combinations of size k in [min, max] from the pool. */
-function generateCombinations<T>(pool: T[], min: number, max: number): Array<T[]> {
-  const out: Array<T[]> = [];
-  const combos: T[] = [];
-  const rec = (start: number) => {
-    if (combos.length >= min) out.push([...combos]);
-    if (combos.length === max) return;
-    for (let i = start; i < pool.length; i++) {
-      combos.push(pool[i]!);
-      rec(i + 1);
-      combos.pop();
-    }
-  };
-  rec(0);
-  return out;
+  return suggestions.sort((a, b) => b.combinedProbability - a.combinedProbability).slice(0, maxSuggestions);
 }
 
 /**

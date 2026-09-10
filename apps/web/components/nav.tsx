@@ -1,17 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useData, type Sport } from "../lib/data-provider";
 
+/** Primary tabs — kept to 5 so the mobile bottom bar stays thumb-friendly. */
 const LINKS = [
   { href: "/", label: "Overview", icon: "home" },
   { href: "/slips", label: "Slips", icon: "ticket" },
   { href: "/corners", label: "Corners", icon: "corners" },
-  { href: "/calibration", label: "Calibration", icon: "gauge" },
   { href: "/bets", label: "Bet Log", icon: "receipt" },
-  { href: "/backtest", label: "Backtest", icon: "flask" },
   { href: "/settings", label: "Settings", icon: "gear" },
+] as const;
+
+/** Secondary links — hidden behind the mobile "More" sheet, always visible
+ *  in the desktop top bar. */
+const MORE_LINKS = [
+  { href: "/calibration", label: "Calibration", icon: "gauge", desc: "Brier score, calibration curve & CLV" },
+  { href: "/backtest", label: "Backtest", icon: "flask", desc: "Historical replay of the EV engine" },
 ] as const;
 
 /** Inline SVG icon set — small, crisp at 16–20px, no icon-font dependency. */
@@ -79,6 +86,14 @@ function Icon({ name, className = "h-[18px] w-[18px]" }: { name: string; classNa
           <path d="M4 13h7v7H4z" />
         </svg>
       );
+    case "more":
+      return (
+        <svg {...common}>
+          <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+          <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -128,15 +143,26 @@ export function Nav() {
             <ModeBadge mode={mode} />
           </div>
         </div>
-      </header>
+      </header>      {/* Mobile bottom tab bar — app-like, thumb-friendly, safe-area aware.
+          Only 5 primary tabs; Calibration + Backtest live in the More sheet. */}
+      <MobileTabBar pathname={pathname} />
+    </>
+  );
+}
 
-      {/* Mobile bottom tab bar — app-like, thumb-friendly, safe-area aware */}
+/** Mobile-only bottom bar: 5 primary tabs + a More sheet for the rest. */
+function MobileTabBar({ pathname }: { pathname: string }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const activeInMore = MORE_LINKS.some((l) => pathname === l.href);
+
+  return (
+    <>
       <nav
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-50 border-t border-ink-700/60 bg-ink-950/95 backdrop-blur-md md:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="mx-auto grid max-w-md grid-cols-6">
+        <div className="mx-auto grid max-w-md grid-cols-5">
           {LINKS.map((l) => {
             const active = pathname === l.href;
             return (
@@ -155,8 +181,63 @@ export function Nav() {
               </Link>
             );
           })}
+          {/* More button */}
+          <button
+            onClick={() => setMoreOpen(true)}
+            aria-label="More"
+            className={`flex min-h-[56px] flex-col items-center justify-center gap-1 pb-1.5 pt-2 text-[10px] font-medium transition-colors ${
+              activeInMore ? "text-emerald-300" : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <span className={`relative flex h-7 w-9 items-center justify-center rounded-full transition-colors ${activeInMore ? "bg-emerald-400/10" : ""}`}>
+              <Icon name="more" className={`h-[19px] w-[19px] ${activeInMore ? "text-emerald-300" : ""}`} />
+              {activeInMore && <span className="absolute -bottom-0.5 h-1 w-1 rounded-full bg-emerald-400" />}
+            </span>
+            More
+          </button>
         </div>
       </nav>
+
+      {/* More sheet */}
+      {moreOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden" role="dialog" aria-modal="true">
+          <button
+            aria-label="Close"
+            onClick={() => setMoreOpen(false)}
+            className="absolute inset-0 h-full w-full bg-ink-950/70 backdrop-blur-sm"
+          />
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-ink-700/60 bg-ink-950 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl"
+            style={{ animation: "slide-up 160ms ease-out" }}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-700" />
+            <p className="label mb-2 px-1">More</p>
+            <div className="space-y-1">
+              {MORE_LINKS.map((l) => {
+                const active = pathname === l.href;
+                return (
+                  <Link
+                    key={l.href}
+                    href={l.href}
+                    onClick={() => setMoreOpen(false)}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition-colors ${
+                      active
+                        ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                        : "border-ink-700/50 bg-ink-900/50 text-slate-200 hover:border-ink-600"
+                    }`}
+                  >
+                    <Icon name={l.icon} className="h-5 w-5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold">{l.label}</div>
+                      <div className="truncate text-[11px] text-slate-500">{l.desc}</div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

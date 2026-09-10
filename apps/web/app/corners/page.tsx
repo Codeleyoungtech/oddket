@@ -40,26 +40,41 @@ function probBg(p: number): string {
   return "bg-red-400/10 border-red-400/30";
 }
 
-/** Compact line badge */
+/** Compact line pill — fixed min-width so strips scroll cleanly on mobile. */
 function LineBadge({ label, prob }: { label: string; prob: number }) {
   const safeProb = typeof prob === "number" && !isNaN(prob) ? prob : 0;
   return (
-    <div className={`flex-1 rounded border px-1 py-0.5 text-center ${probBg(safeProb)}`}>
-      <div className="text-[8px] text-zinc-500 leading-none">{label}</div>
-      <div className={`text-[10px] font-bold tabular-nums leading-tight ${probColor(safeProb)}`}>
+    <div className={`flex min-w-[52px] flex-col items-center rounded-lg border px-2 py-1.5 ${probBg(safeProb)}`}>
+      <div className="text-[9px] font-medium text-zinc-500 leading-none">{label}</div>
+      <div className={`text-xs font-bold tabular-nums leading-tight ${probColor(safeProb)}`}>
         {(safeProb * 100).toFixed(0)}%
       </div>
     </div>
   );
 }
 
-/** Team column in the fixture card */
+/** Horizontally scrollable strip of line pills — no wrapping, thumb-friendly. */
+function LineStrip({ items }: { items: Array<{ label: string; prob: number }> }) {
+  const pills = items.filter((x) => x.prob !== undefined && !isNaN(x.prob));
+  if (pills.length === 0) return null;
+  return (
+    <div className="scrollbar-none -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+      {pills.map(({ label, prob }) => (
+        <LineBadge key={label} label={label} prob={prob} />
+      ))}
+    </div>
+  );
+}
+
+/** One team's row in the fixture card — full-width, mobile-first. */
 function TeamColumn({
   pred,
   lines,
+  sideLabel,
 }: {
   pred: { predictedCorners: number; confidenceLow?: number; confidenceHigh?: number; team: string; side?: "home" | "away" };
   lines: Record<string, number>;
+  sideLabel: string;
 }) {
   const lineOrder = ["O2.5", "O3.5", "O4.5", "O5.5", "O6.5", "O7.5", "O8.5"] as const;
   const low = typeof pred.confidenceLow === "number" ? pred.confidenceLow.toFixed(1) : Math.max(0, pred.predictedCorners - 1.28 * 2.85).toFixed(1);
@@ -90,30 +105,34 @@ function TeamColumn({
   }, [pred, lines, low, high]);
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-baseline justify-between gap-1">
-        <div className="flex items-baseline gap-2 min-w-0 truncate">
-          <span className="text-lg font-bold text-zinc-100 tabular-nums">
+    <div className="space-y-2 rounded-xl border border-zinc-800/70 bg-zinc-900/30 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+            sideLabel === "Home" ? "bg-emerald-400/10 text-emerald-400 border border-emerald-400/20" : "bg-sky-400/10 text-sky-400 border border-sky-400/20"
+          }`}>
+            {sideLabel}
+          </span>
+          <span className="text-sm font-semibold text-zinc-100 truncate">{pred.team}</span>
+        </div>
+        <div className="flex items-baseline gap-1.5 shrink-0">
+          <span className="text-xl font-bold text-zinc-100 tabular-nums">
             {(pred.predictedCorners ?? 0).toFixed(1)}
           </span>
-          <span className="text-xs text-zinc-300 font-medium truncate">{pred.team}</span>
+          <span className="text-[10px] text-zinc-500">corners</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[10px] text-zinc-500">
+          80% range <span className="text-zinc-400 font-medium">{low}–{high}</span>
         </div>
         {best && best.probability >= 0.65 && (
-          <span className="shrink-0 rounded bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.2 text-[9px] font-semibold text-emerald-400">
-            {best.over ? "O" : "U"}{best.line} ({(best.probability * 100).toFixed(0)}%)
+          <span className="shrink-0 rounded-md bg-emerald-400/10 border border-emerald-400/30 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+            Best: {best.over ? "O" : "U"}{best.line} · {(best.probability * 100).toFixed(0)}%
           </span>
         )}
       </div>
-      <div className="text-[10px] text-zinc-500">
-        80% Range: <span className="text-zinc-400">{low} – {high}</span>
-      </div>
-      <div className="flex gap-1">
-        {lineOrder.map((key) => {
-          const p = lines[key];
-          if (p === undefined || isNaN(p)) return null;
-          return <LineBadge key={key} label={key} prob={p} />;
-        })}
-      </div>
+      <LineStrip items={[...lineOrder].map((k) => ({ label: k, prob: lines[k] ?? 0 }))} />
     </div>
   );
 }
@@ -379,69 +398,66 @@ export default function CornersPage() {
             <Card key={fixture.id}>
               <div className="p-3 sm:p-4">
                 {/* Match header */}
-                <div className="flex items-center justify-between mb-3">
+                <div className="mb-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-zinc-100 text-sm truncate">
-                        {fixture.homeTeam} vs {fixture.awayTeam}
+                        {fixture.homeTeam} <span className="text-zinc-500 font-normal">vs</span> {fixture.awayTeam}
                       </h3>
                       {goldmine && (
                         <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold ${goldmine.color}`}>
-                          {goldmine.badge} <span className="opacity-70 font-normal">({goldmine.note})</span>
+                          {goldmine.badge}
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">
-                      {fixture.league} {fixture.commenceTime > 0 ? `· ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      {fixture.league}{fixture.commenceTime > 0 ? ` · ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
                     </p>
+                    {goldmine && (
+                      <p className="mt-1 text-[10px] text-zinc-500">{goldmine.note}</p>
+                    )}
                   </div>
-                  <div className="text-right shrink-0 ml-3">
-                    <div className="text-[10px] text-zinc-500">Total Expected</div>
-                    <div className="text-lg font-bold text-zinc-200 tabular-nums">
-                      {totalExpected} <span className="text-xs font-normal text-zinc-500">corners</span>
+                  <div className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-right">
+                    <div className="text-[9px] text-zinc-500 leading-none">Total Expected</div>
+                    <div className="mt-0.5 text-lg font-bold text-emerald-400 tabular-nums leading-tight">
+                      {totalExpected}
                     </div>
+                    <div className="text-[9px] text-zinc-500 leading-none">corners</div>
                   </div>
                 </div>
 
-                {/* Two-team grid */}
-                <div className="grid grid-cols-2 gap-3 mb-3">
+                {/* Team rows — full-width, stack on mobile, side-by-side on sm+ */}
+                <div className="grid gap-2.5 sm:grid-cols-2 sm:gap-3">
                   <TeamColumn
                     pred={home}
                     lines={homeLines}
+                    sideLabel="Home"
                   />
                   <TeamColumn
                     pred={away}
                     lines={awayLines}
+                    sideLabel="Away"
                   />
                 </div>
 
                 {/* Total corners lines */}
                 {totalLines && (
-                  <div className="border-t border-zinc-800 pt-2">
-                    <div className="flex items-center justify-between mb-1.5">
+                  <div className="mt-2.5 border-t border-zinc-800 pt-2.5">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
                       <div className="text-[10px] text-zinc-400 font-medium">
                         Total Match Corners Over/Under
                       </div>
                       {bestTotal && (
-                        <div className="text-[10px] font-semibold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.2 rounded">
-                          Best: {bestTotal.label} ({(bestTotal.probability * 100).toFixed(0)}%)
+                        <div className="shrink-0 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded">
+                          Best: {bestTotal.label} · {(bestTotal.probability * 100).toFixed(0)}%
                         </div>
                       )}
                     </div>
-                    <div className="flex gap-1">
-                      {totalLineOrder.map((key) => {
-                        const p = totalLines[key];
-                        if (p === undefined || isNaN(p)) return null;
-                        const label = TOTAL_LINE_LABELS[key] || key;
-                        return (
-                          <LineBadge
-                            key={key}
-                            label={label}
-                            prob={p}
-                          />
-                        );
-                      })}
-                    </div>
+                    <LineStrip
+                      items={totalLineOrder
+                        .map((k) => ({ label: TOTAL_LINE_LABELS[k] || k, prob: totalLines[k] }))
+                        .filter((x) => x.prob !== undefined)}
+                    />
                   </div>
                 )}
               </div>

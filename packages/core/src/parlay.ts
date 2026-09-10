@@ -129,7 +129,7 @@ export function suggestParlays(
   legs: SlipLeg[],
   settings: Settings,
   sport: "football" | "tennis",
-  maxSuggestions = 8,
+  maxSuggestions = 12,
 ): ParlaySuggestion[] {
   const pool = legs
     .filter((l) => l.fixture.status === "scheduled" && l.odds > 1 && Number.isFinite(l.odds))
@@ -137,39 +137,50 @@ export function suggestParlays(
 
   const suggestions: ParlaySuggestion[] = [];
   for (const tier of TIERS) {
-    const chosen: SlipLeg[] = [];
-    for (const leg of pool) {
-      if (leg.probability < tier.minProb) continue;
-      if (chosen.length >= tier.maxLegs) break;
-      // Correlation is checked incrementally with the tier's own rule — the
-      // greedy run never builds a same-match stack, and same-league windows
-      // stay within the tier's limit (or are unlimited for risky).
-      if (!canAddLeg(leg, chosen, tier.tier)) continue;
-      chosen.push(leg);
-    }
-    if (chosen.length < tier.minLegs) continue; // not enough eligible legs for this tier
+    // Generate multiple alternative parlays per tier by iteratively excluding
+    // previously chosen legs, forcing the greedy picker to find different
+    // high-probability combos.
+    const perTierCount = tier.tier === "risky" ? 1 : 2;
+    const usedLegKeys = new Set<string>();
 
-    const p = clamp01(product(chosen.map((l) => l.probability)));
-    const odds = product(chosen.map((l) => l.odds));
-    const fairOdds = p > 0 ? 1 / p : 0;
-    const stake = suggestedStake(p, odds, settings.bankroll, settings);
-    const warnings: string[] = [];
-    if (tier.tier === "risky") {
-      warnings.push(
-        "Risky tier: a big multiplier comes from compounding many legs — the true chance of ALL of them landing is low. Only stake money you can afford to lose.",
-      );
+    for (let pass = 0; pass < perTierCount; pass++) {
+      const chosen: SlipLeg[] = [];
+      for (const leg of pool) {
+        if (leg.probability < tier.minProb) continue;
+        if (chosen.length >= tier.maxLegs) break;
+        const lk = `${leg.fixture.id}:${leg.market}:${leg.selection}`;
+        if (usedLegKeys.has(lk)) continue; // skip legs already in a prior pass for this tier
+        if (!canAddLeg(leg, chosen, tier.tier)) continue;
+        chosen.push(leg);
+      }
+      if (chosen.length < tier.minLegs) break; // not enough eligible legs for another combo
+
+      const p = clamp01(product(chosen.map((l) => l.probability)));
+      const odds = product(chosen.map((l) => l.odds));
+      const fairOdds = p > 0 ? 1 / p : 0;
+      const stake = suggestedStake(p, odds, settings.bankroll, settings);
+      const warnings: string[] = [];
+      if (tier.tier === "risky") {
+        warnings.push(
+          "Risky tier: a big multiplier comes from compounding many legs — the true chance of ALL of them landing is low. Only stake money you can afford to lose.",
+        );
+      }
+      suggestions.push({
+        legs: chosen,
+        combinedOdds: round(odds, 4),
+        combinedProbability: round(p, 4),
+        fairOdds: round(fairOdds, 4),
+        ev: round(p * odds - 1, 4),
+        stake,
+        warnings,
+        tier: tier.tier,
+        tierLabel: pass === 0 ? tier.label : `${tier.label} (alt)`,
+      });
+      // Mark these legs so the next pass picks a different combo
+      for (const l of chosen) {
+        usedLegKeys.add(`${l.fixture.id}:${l.market}:${l.selection}`);
+      }
     }
-    suggestions.push({
-      legs: chosen,
-      combinedOdds: round(odds, 4),
-      combinedProbability: round(p, 4),
-      fairOdds: round(fairOdds, 4),
-      ev: round(p * odds - 1, 4),
-      stake,
-      warnings,
-      tier: tier.tier,
-      tierLabel: tier.label,
-    });
   }
 
   return suggestions.sort((a, b) => b.combinedProbability - a.combinedProbability).slice(0, maxSuggestions);

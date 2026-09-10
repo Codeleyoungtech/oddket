@@ -218,6 +218,7 @@ export default function CornersPage() {
   const fixtures = db?.fixtures ?? [];
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "tomorrow" | "week" | "past">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   // Build fixture groups from predictions
   const fixtureGroups = useMemo(() => {
@@ -277,10 +278,17 @@ export default function CornersPage() {
         if (timeFilter === "tomorrow" && t > 0 && (t < today + 86400 || t >= today + 2 * 86400)) return false;
         if (timeFilter === "week" && t > 0 && (t < today || t >= weekEnd)) return false;
         if (leagueFilter !== "all" && g.fixture.league !== leagueFilter) return false;
+        if (search.trim()) {
+          const q = search.toLowerCase();
+          const ht = (g.fixture.homeTeam ?? "").toLowerCase();
+          const at = (g.fixture.awayTeam ?? "").toLowerCase();
+          const lg = (g.fixture.league ?? "").toLowerCase();
+          if (!ht.includes(q) && !at.includes(q) && !lg.includes(q)) return false;
+        }
         return true;
       })
       .sort((a, b) => a.fixture.commenceTime - b.fixture.commenceTime);
-  }, [fixtureGroups, timeFilter, leagueFilter, nowSec, db]);
+  }, [fixtureGroups, timeFilter, leagueFilter, search, nowSec, db]);
 
   if (mode === "loading") return <Loading />;
   if (!cornerPredictions?.length) {
@@ -309,58 +317,76 @@ export default function CornersPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-zinc-800 bg-zinc-900/40 p-2.5">
-        <div className="flex rounded-lg border border-zinc-700/60 bg-zinc-800/60 p-0.5">
-          {(
-            [
-              ["all", "All"],
-              ["today", "Today"],
-              ["tomorrow", "Tomorrow"],
-              ["week", "This Week"],
-              ["past", "Past ✓"],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTimeFilter(key)}
-              className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                timeFilter === key
-                  ? "bg-emerald-400 text-zinc-950 shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-2.5 space-y-2">
+        {/* Search + league select row */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search team or league…"
+            className="min-w-0 flex-1 rounded-lg border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-emerald-400/50"
+          />
+          <select
+            value={leagueFilter}
+            onChange={(e) => setLeagueFilter(e.target.value)}
+            className="w-auto shrink-0 rounded-lg border border-zinc-700/60 bg-zinc-800/80 px-2 py-1.5 text-xs font-medium text-zinc-200 outline-none focus:border-sky-400/50"
+          >
+            <option value="all">All ({leagues.length})</option>
+            {leagues.map((lg) => (
+              <option key={lg} value={lg}>{lg}</option>
+            ))}
+          </select>
         </div>
-        <select
-          value={leagueFilter}
-          onChange={(e) => setLeagueFilter(e.target.value)}
-          className="rounded-lg border border-zinc-700/60 bg-zinc-800/80 px-3 py-1.5 text-xs font-medium text-zinc-200 outline-none focus:border-sky-400/50"
-        >
-          <option value="all">All Leagues ({leagues.length})</option>
-          {leagues.map((lg) => (
-            <option key={lg} value={lg}>
-              {lg}
-            </option>
-          ))}
-        </select>
-        <span className="ml-auto text-xs text-zinc-500">
-          {filtered.length} match{filtered.length !== 1 ? "es" : ""}
-        </span>
+        {/* Time filter pills — scrollable on mobile */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="scrollbar-none flex gap-1 overflow-x-auto">
+            {(
+              [
+                ["all", "All"],
+                ["today", "Today"],
+                ["tomorrow", "Tmrw"],
+                ["week", "Week"],
+                ["past", "Past ✓"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setTimeFilter(key)}
+                className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  timeFilter === key
+                    ? "bg-emerald-400 text-zinc-950 shadow-sm"
+                    : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="shrink-0 text-[11px] text-zinc-500">
+            {filtered.length}
+          </span>
+        </div>
       </div>
 
-      {/* How to read & betting guide */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3.5 py-2.5 text-xs text-zinc-400 space-y-1">
-        <div>
-          <span className="font-semibold text-zinc-200">Niche League Value Strategy:</span>{" "}
-          Compare the model&apos;s <span className="text-emerald-400 font-medium">win %</span> against your sportsbook&apos;s implied odds.
-          Secondary leagues (Segunda, Serie B, 2. Bundesliga, League 1, J1) exhibit less quant pricing efficiency, giving sharper edges on Total Corners &amp; Micro-Markets.
+      {/* How to read — collapsible on mobile */}
+      <details className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3.5 py-2.5 text-xs text-zinc-400">
+        <summary className="cursor-pointer font-semibold text-zinc-300 select-none">
+          How to read this page
+        </summary>
+        <div className="mt-2 space-y-1">
+          <div>
+            <span className="font-semibold text-zinc-200">Niche League Value Strategy:</span>{" "}
+            Compare the model&apos;s <span className="text-emerald-400 font-medium">win %</span> against your sportsbook&apos;s implied odds.
+            Secondary leagues exhibit less quant pricing efficiency, giving sharper edges on corners.
+          </div>
+          <div className="text-[11px] text-zinc-500">
+            • <span className="text-zinc-300 font-medium">Team lines:</span> Individual team corner output
+            • <span className="text-zinc-300 font-medium">Total lines:</span> Combined match corners
+            • <span className="text-zinc-300 font-medium">Range:</span> 80% confidence interval.
+          </div>
         </div>
-        <div className="text-[11px] text-zinc-500">
-          • <span className="text-zinc-300 font-medium">Team lines:</span> Individual team corner output • <span className="text-zinc-300 font-medium">Total lines:</span> Combined match corners • <span className="text-zinc-300 font-medium">Range:</span> 80% confidence interval.
-        </div>
-      </div>
+      </details>
 
       {/* Fixture cards */}
       <div className="grid gap-3">
@@ -406,48 +432,48 @@ export default function CornersPage() {
 
           return (
             <Card key={fixture.id}>
-              <div className="p-3 sm:p-4">
-                {/* Match header */}
-                <div className="mb-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold text-zinc-100 text-sm truncate">
+              <div className="p-2.5 sm:p-4">
+                {/* Match header — compact on mobile */}
+                <div className="mb-2.5 flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="min-w-0 truncate text-sm font-semibold text-zinc-100">
                         {isFinished && homeScore !== undefined ? (
                           <>
-                            {fixture.homeTeam}{" "}
+                            <span className="block sm:inline">{fixture.homeTeam}</span>{" "}
                             <span className="text-emerald-400 font-bold">{homeScore}–{awayScore}</span>{" "}
-                            {fixture.awayTeam}
+                            <span className="block sm:inline">{fixture.awayTeam}</span>
                           </>
                         ) : (
                           <>
-                            {fixture.homeTeam} <span className="text-zinc-500 font-normal">vs</span> {fixture.awayTeam}
+                            <span className="block sm:inline">{fixture.homeTeam}</span>{" "}
+                            <span className="text-zinc-500 font-normal">vs</span>{" "}
+                            <span className="block sm:inline">{fixture.awayTeam}</span>
                           </>
                         )}
                       </h3>
                       {isFinished && (
-                        <span className="inline-flex items-center rounded border border-zinc-600/60 bg-zinc-800/60 px-1.5 py-0.5 text-[9px] font-bold text-zinc-400">
+                        <span className="shrink-0 rounded border border-zinc-600/60 bg-zinc-800/60 px-1 py-0.5 text-[8px] font-bold text-zinc-400">
                           FT
                         </span>
                       )}
-                      {goldmine && (
-                        <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold ${goldmine.color}`}>
-                          {goldmine.badge}
-                        </span>
-                      )}
                     </div>
-                    <p className="text-[11px] text-zinc-500 mt-1">
+                    <p className="mt-0.5 truncate text-[11px] text-zinc-500">
                       {fixture.league}{isFinished ? " · Finished" : fixture.commenceTime > 0 ? ` · ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
                     </p>
                     {goldmine && (
-                      <p className="mt-1 text-[10px] text-zinc-500">{goldmine.note}</p>
+                      <span className={`mt-1 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold ${goldmine.color}`}>
+                        {goldmine.badge}
+                      </span>
                     )}
                   </div>
-                  <div className="shrink-0 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-1.5 text-right">
-                    <div className="text-[9px] text-zinc-500 leading-none">Total Expected</div>
-                    <div className="mt-0.5 text-lg font-bold text-emerald-400 tabular-nums leading-tight">
+                  {/* Total expected — compact on mobile, prominent on desktop */}
+                  <div className="shrink-0 rounded-lg border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-right sm:rounded-xl sm:px-3 sm:py-1.5">
+                    <div className="text-[8px] text-zinc-500 leading-none sm:text-[9px]">Total</div>
+                    <div className="mt-0.5 text-base font-bold text-emerald-400 tabular-nums leading-tight sm:text-lg">
                       {totalExpected}
                     </div>
-                    <div className="text-[9px] text-zinc-500 leading-none">corners</div>
+                    <div className="text-[8px] text-zinc-500 leading-none sm:text-[9px]">corners</div>
                   </div>
                 </div>
 
@@ -467,7 +493,7 @@ export default function CornersPage() {
 
                 {/* Total corners lines */}
                 {totalLines && (
-                  <div className="mt-2.5 border-t border-zinc-800 pt-2.5">
+                  <div className="mt-2 border-t border-zinc-800 pt-2 sm:mt-2.5 sm:pt-2.5">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <div className="text-[10px] text-zinc-400 font-medium">
                         Total Match Corners Over/Under

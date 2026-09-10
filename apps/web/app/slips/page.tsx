@@ -13,6 +13,7 @@ import {
 import { useData } from "../../lib/data-provider";
 import { Badge, Card, CardHeader, EmptyState, Loading, SectionTitle } from "../../components/ui";
 import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
+import { VirtualList } from "../../components/virtual-list";
 
 export default function SlipsPage() {
   const { slips, allPredictions, bets, db, logBet, logParlay, refresh, sport } = useData();
@@ -26,6 +27,7 @@ export default function SlipsPage() {
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
   const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
   const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState("");
   // Per-leg stake override (₦). Defaults to the Kelly suggestion; lets the
   // user log what they ACTUALLY staked on SportyBet instead of what the
   // model suggested. Keyed by legKey.
@@ -75,9 +77,16 @@ export default function SlipsPage() {
       if (strategyFilter === "high_prob" && l.probability < 0.60) return false;
       if (strategyFilter === "big_edge" && l.edge < 0.07) return false;
       if (strategyFilter === "favorites" && l.odds > 1.85) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        const ht = (l.fixture.homeTeam ?? "").toLowerCase();
+        const at = (l.fixture.awayTeam ?? "").toLowerCase();
+        const lg = (l.fixture.league ?? "").toLowerCase();
+        if (!ht.includes(q) && !at.includes(q) && !lg.includes(q)) return false;
+      }
       return true;
     });
-  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, nowSec]);
+  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, search, nowSec]);
 
   const handleLogBet = async (leg: SlipLeg) => {
     const key = legKey(leg);
@@ -269,67 +278,79 @@ export default function SlipsPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="min-w-0 lg:col-span-2 space-y-4">
+        <div className="order-last min-w-0 space-y-4 lg:order-first lg:col-span-2">
           {/* Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-ink-700/50 bg-ink-900/40 p-2.5">
-            <div className="flex rounded-lg border border-ink-700/60 bg-ink-800/60 p-0.5">
-              {(
-                [
-                  ["all", "All"],
-                  ["today", "Today"],
-                  ["tomorrow", "Tomorrow"],
-                  ["week", "This Week"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setTimeFilter(key)}
-                  className={`rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-                    timeFilter === key ? "bg-emerald-400 text-ink-950 shadow-sm" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+          <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-2.5 space-y-2">
+            {/* Search + league select + show-all toggle */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search team or league…"
+                className="min-w-0 flex-1 rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-emerald-400/50"
+              />
+              <select
+                value={leagueFilter}
+                onChange={(e) => setLeagueFilter(e.target.value)}
+                className="w-auto shrink-0 rounded-lg border border-ink-700/60 bg-ink-800/80 px-2 py-1.5 text-xs font-medium text-slate-200 outline-none focus:border-sky-400/50"
+              >
+                <option value="all">All Leagues</option>
+                {leagues.map((lg) => (
+                  <option key={lg} value={lg}>{lg}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setShowAll(!showAll)}
+                className={`shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all ${
+                  showAll
+                    ? "border-amber-400/50 bg-amber-400/15 text-amber-300 ring-1 ring-amber-400/20"
+                    : "border-ink-700/60 bg-ink-800/80 text-slate-400 hover:border-ink-600 hover:text-slate-200"
+                }`}
+              >
+                {showAll ? "🏷️ Picks" : "👁️ All"}
+              </button>
             </div>
-
-            <select
-              value={leagueFilter}
-              onChange={(e) => setLeagueFilter(e.target.value)}
-              className="rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-1.5 text-xs font-medium text-slate-200 outline-none focus:border-sky-400/50"
-            >
-              <option value="all">All Leagues</option>
-              {leagues.map((lg) => (
-                <option key={lg} value={lg}>
-                  {lg}
-                </option>
-              ))}
-            </select>
-
-            <button
-              onClick={() => setShowAll(!showAll)}
-              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all ${
-                showAll
-                  ? "border-amber-400/50 bg-amber-400/15 text-amber-300 shadow-sm ring-1 ring-amber-400/20"
-                  : "border-ink-700/60 bg-ink-800/80 text-slate-400 hover:border-ink-600 hover:text-slate-200"
-              }`}
-            >
-              {showAll ? "🏷️ Show Value Picks Only" : "👁️ Show All Predictions"}
-            </button>
+            {/* Time + strategy filter pills — scrollable on mobile */}
+            <div className="flex items-center gap-2">
+              <div className="scrollbar-none flex flex-1 gap-1 overflow-x-auto">
+                {(
+                  [
+                    ["all", "All"],
+                    ["today", "Today"],
+                    ["tomorrow", "Tmrw"],
+                    ["week", "Week"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setTimeFilter(key)}
+                    className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      timeFilter === key ? "bg-emerald-400 text-ink-950 shadow-sm" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <span className="shrink-0 text-[11px] text-slate-500">
+                {filteredSlips.length}
+              </span>
+            </div>
           </div>
 
           {/* Quick Strategy Filters */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="scrollbar-none flex gap-1.5 overflow-x-auto">
             {[
-              ["all", "All Picks", "bg-ink-800 text-slate-200 border-ink-600"],
-              ["high_prob", "🟢 High Win-Rate (≥60%)", "bg-emerald-400/15 text-emerald-300 border-emerald-400/40"],
-              ["big_edge", "💎 Big Edge (≥7%)", "bg-sky-400/15 text-sky-300 border-sky-400/40"],
-              ["favorites", "⚽ Favorites (≤1.85)", "bg-purple-400/15 text-purple-300 border-purple-400/40"],
+              ["all", "All", "bg-ink-800 text-slate-200 border-ink-600"],
+              ["high_prob", "🟢 ≥60%", "bg-emerald-400/15 text-emerald-300 border-emerald-400/40"],
+              ["big_edge", "💎 ≥7%", "bg-sky-400/15 text-sky-300 border-sky-400/40"],
+              ["favorites", "⚽ ≤1.85", "bg-purple-400/15 text-purple-300 border-purple-400/40"],
             ].map(([key, label, activeStyle]) => (
               <button
                 key={key}
                 onClick={() => setStrategyFilter(key as any)}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${
+                className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all ${
                   strategyFilter === key
                     ? `${activeStyle} shadow-sm ring-1 ring-current/20`
                     : "border-ink-800 bg-ink-900/30 text-slate-400 hover:border-ink-700 hover:text-slate-200"
@@ -362,11 +383,16 @@ export default function SlipsPage() {
               body={showAll ? "Try switching your filter or selecting another league." : "Try switching your filter or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."}
             />
           ) : (
-            <div className="space-y-3.5">
-              {groupedSlips.map(([fixtureId, legs]) => {
+            <VirtualList
+              items={groupedSlips}
+              estimatedHeight={160}
+              overscan={3}
+              keyFn={(item) => item[0]}
+              className="max-h-[calc(100vh-12rem)]"
+              renderItem={([fixtureId, legs]) => {
                 const first = legs[0]!;
                 return (
-                  <div key={fixtureId} className="card overflow-hidden rounded-xl border border-ink-700/50 bg-ink-900/50 transition-all hover:border-ink-600/70">
+                  <div className="mb-3 card overflow-hidden rounded-xl border border-ink-700/50 bg-ink-900/50 transition-all hover:border-ink-600/70">
                     <div className="flex flex-col gap-1 border-b border-ink-800/80 bg-ink-800/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
                       <div className="min-w-0 flex-1">
                         <span className="text-sm font-semibold text-slate-100">
@@ -481,14 +507,15 @@ export default function SlipsPage() {
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              }}
+            />
           )}
         </div>
 
-        {/* Multiple panel — min-w-0 (see note above) so the parlay suggestions
-            never force a horizontal scroll on mobile. */}
-        <div className="min-w-0 lg:col-span-1">
+        {/* Multiple panel — on mobile this appears FIRST (order-first) so
+            users see parlays without scrolling through all predictions.
+            On desktop it stays in the right column. */}
+        <div className="order-first min-w-0 lg:order-last lg:col-span-1">
           <SectionTitle sub="Opt-in only — the true math always shown">Multiple builder</SectionTitle>
           <Card className="card-pad lg:sticky lg:top-20">
             {!multiplesOn ? (

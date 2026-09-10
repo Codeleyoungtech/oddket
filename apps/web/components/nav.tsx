@@ -5,18 +5,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useData, type Sport } from "../lib/data-provider";
 
-/** Primary tabs — kept to 5 so the mobile bottom bar stays thumb-friendly. */
+/** Primary tabs — 4 on mobile (fits grid-cols-4 + More = 5 cols),
+ *  all 5 on desktop top bar. Settings moves to More on mobile so the
+ *  bottom bar never overflows. */
 const LINKS = [
   { href: "/", label: "Overview", icon: "home" },
   { href: "/slips", label: "Slips", icon: "ticket" },
   { href: "/corners", label: "Corners", icon: "corners" },
   { href: "/bets", label: "Bet Log", icon: "receipt" },
+] as const;
+
+/** Desktop-only extra links (always visible in top bar).
+ *  Settings is here so it appears on desktop nav + mobile More sheet. */
+const DESKTOP_EXTRA = [
   { href: "/settings", label: "Settings", icon: "gear" },
 ] as const;
 
 /** Secondary links — hidden behind the mobile "More" sheet, always visible
  *  in the desktop top bar. */
 const MORE_LINKS = [
+  { href: "/settings", label: "Settings", icon: "gear", desc: "Bankroll, leagues, stakes & filters" },
   { href: "/calibration", label: "Calibration", icon: "gauge", desc: "Brier score, calibration curve & CLV" },
   { href: "/backtest", label: "Backtest", icon: "flask", desc: "Historical replay of the EV engine" },
 ] as const;
@@ -117,9 +125,9 @@ export function Nav() {
             </span>
           </Link>
 
-          {/* Desktop nav */}
+          {/* Desktop nav — all primary + Settings */}
           <nav className="hidden items-center gap-1 md:flex">
-            {LINKS.map((l) => {
+            {[...LINKS, ...DESKTOP_EXTRA].map((l) => {
               const active = pathname === l.href;
               return (
                 <Link
@@ -144,7 +152,7 @@ export function Nav() {
           </div>
         </div>
       </header>      {/* Mobile bottom tab bar — app-like, thumb-friendly, safe-area aware.
-          Only 5 primary tabs; Calibration + Backtest live in the More sheet. */}
+          4 primary tabs + More (Settings, Calibration, Backtest). */}
       <MobileTabBar pathname={pathname} />
     </>
   );

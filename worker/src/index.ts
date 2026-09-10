@@ -37,6 +37,12 @@ import {
   upsertPushSubscription,
 } from "./db";
 import { notifySettlements, sendTestPush } from "./push";
+import {
+  handleTelegramUpdate,
+  notifyTelegramSettlements,
+  registerTelegramWebhook,
+  sendTelegramDigest,
+} from "./telegram";
 import { ingestOdds } from "./odds/ingest";
 import { pullClosingOdds } from "./odds/closing";
 import { ingestTennisOdds, pullTennisClosingOdds } from "./odds/tennis-ingest";
@@ -787,8 +793,12 @@ app.post("/api/settle", async (c) => {
     const result = await settleFinishedMatches(c.env);
     // True parlays settle all-or-nothing from the same outcomes.
     const parlaysSettled = await settleParlayBets(c.env.DB);
-    if (result.footballSettled + result.tennisSettled + parlaysSettled > 0) await notifySettlements(c.env);
-    return c.json({ ...result, parlaysSettled });
+    let telegram = { sent: 0, events: 0 };
+    if (result.footballSettled + result.tennisSettled + parlaysSettled > 0) {
+      await notifySettlements(c.env); // browser push
+      telegram = await notifyTelegramSettlements(c.env); // Telegram
+    }
+    return c.json({ ...result, parlaysSettled, telegram });
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 502);
   }
@@ -908,6 +918,46 @@ app.post("/api/telegram/share", async (c) => {
       }
     }
     return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ ok: false, error: String(err) }, 502);
+  }
+});
+
+/* ---------------- telegram bot ---------------- */
+
+/**
+ * Telegram webhook — every message/button tap on @oddketbot lands here.
+ * Verified with the secret token Telegram echoes back (set when the webhook
+ * was registered), so a guessed URL alone can't drive the bot.
+ */
+app.post("/api/telegram/webhook", async (c) => {
+  const expected = c.env.TELEGRAM_WEBHOOK_SECRET;
+  if (expected && c.req.header("x-telegram-bot-api-secret-token") !== expected) {
+    return c.json({ ok: false, error: "Unauthorized." }, 401);
+  }
+  const update = await c.req.json().catch(() => null);
+  if (!update) return c.json({ ok: false, error: "Invalid update body." }, 400);
+  // Answer Telegram immediately; the reply is sent via the Bot API.
+  c.executionCtx.waitUntil(handleTelegramUpdate(c.env, update));
+  return c.json({ ok: true });
+});
+
+/** Register the webhook with Telegram (points at THIS worker's origin). */
+app.post("/api/telegram/setup", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized." }, 401);
+  const origin = c.req.query("origin") ?? new URL(c.req.url).origin;
+  const result = await registerTelegramWebhook(c.env, origin);
+  return c.json(result, result.ok ? 200 : 502);
+});
+
+/**
+ * Push the daily digest to every subscribed chat. Fired by GitHub Actions each
+ * morning; POST manually to test. Returns how many chats were reached.
+ */
+app.post("/api/telegram/digest", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized." }, 401);
+  try {
+    return c.json({ ok: true, ...(await sendTelegramDigest(c.env)) });
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 502);
   }

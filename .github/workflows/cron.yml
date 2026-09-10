@@ -24,8 +24,12 @@ on:
     - cron: "30 18 * * *"
     # Auto-settlement — pull live scores + settle finished bets. Runs twice
     # daily (morning + evening) so overnight/afternoon results settle promptly.
+    # A settle run that changes anything also pushes a Telegram alert.
     - cron: "15 8 * * *"
     - cron: "15 21 * * *"
+    # Daily Telegram digest — top flagged picks + accumulator tiers, pushed to
+    # every subscribed chat (07:00 UTC = 08:00 WAT).
+    - cron: "0 7 * * *"
   workflow_dispatch: # manual "Run workflow" button for testing
 
 jobs:
@@ -43,6 +47,7 @@ jobs:
           case "${{ github.event.schedule }}" in
             30\ 18\ *\ *\ *) echo "endpoint=closing" >> "$GITHUB_OUTPUT" ;;
             15\ 8\ *\ *\ *|15\ 21\ *\ *\ *) echo "endpoint=settle" >> "$GITHUB_OUTPUT" ;;
+            0\ 7\ *\ *\ *) echo "endpoint=digest" >> "$GITHUB_OUTPUT" ;;
             *) echo "endpoint=ingest" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -61,6 +66,12 @@ jobs:
           if [ "$ENDPOINT" = "settle" ]; then
             echo "firing /api/settle"
             curl -sS -m 180 -X POST "$WORKER_URL/api/settle" \
+              -H "x-predict-key: $PREDICT_SECRET"
+            echo
+          elif [ "$ENDPOINT" = "digest" ]; then
+            # Telegram daily digest (no tennis prefix — one call covers all).
+            echo "firing /api/telegram/digest"
+            curl -sS -m 120 -X POST "$WORKER_URL/api/telegram/digest" \
               -H "x-predict-key: $PREDICT_SECRET"
             echo
           else

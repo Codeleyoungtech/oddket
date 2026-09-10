@@ -52,6 +52,10 @@ export interface Env {
    *  clear "not configured" instead of a silent failure). */
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+  /** Secret sent to Telegram when registering the webhook and echoed back in
+   *  the X-Telegram-Bot-Api-Secret-Token header — stops anyone who guesses the
+   *  webhook URL from driving the bot. */
+  TELEGRAM_WEBHOOK_SECRET?: string;
 }
 
 /* ---------------- row mappers ---------------- */
@@ -878,4 +882,60 @@ export async function deletePushSubscription(db: D1Database, endpoint: string): 
 export async function listPushSubscriptions(db: D1Database): Promise<PushSubRow[]> {
   const rows = await db.prepare("SELECT * FROM push_subscriptions").all<PushSubRow>();
   return rows.results ?? [];
+}
+
+/* ---------------- telegram chats ---------------- */
+
+export interface TelegramChat {
+  chatId: string;
+  label: string;
+  digestEnabled: boolean;
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+interface TelegramChatRow {
+  chat_id: string;
+  label: string | null;
+  digest_enabled: number;
+  created_at: number;
+  last_seen_at: number;
+}
+
+/** Register (or refresh) a chat that talked to the bot. Keeps the existing
+ *  digest preference on repeat calls — only /subscribe and /unsubscribe
+ *  change it. */
+export async function upsertTelegramChat(db: D1Database, chatId: string, label: string): Promise<void> {
+  const now = Math.floor(Date.now() / 1000);
+  await db
+    .prepare(
+      `INSERT INTO telegram_chats (chat_id, label, digest_enabled, created_at, last_seen_at)
+       VALUES (?1, ?2, 1, ?3, ?3)
+       ON CONFLICT(chat_id) DO UPDATE SET
+         label = excluded.label,
+         last_seen_at = excluded.last_seen_at`,
+    )
+    .bind(chatId, label, now)
+    .run();
+}
+
+export async function setTelegramDigestEnabled(db: D1Database, chatId: string, enabled: boolean): Promise<void> {
+  await db
+    .prepare("UPDATE telegram_chats SET digest_enabled = ?2, last_seen_at = ?3 WHERE chat_id = ?1")
+    .bind(chatId, enabled ? 1 : 0, Math.floor(Date.now() / 1000))
+    .run();
+}
+
+export async function listTelegramChats(db: D1Database, onlyDigest = false): Promise<TelegramChat[]> {
+  const sql = onlyDigest
+    ? "SELECT * FROM telegram_chats WHERE digest_enabled = 1"
+    : "SELECT * FROM telegram_chats";
+  const rows = await db.prepare(sql).all<TelegramChatRow>();
+  return (rows.results ?? []).map((r) => ({
+    chatId: r.chat_id,
+    label: r.label ?? r.chat_id,
+    digestEnabled: r.digest_enabled === 1,
+    createdAt: r.created_at,
+    lastSeenAt: r.last_seen_at,
+  }));
 }

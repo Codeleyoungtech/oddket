@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 17 — **mobile nav cleanup + corners search + multi-suggestions + virtualized slips** (Settings moved into the More sheet on mobile, corners page fits 360px screens with search, multiple suggestions per risk tier, ~1,700-row "Show All" list virtualized so the toggle doesn't freeze).
+**Last updated:** Pass 19 — **Telegram bot** (@oddketbot): commands, button menu, daily digest + settlement alerts, deployed with the webhook registered and the owner's chat subscribed.
 
 ---
 
@@ -281,6 +281,81 @@ rows on mobile and More/Settings vanished on desktop. Now:
 - web production build green
 - worker e2e **104/104** passing
 - Committed (no co-author)
+
+---
+
+## 19. Pass 19 — Telegram bot (@oddketbot)
+
+The bot is a read-only front desk for the model: it surfaces what the engine has
+*already* flagged and never places, logs, or auto-bets anything.
+
+### Files
+
+- `worker/src/telegram.ts` — bot module: Bot API sender, command router,
+  message builders, alert broadcasts, webhook registration.
+- `worker/src/db.ts` — `upsertTelegramChat`, `setTelegramDigestEnabled`,
+  `listTelegramChats`.
+- `worker/migrations/0006_telegram.sql` — `telegram_chats` table
+  (`chat_id`, `label`, `digest_enabled`, `created_at`, `last_seen_at`).
+
+### Routes
+
+| Route | Purpose |
+|---|---|
+| `POST /api/telegram/webhook` | Receives every message/button tap. Verified against the `X-Telegram-Bot-Api-Secret-Token` header when `TELEGRAM_WEBHOOK_SECRET` is set; replies are sent via the Bot API inside `waitUntil`. |
+| `POST /api/telegram/setup` | Registers the webhook at this worker's own origin + uploads the `/` command list. Requires `PREDICT_SECRET`. |
+| `POST /api/telegram/digest` | Pushes the daily digest to every subscribed chat. Fired by GitHub Actions, gated by `PREDICT_SECRET`. |
+| `POST /api/telegram/share` | (Pass 18) forwards a rendered slip image + text to the configured chat. |
+
+### Commands
+
+`/picks` (flagged singles, edge-ranked) · `/multiples` (safe · balanced · risky
+accumulators) · `/corners` (team corner line probs) · `/leagues` (coverage +
+what's flagged) · `/settled` (last 7 days, net P&L) · `/status` (model + data
+health) · `/alerts` (toggle notifications) · `/menu` (inline-keyboard buttons) ·
+`/help`. Plain text ("hi") shows the menu rather than an "unknown command" error.
+
+### Notifications
+
+- **Daily digest** — 07:00 UTC (08:00 WAT) via a new entry in
+  `.github/workflows/cron.yml` → `POST /api/telegram/digest`. Top 5 flagged
+  picks + the three accumulator tiers.
+- **Settlement alerts** — `/api/settle` now also calls
+  `notifyTelegramSettlements` after a run that changed something (alongside the
+  existing web-push). Reports only the last 3 hours so quiet re-runs stay quiet.
+- Recipients = every row in `telegram_chats` with `digest_enabled = 1`, plus
+  `TELEGRAM_CHAT_ID`. A chat is registered automatically the first time it talks
+  to the bot; `/alerts` toggles its preference.
+
+### Secrets (values deliberately NOT committed)
+
+| Secret | Where |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Cloudflare Worker secret (from @BotFather) |
+| `TELEGRAM_CHAT_ID` | Cloudflare Worker secret (owner chat: `6559982001`) |
+| `TELEGRAM_WEBHOOK_SECRET` | Cloudflare Worker secret — also sent to Telegram as `secret_token` |
+
+Read them back with `wrangler secret list` (names only) — Cloudflare never
+returns secret values.
+
+### Deployed state (verified)
+
+- `wrangler d1 migrations apply oddket --remote` → `0006_telegram.sql` applied.
+- Worker deployed (`oddket-worker`, version `a870de8b`).
+- Webhook registered; `getWebhookInfo` → `pending: 0`, `last_error: null`.
+- D1 `telegram_chats` contains `6559982001 · Eleazar Ogoyemi (@codeleyoungtech) · digest_enabled = 1`,
+  which also proves the webhook → worker → D1 path works end to end.
+- Typecheck green, e2e **104/104** passing.
+
+### ⚠️ Known gotcha found during this pass
+
+**The `PREDICT_SECRET` value recorded in section 13 of this doc is STALE.**
+`POST /api/telegram/setup` with it returns `{"ok":false,"error":"Unauthorized."}`.
+The live value is the one shared with GitHub Actions (`gh secret list`), which is
+why the scheduled crons still authenticate fine. The webhook was therefore
+registered directly against the Bot API instead. **Do not trust the literal
+secret in this doc** — verify with GitHub/Cloudflare before relying on it, and
+treat any committed secret as burned.
 
 ---
 

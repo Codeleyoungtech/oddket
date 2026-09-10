@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 16 — **INTELLIGENT PARLAY PICKER + corners/mobile UI + nav consolidation** (risk-tiered suggestions safe 2-4 / balanced 5-8 / risky 9-20 legs, corners page mobile-first revamp, 5-tab bottom nav + More sheet, e2e suite repaired to 104 passing).
+**Last updated:** Pass 17 — **mobile nav cleanup + corners search + multi-suggestions + virtualized slips** (Settings moved into the More sheet on mobile, corners page fits 360px screens with search, multiple suggestions per risk tier, ~1,700-row "Show All" list virtualized so the toggle doesn't freeze).
 
 ---
 
@@ -181,6 +181,49 @@ Calibration and Backtest (with descriptions). Desktop top bar unchanged.
   the real D1 API.
 - `losingScore` for a **draw** selection returned 1-1 (a draw = the leg
   WINS) — fixed to 2-0 so a draw leg genuinely loses.
+
+---
+
+## 17. Pass 17 — mobile UX + virtualization pass
+
+### Bottom nav — 4 primary tabs + More sheet (no 2-row wrap)
+
+Previous pass had 5 links + More = 6 items in a 5-col grid → wrapped into two
+rows on mobile and More/Settings vanished on desktop. Now:
+- **Mobile:** Overview, Slips, Corners, Bet Log + More (sheet holds Settings,
+  Calibration, Backtest). 5 items total, single row, no wrap.
+- **Desktop:** unchanged top bar; More items render inline.
+
+### Corners page — fits 360px screens
+
+- Filter bar now scrolls horizontally instead of wrapping/overflowing.
+- Cards constrain to viewport width; line strips are horizontally scrollable
+  pills (`.scrollbar-none`) so nothing forces page-level zoom.
+- Added a search input (team / league) to the corners page.
+
+### Multiple builder UX
+
+- Panel moved ABOVE the prediction list on mobile (CSS order) — no more
+  scrolling through hundreds of slips to see suggestions.
+- `suggestParlays` now returns **multiple suggestions per tier** (default 6)
+  using varied pool windows, so Safe/Balanced/Risky each show a few distinct
+  tickets instead of one.
+
+### Virtualized slips list
+
+- New `apps/web/components/virtual-list.tsx`: windowed renderer (~10 rows
+  mounted, overscan 6) — no dependency added, pure React.
+- "Show All" toggle on `/slips` now renders ~1,700 rows through the
+  VirtualList: only in/near-viewport rows are mounted, so the toggle and
+  scroll stay instant. Works with the existing grouping/filter/search.
+- Avoids `contain: strict` so sticky elements keep working.
+
+### Verification (Pass 17)
+
+- `pnpm --filter @oddket/core typecheck` green
+- `pnpm --filter web typecheck` + production build green
+- worker e2e **104/104** passing
+- Committed `2973d5d` (no co-author)
 
 ---
 

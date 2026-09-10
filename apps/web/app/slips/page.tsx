@@ -188,6 +188,28 @@ export default function SlipsPage() {
     return suggestParlays(slips, db.settings, sport, 9);
   }, [db, slips, sport]);
 
+  /**
+   * Model-only accumulators.
+   *
+   * Markets like O1.5 and team-to-score have a model probability but NO
+   * bookmaker price in the feed (the odds pull requests h2h + totals 2.5 only),
+   * so they can never enter the EV-checked builder above — a parlay's
+   * multiplier IS the product of its leg prices. This combines them on
+   * probability alone: real joint chance, break-even odds, no multiplier/EV/stake.
+   *
+   * Correlation still matters here and is handled by the same same-match rule:
+   * O1.5 and both team-to-score lines in ONE fixture are strongly dependent, so
+   * at most one leg per match can be chosen.
+   *
+   * Same hook-ordering rule as `suggestions`: must stay before `if (!db)`.
+   */
+  const modelOnlySuggestions = useMemo(() => {
+    if (!db) return [];
+    const unpriced = allPredictions.filter((l) => !(l.odds > 1));
+    if (unpriced.length === 0) return [];
+    return suggestParlays(unpriced, db.settings, sport, 3, "model-only");
+  }, [db, allPredictions, sport]);
+
   if (!db)
     return (
       <PageSkeleton>
@@ -800,6 +822,70 @@ export default function SlipsPage() {
                           </li>
                         );
                       })}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Model-only accumulators — probability only, never EV-checked.
+                    Kept visually separate from the priced suggestions above so a
+                    no-odds ticket can never be mistaken for a flagged slip. */}
+                {modelOnlySuggestions.length > 0 && (
+                  <div className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/[0.04] p-3">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold text-slate-200">Model-only accumulators</p>
+                      <span className="inline-flex items-center rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[10px] font-bold text-amber-200">
+                        ⚠ NOT EV-CHECKED
+                      </span>
+                    </div>
+                    <p className="mb-3 text-[11px] leading-relaxed text-amber-200/70">
+                      These markets have a model probability but{" "}
+                      <span className="font-semibold">no bookmaker price</span> in the feed, so there is no edge to
+                      compute — no multiplier, no EV, no stake. The combined chance is real; the{" "}
+                      <span className="font-semibold">break-even odds</span> is the price your bookmaker must beat for
+                      the ticket to be worth placing. Check every line yourself.
+                    </p>
+                    <ul className="space-y-2">
+                      {modelOnlySuggestions.map((s) => (
+                        <li key={parlayKey(s)} className="rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center rounded-full border border-ink-600 bg-ink-800/60 px-2 py-0.5 text-[10px] font-bold text-slate-300">
+                              {s.tier === "safe" ? "🟢" : s.tier === "balanced" ? "🟡" : "🔴"}{" "}
+                              {s.tierLabel.replace(/ \(option \d+\)$/, "")}
+                            </span>
+                            <span className="text-[10px] text-slate-500">{s.legs.length} legs</span>
+                          </div>
+                          <div className="mb-2 space-y-1">
+                            {s.legs.map((l) => (
+                              <p key={legKey(l)} className="truncate text-xs text-slate-400">
+                                <span className="text-slate-300">
+                                  {l.fixture.homeTeam} vs {l.fixture.awayTeam}
+                                </span>{" "}
+                                — {marketLabel(l.market, l.selection)}{" "}
+                                <span className="num text-slate-300">{fmtPct(l.probability)}</span>
+                                <span className="text-slate-600"> · check bookmaker</span>
+                              </p>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1 text-[11px]">
+                            <div>
+                              <p className="text-slate-600">True chance</p>
+                              <p className="num font-semibold text-amber-200">{fmtPct(s.combinedProbability)}</p>
+                            </div>
+                            <div>
+                              <p className="text-slate-600">Break-even odds</p>
+                              <p className="num font-semibold text-slate-200">{s.fairOdds.toFixed(2)}x</p>
+                            </div>
+                          </div>
+                          {s.warnings.map((w, i) => (
+                            <p
+                              key={i}
+                              className="mt-2 rounded border border-amber-400/30 bg-amber-400/[0.06] px-2 py-1.5 text-[10px] leading-relaxed text-amber-200/80"
+                            >
+                              ⚠ {w}
+                            </p>
+                          ))}
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 )}

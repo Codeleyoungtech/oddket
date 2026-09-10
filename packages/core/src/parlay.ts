@@ -13,6 +13,9 @@ export interface ParlaySuggestion {
   legs: SlipLeg[];
   combinedOdds: number;
   combinedProbability: number;
+  /** Break-even price derived from `combinedProbability` (1 / p). Always
+   *  meaningful — for a model-only ticket it is the price the bookmaker must
+   *  beat for the ticket to be worth placing. */
   fairOdds: number;
   /** bookmaker EV on the parlay = prob × advertised − 1 */
   ev: number;
@@ -21,6 +24,13 @@ export interface ParlaySuggestion {
   tier: ParlayTier;
   /** human label, e.g. "Safe accumulator · 2–4 legs" */
   tierLabel: string;
+  /**
+   * false for MODEL-ONLY tickets, built from legs that have no bookmaker price
+   * in the feed. The probability math is real, but `combinedOdds`/`ev`/`stake`
+   * are 0 and must NOT be presented as a payout — there is no price to compare
+   * against, so there is no edge to claim.
+   */
+  priced: boolean;
 }
 
 /** Product of leg odds / probabilities, with a guard for empty input. */
@@ -130,9 +140,16 @@ export function suggestParlays(
   settings: Settings,
   sport: "football" | "tennis",
   maxSuggestions = 12,
+  pricing: "priced" | "model-only" = "priced",
 ): ParlaySuggestion[] {
+  // "model-only" builds from the UNPRICED legs (`odds` 0 — markets the odds
+  // feed has no line for, e.g. O1.5 / team-to-score). It is deliberately a
+  // separate mode rather than a fallback: without a price there is no EV, so
+  // the output is a probability tool, not a bet recommendation.
+  const modelOnly = pricing === "model-only";
   const pool = legs
-    .filter((l) => l.fixture.status === "scheduled" && l.odds > 1 && Number.isFinite(l.odds))
+    .filter((l) => l.fixture.status === "scheduled" && Number.isFinite(l.odds))
+    .filter((l) => (modelOnly ? !(l.odds > 1) : l.odds > 1))
     .sort((a, b) => b.probability - a.probability);
 
   const suggestions: ParlaySuggestion[] = [];
@@ -157,10 +174,17 @@ export function suggestParlays(
       if (chosen.length < tier.minLegs) break; // not enough eligible legs for another combo
 
       const p = clamp01(product(chosen.map((l) => l.probability)));
-      const odds = product(chosen.map((l) => l.odds));
+      // No price on any leg → no multiplier, no EV, no stake. `fairOdds` still
+      // stands: it is 1/p, derived purely from the model probabilities.
+      const odds = modelOnly ? 0 : product(chosen.map((l) => l.odds));
       const fairOdds = p > 0 ? 1 / p : 0;
-      const stake = suggestedStake(p, odds, settings.bankroll, settings);
+      const stake = modelOnly ? 0 : suggestedStake(p, odds, settings.bankroll, settings);
       const warnings: string[] = [];
+      if (modelOnly) {
+        warnings.push(
+          "Model-only: none of these legs have a bookmaker price in the feed, so there is NO EV check here. Compare every line against your own bookmaker — only place the ticket if its combined price beats the break-even odds above.",
+        );
+      }
       if (tier.tier === "risky") {
         warnings.push(
           "Risky tier: a big multiplier comes from compounding many legs — the true chance of ALL of them landing is low. Only stake money you can afford to lose.",
@@ -171,11 +195,12 @@ export function suggestParlays(
         combinedOdds: round(odds, 4),
         combinedProbability: round(p, 4),
         fairOdds: round(fairOdds, 4),
-        ev: round(p * odds - 1, 4),
+        ev: modelOnly ? 0 : round(p * odds - 1, 4),
         stake,
         warnings,
         tier: tier.tier,
         tierLabel: pass === 0 ? tier.label : `${tier.label} (option ${pass + 1})`,
+        priced: !modelOnly,
       });
       // Mark these legs so the next pass picks a different combo
       for (const l of chosen) {

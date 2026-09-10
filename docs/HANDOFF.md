@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 20 — **PREDICT_SECRET rotated** (the literal committed in this doc was leaked) and **share-as-image extended to suggested accumulators**.
+**Last updated:** Pass 21 — **model-only accumulators**: a clearly separated section that combines the unpriced markets (O1.5 / team-to-score) on probability alone, with break-even odds and no payout claim.
 
 ---
 
@@ -398,6 +398,63 @@ share a suggested tier was to hand-pick all of its legs back into the builder.
 - web typecheck + production build green
 - worker e2e **104/104** passing
 - rotation verified against the live worker (401 old / 200 new)
+
+---
+
+## 21. Pass 21 — model-only accumulators
+
+### Why these markets can't go in the EV-checked builder
+
+An accumulator needs two independent things: **probability** (the chance all legs
+land — we have it) and **payout** (what the bookmaker pays — we don't). A parlay's
+multiplier *is* the product of its leg prices, so a leg with no price has no
+multiplier, no EV, and no Kelly stake. Putting them in the priced builder would
+mean fabricating the payout number the user stakes against — so they stay out,
+by necessity rather than by choice.
+
+Measured on the live worker: **1,002 model-only predictions across 167 scheduled
+matches** (the feed requests only `h2h,totals`, so `ou15` / `team_home_goals` /
+`team_away_goals` never get an odds row).
+
+### What was added
+
+`packages/core/src/parlay.ts` — `suggestParlays(..., pricing: "priced" | "model-only")`:
+
+- `"priced"` (default, unchanged) — only legs with `odds > 1`.
+- `"model-only"` — only legs with **no** price (`!(odds > 1)`). Same greedy
+  high-probability selection and the same tier/correlation gate. `combinedOdds`,
+  `ev` and `stake` are forced to `0`; `fairOdds` (= 1/p) is kept because it is
+  derived purely from the model probabilities.
+- `ParlaySuggestion.priced: boolean` was added so consumers can tell the two
+  kinds apart. All existing callers (slips page, Telegram) get `priced: true`.
+
+`apps/web/app/slips/page.tsx` — a new **Model-only accumulators** block inside
+multiple builder, visually separated (amber border) with a `⚠ NOT EV-CHECKED`
+badge. Per ticket: each leg's model probability + "check bookmaker", the true
+joint chance, and the **break-even odds** (the price the bookmaker must beat).
+No multiplier, no EV, no stake, no log button.
+
+### Correlation — why this is safe to combine
+
+O1.5 and both team-to-score lines in the **same** fixture are strongly dependent
+(if both teams score, O1.5 is nearly guaranteed). The existing strict
+**same-match** rule already blocks that, so at most one leg per match can be
+chosen. Verified: 167 eligible matches in every tier (safe/balanced/risky), so
+all three tiers fill comfortably — 20-leg risky included.
+
+### Still open
+
+- `settings.maxMultipleLegs` (currently 6) is **not** enforced on the model-only
+  tickets; the tiers cap at 4/8/20. Fine for a no-stake display, but worth
+  aligning if it ever gains a stake field.
+- The bot has no `/model-only` command yet.
+
+### Verification (Pass 21)
+
+- core + web typechecks green, production build green
+- worker e2e **104/104** passing
+- live-data check: 1,002 model-only legs, 167 eligible matches per tier,
+  strongest legs O1.5 95.3% / team-to-score 93.6%
 
 ---
 

@@ -1,4 +1,5 @@
 import {
+  allPredictionsAsLegs,
   flagSlips,
   marketLabel,
   suggestParlays,
@@ -158,6 +159,10 @@ function menuKeyboard(): InlineKeyboard {
       { text: "📊 Status", callback_data: "status" },
       { text: "🔔 Alerts", callback_data: "alerts" },
     ],
+    [
+      { text: "🧪 Model-only", callback_data: "modelonly" },
+      { text: "🧾 Settled", callback_data: "settled" },
+    ],
   ];
 }
 
@@ -168,6 +173,7 @@ I surface what the model already flagged — I never place or auto-log a bet.
 <b>Commands</b>
 /picks — today's flagged singles (edge-ranked)
 /multiples — safe · balanced · risky accumulators
+/modelonly — accumulators with no odds (probability only)
 /corners — team corner line probabilities
 /leagues — league coverage + what's flagged
 /settled — recent settled bets & parlays
@@ -226,6 +232,61 @@ async function multiplesMessage(env: Env): Promise<string> {
     );
   });
   return `🎰 <b>Multiples</b> — ${suggestions.length} built\n\n${blocks.join("\n\n")}\n\n<i>All-or-nothing. The true chance of every leg landing is the number to respect, not the multiplier.</i>`;
+}
+
+/**
+ * Model-only accumulators — the unpriced markets (O1.5 / team-to-score) combined
+ * on probability alone.
+ *
+ * Built from the raw prediction rows rather than `flagSlips`: flagging requires a
+ * bookmaker price to compute edge against, and these markets have no price in the
+ * feed (the odds pull requests h2h + totals only). That is exactly why they can
+ * never appear in /multiples — a parlay's multiplier IS the product of its leg
+ * prices. Here the joint probability is real and the break-even price (1/p) tells
+ * the user what their bookmaker must beat. No multiplier, no EV, no stake.
+ */
+async function modelOnlyMessage(env: Env): Promise<string> {
+  const db = await loadDatabase(env.DB);
+  const legs = allPredictionsAsLegs(slipFixtures(db), db.predictions, db.odds, db.settings).filter(
+    (l) => !(l.odds > 1),
+  );
+  if (legs.length === 0) {
+    return "🧪 <b>Model-only accumulators</b>\n\nNo unpriced predictions loaded yet. These come from the Over 1.5 and team-to-score models — check /status.";
+  }
+
+  const all = suggestParlays(legs, db.settings, "football", 9, "model-only");
+  // One ticket per tier (the highest-probability one), not three of the same tier.
+  const perTier = (["safe", "balanced", "risky"] as const)
+    .map((t) => all.find((s) => s.tier === t))
+    .filter((s): s is NonNullable<typeof s> => Boolean(s));
+  if (perTier.length === 0) {
+    return "🧪 <b>Model-only accumulators</b>\n\nNot enough unpriced legs cleared the probability floor to build a ticket right now.";
+  }
+
+  const icons: Record<string, string> = { safe: "🟢", balanced: "🟡", risky: "🔴" };
+  const blocks = perTier.map((s) => {
+    const shown = s.legs.slice(0, 8);
+    const legLines = shown
+      .map(
+        (l) =>
+          `   • ${esc(l.fixture.homeTeam)} vs ${esc(l.fixture.awayTeam)} — ${esc(marketLabel(l.market, l.selection))} <b>${fmtPct(l.probability)}</b>`,
+      )
+      .join("\n");
+    const more = s.legs.length > shown.length ? `\n   <i>+${s.legs.length - shown.length} more legs</i>` : "";
+    return (
+      `${icons[s.tier] ?? "•"} <b>${esc(s.tierLabel.replace(/ \(option \d+\)$/, ""))}</b> · ${s.legs.length} legs\n` +
+      `${legLines}${more}\n` +
+      `   true chance <b>${fmtPct(s.combinedProbability)}</b> · break-even <b>${s.fairOdds.toFixed(2)}x</b>`
+    );
+  });
+
+  return (
+    `🧪 <b>Model-only accumulators</b>\n\n` +
+    `<b>⚠️ NOT EV-CHECKED</b> — none of these legs have a bookmaker price in the feed, so there is <b>no EV and no stake</b> here. ` +
+    `The <b>break-even</b> figure is the price your bookmaker must beat for the ticket to be worth placing. Check every line yourself.\n\n` +
+    `${blocks.join("\n\n")}\n\n` +
+    `<i>Correlation-safe: at most one leg per match, so Over 1.5 and team-to-score never double-count the same goals.</i>`
+  );
 }
 
 async function leaguesMessage(env: Env): Promise<string> {
@@ -403,6 +464,8 @@ async function replyFor(env: Env, action: string, chatId: string, label: string)
       return { text: await picksMessage(env), keyboard: menuKeyboard() };
     case "multiples":
       return { text: await multiplesMessage(env), keyboard: menuKeyboard() };
+    case "modelonly":
+      return { text: await modelOnlyMessage(env), keyboard: menuKeyboard() };
     case "leagues":
       return { text: await leaguesMessage(env), keyboard: menuKeyboard() };
     case "corners":
@@ -547,6 +610,7 @@ export async function registerTelegramWebhook(env: Env, origin: string): Promise
     commands: [
       { command: "picks", description: "Today's flagged singles" },
       { command: "multiples", description: "Safe / balanced / risky accumulators" },
+      { command: "modelonly", description: "Accumulators with no odds (probability only)" },
       { command: "corners", description: "Team corner line probabilities" },
       { command: "leagues", description: "League coverage and what's flagged" },
       { command: "settled", description: "Recent settled bets" },

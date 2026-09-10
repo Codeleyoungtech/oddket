@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 21 — **model-only accumulators**: a clearly separated section that combines the unpriced markets (O1.5 / team-to-score) on probability alone, with break-even odds and no payout claim.
+**Last updated:** Pass 21 — **model-only accumulators** on the slips page *and* as a Telegram `/modelonly` command: the unpriced markets (O1.5 / team-to-score) combined on probability alone, with break-even odds and no payout claim.
 
 ---
 
@@ -442,12 +442,29 @@ O1.5 and both team-to-score lines in the **same** fixture are strongly dependent
 chosen. Verified: 167 eligible matches in every tier (safe/balanced/risky), so
 all three tiers fill comfortably — 20-leg risky included.
 
+### Telegram `/modelonly`
+
+- `modelOnlyMessage()` in `worker/src/telegram.ts` builds from the raw prediction
+  rows (`allPredictionsAsLegs(...).filter(l => !(l.odds > 1))`) rather than
+  `flagSlips`, which requires a price to compute edge against.
+- Shows **one ticket per tier** (highest-probability of each) — not three of the
+  same tier — with each leg's probability, the true joint chance, and the
+  break-even price. Legs capped at 8 per ticket with a "+N more" line so the
+  message stays well under Telegram's 4096-char limit.
+- Added to `/help`, the inline menu (row 4, beside 🧾 Settled), and
+  `setMyCommands` autocomplete.
+- Verified Sep 10, 2026 by POSTing a synthetic `/modelonly` update through the
+  live webhook: `200`, handler ran (`telegram_chats.last_seen_at` advanced),
+  `getWebhookInfo` → `pending: 0`, `last_error: none`.
+- Note: the web section is gated by `multiplesEnabled` (it lives inside the
+  multiple builder); the bot command is **not** gated, since it is explicit user
+  intent and makes no staking claim.
+
 ### Still open
 
 - `settings.maxMultipleLegs` (currently 6) is **not** enforced on the model-only
   tickets; the tiers cap at 4/8/20. Fine for a no-stake display, but worth
   aligning if it ever gains a stake field.
-- The bot has no `/model-only` command yet.
 
 ### Verification (Pass 21)
 

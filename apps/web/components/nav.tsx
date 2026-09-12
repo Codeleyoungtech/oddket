@@ -18,12 +18,14 @@ const LINKS = [
 /** Desktop-only extra links (always visible in top bar).
  *  Settings is here so it appears on desktop nav + mobile More sheet. */
 const DESKTOP_EXTRA = [
+  { href: "/history", label: "History", icon: "clock" },
   { href: "/settings", label: "Settings", icon: "gear" },
 ] as const;
 
 /** Secondary links — hidden behind the mobile "More" sheet, always visible
  *  in the desktop top bar. */
 const MORE_LINKS = [
+  { href: "/history", label: "History", icon: "clock", desc: "Past predictions graded vs. real results" },
   { href: "/settings", label: "Settings", icon: "gear", desc: "Bankroll, leagues, stakes & filters" },
   { href: "/calibration", label: "Calibration", icon: "gauge", desc: "Brier score, calibration curve & CLV" },
   { href: "/backtest", label: "Backtest", icon: "flask", desc: "Historical replay of the EV engine" },
@@ -92,6 +94,13 @@ function Icon({ name, className = "h-[18px] w-[18px]" }: { name: string; classNa
           <path d="M4 4h7v7H4z" />
           <path d="M13 4h7v7h-7z" />
           <path d="M4 13h7v7H4z" />
+        </svg>
+      );
+    case "clock":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5V12l3 2" />
         </svg>
       );
     case "more":

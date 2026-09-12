@@ -475,6 +475,225 @@ all three tiers fill comfortably — 20-leg risky included.
 
 ---
 
+## 22. Pass 22 — model-vs-market audit, list UX, history page, settle fix
+
+### 22.1 🔴 THE BIG FINDING: both live models are worse than the closing line
+
+This pass started as "validate the to-score models" and turned up the single
+most important fact about the project so far. Measured on the **same holdout the
+models report** (2025-02-06 → 2026-05-24, n=2025), Brier score (lower is better):
+
+| | base rate | market (open) | market (close) | **our model** |
+|---|---|---|---|---|
+| **h2h (3-way)** | 0.6527 | 0.5806 | **0.5794** | 0.5899 |
+| **O/U 2.5** | 0.2496 | 0.2428 | **0.2414** | 0.2455 |
+
+- h2h skill vs. base rate: **+9.6%** (a genuinely competent model)
+- h2h skill vs. **closing line: −1.8%** ← the market is *sharper than us*
+- O/U skill vs. **closing line: −1.7%** ← same story
+
+**This is the root cause of the negative backtests.** ROI −8.9% (h2h) and −3.5%
+(OU) with *positive* claimed edge (+5.3% / +5.4%) is not bad luck — it is the
+arithmetic consequence of a model that is slightly worse than the price it is
+trading against. Wherever the model "disagrees" with the close, it is more
+likely that the model is wrong than that the market is.
+
+Calibration is **not** the problem: the h2h reliability curve tracks closely
+(predicted 0.1612 → observed 0.1596, 0.254 → 0.2434, 0.3392 → 0.3381,
+0.5477 → 0.5651). The probabilities mean what they say. The model is simply not
+sharp enough to beat a ~5% margin on top of a sharper opponent.
+
+**Consequence for the paper trade:** measure CLV, but expect it to confirm what
+the holdout already shows. Do not read "+5% edge" as an expected profit.
+
+**What this does *not* kill:** the corner markets. Niche-line corners and
+"most corners" are priced badly by bookies in exactly the leagues we cover,
+which is why the model-only corner tool remains the most credible candidate for
+real edge in the whole app. That is the direction to push, not more 1X2.
+
+Reproduce with a throwaway script that normalizes `1/odds` over the 3-way book
+and compares Brier on the holdout window against `models/model_meta.json`.
+
+### 22.2 To-score micro model — validated, NOT faulty
+
+The owner suspected Home/Away to score was broken. It is not. `micro-xgb-v1`,
+2025-match holdout:
+
+| market | base rate | Brier | hit @ p≥0.70 | @ p≥0.80 |
+|---|---|---|---|---|
+| Home to score (O0.5) | 76.49% | 0.1721 | 78.9% (n=1764) | 83.8% (n=1020) |
+| Away to score (O0.5) | 71.01% | 0.1992 | 76.9% (n=1044) | 85.3% (n=320) |
+| Over 1.5 goals | 76.25% | 0.1787 | 76.9% (n=1816) | 83.6% (n=615) |
+
+Reliability is tight (home-to-score 0.8–0.9 bin → 81.8% observed; away 0.7–0.8 →
+73.2%). **These are well-calibrated probabilities.**
+
+Attempted improvement this pass: added goal-volume features (`ou_combined_avg_goals`,
+`ou_home/away_scored_rate`, `ou_home/away_conceded_rate`, `ou_h2h_avg_total`,
+`ou_poisson_expected_total`) to `train_micro.py` + `predict_micro.py`, and
+replaced the old ±1.28σ interval with a **calibration-derived** interval. Result:
+**metrics essentially flat** (team_home Brier 0.1725 → 0.1721, acc 76.59% →
+76.54%; team_away 0.1988 → 0.1992). Honest read: the model was already at its
+information ceiling for this target — which makes sense, since "does a team
+score at all" is mostly a function of match goal volume, which the Poisson
+features already captured.
+
+The model-only micro markets need **fair odds > 1/p** to be worth anything:
+home-to-score at 82.8% needs a bookmaker price **above 1.21**; at 1.15 it is a
+losing bet (0.828 × 1.15 = 0.952). Bookies typically price it 1.20–1.30, i.e.
+at or below break-even.
+
+### 22.3 Virtualization replaced with native CSS (not a JS windowing lib)
+
+The previous `VirtualList` windowing component was janky: it guessed row heights
+(`estimatedHeight`), so variable-height cards made the scroll position jump.
+**Deleted** `apps/web/components/virtual-list.tsx` entirely and replaced it with
+`content-visibility: auto` (`.cv-row` in `globals.css`) plus
+`contain-intrinsic-size: auto 200px`.
+
+Why this is the correct tool: the browser still lays out real cards, so heights
+are always exact — no estimate, no jump — while layout/paint for off-screen rows
+is skipped natively. `contain-intrinsic-size` keeps the scrollbar honest for
+never-measured rows. Result: ~1,700 rows stay in the DOM untouched by JS, and
+scrolling is smooth.
+
+### 22.4 Share from a *suggested* accumulator was actually broken
+
+The share panel was rendered **inside** the `selectedLegs.length > 0` branch of
+the manual builder. Pressing 📤 on a *suggested* ticket set `shareState` but the
+panel did not exist → the button appeared to do nothing. Fixed by hoisting
+`sharePanel` above both branches so it is always rendered. Also bumped
+`suggestParlays` to `perTierCount = 2` for the risky tier (was 1).
+
+### 22.5 Multiple builder: matchday scope ("build the day's card")
+
+Added a **Matchday** filter (All / Today / Tmrw / Week) that scopes the builder
+pool by `fixture.commenceTime`, with a "N legs in scope" readout. Both the priced
+suggestions and the model-only tickets respect it. This is what lets you build
+several separate accumulators across one matchday instead of mixing legs from a
+week-long window.
+
+### 22.6 New page: `/history` — Past predictions graded (no logging required)
+
+Validation can no longer depend on manually logging bets. `apps/web/app/history/page.tsx`
+lists **every prediction made for a fixture that has already kicked off**, graded
+against the recorded final score. Shows: model-pick hit rate, **Brier score over
+every settled row** (not just picks), and a per-market scoreboard
+(picks / won / hit rate / Brier). Filters: 7d / 30d / all, league, market,
+settled-vs-pending, search. Linked from desktop nav + the mobile More sheet, and
+added to the SW precache (`oddket-v3`).
+
+### 22.7 Corners: safe band instead of the generic "Under 11.5"
+
+The old `bestTotalCornerLine` picked the line **furthest from 50%**, which always
+lands on a worthless tail — "Under 11.5" · 88% at near-zero odds, repeated for
+every fixture. Deleted `bestCornerLine` / `bestTotalCornerLine` and added:
+
+- `cornerSafeBand(expected, sigma, lines, minProb=0.7)` — the **most aggressive
+  Over and most aggressive Under that still clear 70%**. If neither does, the UI
+  says *"genuine coin-flip"* instead of inventing a pick.
+- `totalCornerSafeBand(totalExpected)` / `teamCornerSafeBand(expected, side)`
+- `mostCorners3Way(homeExp, awayExp)` — a 1X2-style read on the corner count,
+  modelled as Normal(μ = H−A, σ² = HOME_SIGMA² + AWAY_SIGMA²) with a ±0.5
+  continuity window for the draw. Bookies price this poorly in niche leagues.
+- Removed the unused `LEAGUE_GOLDMINES` badge block (it was pure decoration and
+took space on mobile). The full line ladder now renders on **phones** too — it
+used to be `hidden sm:block`, which is why only one lazily-picked line ever showed.
+
+### 22.8 Auto-settle cron — root cause was odds-credit exhaustion
+
+Symptom: bets stayed pending for days, settling only by hand. Root cause: the
+settle run pulled `/scores` for **every selected league + every tennis
+tournament on every run** — ~1,900 requests/month against a 500/key free tier, so
+every key 429'd and the run silently returned "0 completed".
+
+Fix in `worker/src/odds/settle.ts`: new `relevantSports(env, now, windowDays=3)`
+queries D1 for only the sports that **actually have unfinished business**
+(a pending bet on a kicked-off fixture, or a not-yet-finished fixture inside the
+window). Returns early with an explicit note when there is nothing to settle.
+`SettleResult` now reports `scoresPulls` + `sportsQueried` for diagnosis, and a
+failed key logs an explicit "credit budget likely exhausted" line instead of
+failing silently.
+
+`cron.yml` also gained a `workflow_dispatch` **choice input**
+(ingest / settle / closing / digest) so settle can be re-run on demand after a
+match finishes, without waiting for a slot or handling `PREDICT_SECRET` locally.
+
+### 22.9 📌 Selection guidelines for a ~90% hit-rate ticket (owner-requested)
+
+Recorded here at the owner's request. **The honest framing first:** a 90% *hit
+rate* is achievable; 90% hit rate **is not** the same as profit. `EV = p·odds − 1`,
+so a 90% leg needs **odds > 1.111** to make money. At odds 1.05 a 90% leg returns
+0.90 × 1.05 = 0.945 → −5.5% per bet even though it wins 9 times in 10.
+
+Rules for assembling a high-confidence ticket:
+
+1. **Probability floor.** Only legs the model rates ≥ **0.90** (for a singles
+   "banker" list) or ≥ 0.95 (for legs meant to be stacked).
+2. **Price floor.** Require `bookmaker odds > 1/p` always. At p=0.90 that is
+   odds > 1.111; at p=0.95, > 1.053. Below that, skip it no matter how "safe".
+3. **Joint-probability budget.** For a target hit rate H, the product of leg
+   probabilities must stay ≥ H: with n legs each at p, need `p^n ≥ H`.
+   - H=0.90: 1 leg ≥ 0.900 · 2 legs ≥ 0.949 each · 3 legs ≥ 0.965 each
+   - H=0.80: 1 leg ≥ 0.800 · 2 legs ≥ 0.894 · 3 legs ≥ 0.928 · 5 legs ≥ 0.956
+4. **Stop rule.** Add legs highest-probability-first, then **stop before** the
+   next leg would push the running product below H. Never reorder to chase odds.
+5. **No longshots.** A single 0.25 leg destroys the budget — at H=0.90 the
+   *average* leg probability must be ≥ 0.90^(1/n), so there is no room for one.
+6. **One leg per match (strict).** Same-match legs are correlated and the engine
+   blocks them; double-counting one event inflates the apparent joint chance.
+7. **Only EV-checked markets** for anything you stake against a price. The
+   model-only markets have no price feed, so their "break-even odds" is the only
+   decision rule — treat them as a line-shopping tool, not a bet.
+8. **Verify before trusting.** Read the realized hit rate per bucket on
+   `/history` and `/calibration`; a bucket is only "90%" once ~100+ settled
+   samples say so.
+
+Realistically available ~90% candidates (to be validated on `/history` before
+use): *at least one goal in the match* (~92% historically in top-division
+football), and the ≥0.90 legs the micro model already produces. Note that most
+of these are exactly the markets the odds feed **cannot** price for free — which
+is the honest tension: the safest outcomes are the cheapest, and often unlisted.
+
+### 22.10 🏀 Parked: basketball (owner's next major idea)
+
+Owner intent, recorded so it is not lost: after football has run live for ~a
+week, add **basketball** in the same shape as football — mostly leagues/games
+bookmakers price generically, where a 70%+ model could find value. Notes for
+whoever picks this up:
+
+- Odds feed uses the same The-Odds-API keys (`basketball_nba`,
+  `basketball_euroleague`, plus regional/college keys); **check the credit budget
+  first** — the football settle bug in §22.8 was a credit-budget bug.
+- Free/statistical route mirrors the corner pipeline: point totals and spreads are
+  continuous, so a Normal/Poisson-style total model + a line-ladder
+  (`overProb`, safe-band style) transfers directly.
+- Niche leagues (EuroLeague, NBL, NCAA mid-majors) are the inefficient-pricing
+  candidates — same thesis as niche corner lines.
+- **Do not repeat the 1X2 mistake:** validate against the *closing* line on a
+  time-ordered holdout before building any UI. §22.1 is the cautionary tale.
+
+### Verification (Pass 22)
+
+- core / web / worker typechecks all clean
+- production build green
+- worker e2e **104/104** passing
+- micro model retrained; `micro_meta.json` + all `team_*` / `ou15` joblibs rewritten
+- new `/history` route linked in nav + SW precache
+
+### Still open
+
+- **The model does not beat the close (§22.1).** The highest-value work in the
+  repo is either (a) corner/niche markets where the close is soft, or
+  (b) blending model output with market implied probabilities and betting only
+  the residual disagreement — and validating that honestly before shipping.
+- `settings.maxMultipleLegs` still not enforced on model-only tickets.
+- 4 pre-`§21` logged bets still show as untagged in `/api/bets` while the
+  dashboard counts them as "model" — must be resolved before the paper-trade
+  numbers are trusted.
+
+---
+
 ## 11. Tennis build — scope blockers + pivot (Pass 2)
 
 The Tennis PRD/Build-Prompt called for **ATP Challenger** tennis with CLV

@@ -50,6 +50,17 @@ body {
   display: none;
 }
 
+/* Native list virtualisation for long lists (the slips list can hold ~1,700
+   prediction cards when "Show all" is on). content-visibility:auto lets the
+   browser skip layout/paint for off-screen rows *without* any JS bookkeeping,
+   so there is no scroll jumping and variable-height cards stay correct.
+   contain-intrinsic-size keeps the scrollbar/scroll height honest for rows
+   that have never been measured. */
+.cv-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
+}
+
 /* Number inputs without the browser up/down spinner (used by the stake
    override fields — a spinner is useless for a quick edit). */
 input[type="number"].no-spinner::-webkit-outer-spin-button,

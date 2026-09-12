@@ -192,45 +192,6 @@ export function formatCornerLines(pred: CornerPrediction): string[] {
 }
 
 /**
- * Get the "recommended" line for a team — the line where the model has
- * the strongest opinion (furthest from 50%).
- *
- * Returns the line and its probability, or null if no line is interesting.
- */
-export function bestCornerLine(
-  pred: CornerPrediction,
-): { line: number; over: boolean; probability: number } | null {
-  const lp = pred.lineProbs;
-  const probs = [
-    { line: 2.5, over: true, probability: lp.over25 },
-    { line: 2.5, over: false, probability: 1 - lp.over25 },
-    { line: 3.5, over: true, probability: lp.over35 },
-    { line: 3.5, over: false, probability: 1 - lp.over35 },
-    { line: 4.5, over: true, probability: lp.over45 },
-    { line: 4.5, over: false, probability: 1 - lp.over45 },
-    { line: 5.5, over: true, probability: lp.over55 },
-    { line: 5.5, over: false, probability: 1 - lp.over55 },
-    { line: 6.5, over: true, probability: lp.over65 },
-    { line: 6.5, over: false, probability: 1 - lp.over65 },
-    { line: 7.5, over: true, probability: lp.over75 },
-    { line: 7.5, over: false, probability: 1 - lp.over75 },
-    { line: 8.5, over: true, probability: lp.over85 },
-    { line: 8.5, over: false, probability: 1 - lp.over85 },
-  ];
-  // Find the line furthest from 50% (strongest opinion)
-  let best: (typeof probs)[0] | null = null;
-  let bestDist = 0;
-  for (const item of probs) {
-    const dist = Math.abs(item.probability - 0.5);
-    if (dist > bestDist && item.probability >= 0.55) {
-      bestDist = dist;
-      best = item;
-    }
-  }
-  return best;
-}
-
-/**
  * Format total corners prediction for display.
  */
 export function formatTotalLines(pred: CornerPrediction): string[] {
@@ -283,33 +244,96 @@ export function computeTotalCornerLines(totalExpected: number): Record<string, n
   };
 }
 
-/**
- * Get the "recommended" total line for a match — the line where the model has
- * the strongest opinion (furthest from 50%).
- */
-export function bestTotalCornerLine(
-  totalExpected: number,
-): { line: number; label: string; over: boolean; probability: number } | null {
-  const lines = computeTotalCornerLines(totalExpected);
-  const candidates = [
-    { line: 7.5, label: "Total O7.5", over: true, probability: lines.over75 },
-    { line: 8.5, label: "Total O8.5", over: true, probability: lines.over85 },
-    { line: 9.5, label: "Total O9.5", over: true, probability: lines.over95 },
-    { line: 10.5, label: "Total O10.5", over: true, probability: lines.over105 },
-    { line: 11.5, label: "Total O11.5", over: true, probability: lines.over115 },
-    { line: 9.5, label: "Total U9.5", over: false, probability: 1 - lines.over95 },
-    { line: 10.5, label: "Total U10.5", over: false, probability: 1 - lines.over105 },
-    { line: 11.5, label: "Total U11.5", over: false, probability: 1 - lines.over115 },
-  ];
+/** Standard normal CDF via the Abramowitz–Stegun erf approximation. */
+function normalCdf(z: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const d = 0.3989423 * Math.exp((-z * z) / 2);
+  const p =
+    d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  return z > 0 ? 1 - p : p;
+}
 
-  let best: (typeof candidates)[0] | null = null;
-  let bestDist = 0;
-  for (const item of candidates) {
-    const dist = Math.abs(item.probability - 0.5);
-    if (dist > bestDist && item.probability >= 0.58) {
-      bestDist = dist;
-      best = item;
-    }
-  }
-  return best;
+/** A probability side of the "safe band" — the tightest line still ≥ 70%. */
+export interface CornerBandSide {
+  line: number;
+  probability: number;
+}
+
+export interface CornerBand {
+  /** Highest Over line the model still rates ≥70% (null if none qualifies). */
+  over: CornerBandSide | null;
+  /** Lowest Under line the model still rates ≥70% (null if none qualifies). */
+  under: CornerBandSide | null;
+}
+
+/**
+ * The "safe band" for a corner line ladder: the most aggressive Over and the
+ * most aggressive Under that the model still rates at ≥70%.
+ *
+ * This replaces the old "best line" heuristic, which picked the line FURTHEST
+ * from 50% — that always lands on a useless tail ("Under 11.5", "Over 2.5",
+ * both ~85–90% at near-zero odds) and buried the genuinely useful lines.
+ * The band answers the real question: "which line can I actually be confident
+ * in?" If neither side clears 70%, the match is a genuine coin-flip and we
+ * say so instead of inventing a pick.
+ */
+export function cornerSafeBand(
+  expected: number,
+  sigma: number,
+  lines: readonly number[],
+  minProb = 0.7,
+): CornerBand {
+  const overs = lines
+    .map((line) => ({ line, probability: overProb(expected, sigma, line) }))
+    .filter((o) => o.probability >= minProb)
+    .sort((a, b) => b.line - a.line); // most aggressive (highest) qualifying Over
+  const unders = lines
+    .map((line) => ({ line, probability: 1 - overProb(expected, sigma, line) }))
+    .filter((u) => u.probability >= minProb)
+    .sort((a, b) => a.line - b.line); // most aggressive (lowest) qualifying Under
+  return { over: overs[0] ?? null, under: unders[0] ?? null };
+}
+
+/** Total-corners safe band from the expected match total. */
+export function totalCornerSafeBand(totalExpected: number, minProb = 0.7): CornerBand {
+  return cornerSafeBand(totalExpected, TOTAL_SIGMA, TOTAL_LINES, minProb);
+}
+
+/** Team-corners safe band from the team's expected corners. */
+export function teamCornerSafeBand(
+  expected: number,
+  side: "home" | "away",
+  minProb = 0.7,
+): CornerBand {
+  return cornerSafeBand(
+    expected,
+    side === "home" ? HOME_SIGMA : AWAY_SIGMA,
+    TEAM_LINES,
+    minProb,
+  );
+}
+
+/**
+ * "Most corners" — a 1X2-style read on which team wins the corner count.
+ *
+ * Corners are a discrete count so ties are real: the difference of two
+ * independent count distributions is modelled as Normal around
+ * μ = homeExpected − awayExpected with σ² = HOME_SIGMA² + AWAY_SIGMA², and the
+ * tie band is the ±0.5 continuity window. Bookmakers rarely price this market
+ * well in niche leagues, which is exactly why it is worth surfacing.
+ */
+export function mostCorners3Way(
+  homeExpected: number,
+  awayExpected: number,
+): { home: number; draw: number; away: number } {
+  const mean = homeExpected - awayExpected;
+  const sd = Math.sqrt(HOME_SIGMA ** 2 + AWAY_SIGMA ** 2);
+  const pUnderUpper = normalCdf((0.5 - mean) / sd); // P(diff <= 0.5)
+  const pUnderLower = normalCdf((-0.5 - mean) / sd); // P(diff <= -0.5)
+  const home = Math.max(0, 1 - pUnderUpper);
+  const away = Math.max(0, pUnderLower);
+  const draw = Math.max(0, 1 - home - away);
+  const total = home + draw + away || 1;
+  const r = (x: number) => Math.round((x / total) * 1000) / 1000;
+  return { home: r(home), draw: r(draw), away: r(away) };
 }

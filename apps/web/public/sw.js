@@ -16,7 +16,7 @@
  *     (postMessage), so the SW knows where the worker lives even when
  *     NEXT_PUBLIC_API_URL is set (Vercel → cross-origin worker).
  */
-const CACHE = "oddket-v2";
+const CACHE = "oddket-v3";
 
 /* App shell precached at install so the installed PWA opens instantly and
  * works offline even on the very first visit (no dependency on pages having
@@ -27,6 +27,7 @@ const PRECACHE = [
   "/slips",
   "/corners",
   "/bets",
+  "/history",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

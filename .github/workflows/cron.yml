@@ -30,7 +30,20 @@ on:
     # Daily Telegram digest — top flagged picks + accumulator tiers, pushed to
     # every subscribed chat (07:00 UTC = 08:00 WAT).
     - cron: "0 7 * * *"
-  workflow_dispatch: # manual "Run workflow" button for testing
+  workflow_dispatch:
+    # Manual "Run workflow" button. Pick which pipeline to fire so settle can
+    # be re-run on demand (e.g. after a match finishes) without waiting for a
+    # scheduled slot or handling the PREDICT_SECRET locally.
+    inputs:
+      endpoint:
+        description: "Pipeline to fire"
+        type: choice
+        options:
+          - ingest
+          - settle
+          - closing
+          - digest
+        default: ingest
 
 jobs:
   trigger:
@@ -44,6 +57,11 @@ jobs:
         # silently fired ingest instead of the 18:30 closing pull — CLV was
         # never computed for either sport.
         run: |
+          # workflow_dispatch (manual run) → honour the chosen endpoint.
+          if [ -n "${{ inputs.endpoint }}" ]; then
+            echo "endpoint=${{ inputs.endpoint }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           case "${{ github.event.schedule }}" in
             30\ 18\ *\ *\ *) echo "endpoint=closing" >> "$GITHUB_OUTPUT" ;;
             15\ 8\ *\ *\ *|15\ 21\ *\ *\ *) echo "endpoint=settle" >> "$GITHUB_OUTPUT" ;;

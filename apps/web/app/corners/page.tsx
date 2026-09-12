@@ -4,8 +4,8 @@ import React, { useMemo, useState } from "react";
 import {
   computeTeamCornerLines,
   computeTotalCornerLines,
-  bestCornerLine,
-  bestTotalCornerLine,
+  totalCornerSafeBand,
+  mostCorners3Way,
 } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Card, EmptyState, PageSkeleton, SectionTitle, SkeletonList } from "../../components/ui";
@@ -83,29 +83,21 @@ function TeamRow({
   const low = typeof pred.confidenceLow === "number" ? pred.confidenceLow.toFixed(1) : Math.max(0, pred.predictedCorners - 1.28 * 2.85).toFixed(1);
   const high = typeof pred.confidenceHigh === "number" ? pred.confidenceHigh.toFixed(1) : (pred.predictedCorners + 1.28 * 2.85).toFixed(1);
 
-  // Compute best line pick
-  const best = useMemo(() => {
-    const pRecord = {
-      ...pred,
-      id: "",
-      fixtureId: "",
-      side: pred.side || "home",
-      confidenceLow: parseFloat(low),
-      confidenceHigh: parseFloat(high),
-      lineProbs: {
-        over25: lines["O2.5"] ?? 0,
-        over35: lines["O3.5"] ?? 0,
-        over45: lines["O4.5"] ?? 0,
-        over55: lines["O5.5"] ?? 0,
-        over65: lines["O6.5"] ?? 0,
-        over75: lines["O7.5"] ?? 0,
-        over85: lines["O8.5"] ?? 0,
-      },
-      modelVersion: "corners-lgb-v5",
-      createdAt: 0,
-    };
-    return bestCornerLine(pRecord);
-  }, [pred, lines, low, high]);
+  // "Safe band" computed from the DISPLAYED ladder (not a re-derived
+  // distribution) so the chips always agree with the pills underneath. The
+  // old code picked the line furthest from 50%, which always landed on a
+  // worthless tail ("Over 2.5 · 87%") and buried the useful lines.
+  const band = (() => {
+    const MIN = 0.7;
+    const entries = lineOrder.map((k) => ({ line: parseFloat(k.slice(1)), probability: lines[k] ?? 0 }));
+    const over = entries.filter((e) => e.probability >= MIN).sort((a, b) => b.line - a.line)[0] ?? null;
+    const under =
+      entries
+        .map((e) => ({ line: e.line, probability: 1 - e.probability }))
+        .filter((e) => e.probability >= MIN)
+        .sort((a, b) => a.line - b.line)[0] ?? null;
+    return { over, under };
+  })();
 
   return (
     <div className="min-w-0 rounded-lg border border-zinc-800/70 bg-zinc-900/30 p-2.5">
@@ -123,18 +115,31 @@ function TeamRow({
           <span className="ml-1 text-[9px] font-normal text-zinc-500">ck</span>
         </span>
       </div>
-      <div className="mt-1.5 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-zinc-500">
-          80% <span className="text-zinc-400 font-medium">{low}–{high}</span>
-        </span>
-        {best && best.probability >= 0.65 && (
-          <span className="shrink-0 rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
-            Best {best.over ? "O" : "U"}{best.line} · {(best.probability * 100).toFixed(0)}%
+      <div className="mt-1.5 text-[10px] text-zinc-500">
+        80% range <span className="text-zinc-400 font-medium">{low}–{high}</span>
+      </div>
+      {/* Safe band — the most aggressive line still rated ≥70%. */}
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {band.over && (
+          <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+            ✅ Over {band.over.line} · {Math.round(band.over.probability * 100)}%
+          </span>
+        )}
+        {band.under && (
+          <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+            ✅ Under {band.under.line} · {Math.round(band.under.probability * 100)}%
+          </span>
+        )}
+        {!band.over && !band.under && (
+          <span className="rounded border border-zinc-700 bg-zinc-800/50 px-1.5 py-0.5 text-[10px] text-zinc-400">
+            No line above 70% — genuine coin-flip
           </span>
         )}
       </div>
-      <div className="hidden sm:block">
-        <LineStrip items={[...lineOrder].map((k) => ({ label: k, prob: lines[k] ?? 0 }))} />
+      {/* Full ladder — shown on EVERY screen size now (it used to be hidden on
+          phones, which is why only the one lazily-picked line ever showed). */}
+      <div className="mt-1.5">
+        <LineStrip items={lineOrder.map((k) => ({ label: k, prob: lines[k] ?? 0 }))} />
       </div>
     </div>
   );
@@ -149,71 +154,6 @@ const TOTAL_LINE_LABELS: Record<string, string> = {
   over105: "O10.5",
   over115: "O11.5",
   over125: "O12.5",
-};
-
-// Keyed by BOTH the live The-Odds-API league titles (what /api/fixtures
-// returns) and the old seed names, so the badges survive either source.
-const LEAGUE_GOLDMINES: Record<string, { badge: string; note: string; color: string }> = {
-  "La Liga 2 - Spain": {
-    badge: "💎 Low-Block Defense",
-    note: "65.8% Under 2.5 · 69.9% Cards >3.5",
-    color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
-  },
-  "Spanish Segunda": {
-    badge: "💎 Low-Block Defense",
-    note: "65.8% Under 2.5 · 69.9% Cards >3.5",
-    color: "text-amber-400 bg-amber-400/10 border-amber-400/30",
-  },
-  "Bundesliga 2 - Germany": {
-    badge: "⚽ High-Pace Transition",
-    note: "60.1% Over 2.5 · 57.8% BTTS",
-    color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
-  },
-  "German 2. Bundesliga": {
-    badge: "⚽ High-Pace Transition",
-    note: "60.1% Over 2.5 · 57.8% BTTS",
-    color: "text-emerald-400 bg-emerald-400/10 border-emerald-400/30",
-  },
-  "Serie B - Italy": {
-    badge: "🚩 Stalemate & Corners",
-    note: "34.5% Draws · 57.1% Over 9.5 Corners",
-    color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/30",
-  },
-  "Italian Serie B": {
-    badge: "🚩 Stalemate & Corners",
-    note: "34.5% Draws · 57.1% Over 9.5 Corners",
-    color: "text-indigo-400 bg-indigo-400/10 border-indigo-400/30",
-  },
-  "League 1": {
-    badge: "🚩 High Cross Volume",
-    note: "54.2% Over 9.5 Corners",
-    color: "text-sky-400 bg-sky-400/10 border-sky-400/30",
-  },
-  "English League One": {
-    badge: "🚩 High Cross Volume",
-    note: "54.2% Over 9.5 Corners",
-    color: "text-sky-400 bg-sky-400/10 border-sky-400/30",
-  },
-  "Championship": {
-    badge: "⚡ Direct Wing Attack",
-    note: "High shot & cross frequency",
-    color: "text-purple-400 bg-purple-400/10 border-purple-400/30",
-  },
-  "EFL Championship": {
-    badge: "⚡ Direct Wing Attack",
-    note: "High shot & cross frequency",
-    color: "text-purple-400 bg-purple-400/10 border-purple-400/30",
-  },
-  "J League": {
-    badge: "🎯 Tactical Discipline",
-    note: "High consistency · Low ref variance",
-    color: "text-rose-400 bg-rose-400/10 border-rose-400/30",
-  },
-  "Japan J1 League": {
-    badge: "🎯 Tactical Discipline",
-    note: "High consistency · Low ref variance",
-    color: "text-rose-400 bg-rose-400/10 border-rose-400/30",
-  },
 };
 
 export default function CornersPage() {
@@ -434,9 +374,9 @@ export default function CornersPage() {
           const totalLines = (home as any).totalCorners?.lines ?? computeTotalCornerLines(totalExpectedNum);
           const totalLineOrder = ["over55", "over65", "over75", "over85", "over95", "over105", "over115", "over125"];
 
-          // Best total line recommendation
-          const bestTotal = bestTotalCornerLine(totalExpectedNum);
-          const goldmine = LEAGUE_GOLDMINES[fixture.league];
+          // Safe band + "most corners" 3-way read.
+          const totalBand = totalCornerSafeBand(totalExpectedNum);
+          const mostCorners = mostCorners3Way(home.predictedCorners || 0, away.predictedCorners || 0);
 
           return (
             <Card key={fixture.id} className="min-w-0 overflow-hidden">
@@ -469,11 +409,6 @@ export default function CornersPage() {
                     <p className="mt-0.5 truncate text-[11px] text-zinc-500">
                       {fixture.league}{isFinished ? " · Finished" : fixture.commenceTime > 0 ? ` · ${fmtDate(fixture.commenceTime)} ${fmtTime(fixture.commenceTime)}` : ""}
                     </p>
-                    {goldmine && (
-                      <span className={`mt-1 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-semibold ${goldmine.color}`}>
-                        {goldmine.badge}
-                      </span>
-                    )}
                   </div>
                   {/* Total expected — compact on mobile, prominent on desktop */}
                   <div className="shrink-0 rounded-lg border border-zinc-800 bg-zinc-900/50 px-2 py-1 text-right sm:rounded-xl sm:px-3 sm:py-1.5">
@@ -502,21 +437,56 @@ export default function CornersPage() {
                 {/* Total corners lines */}
                 {totalLines && (
                   <div className="mt-2 border-t border-zinc-800 pt-2 sm:mt-2.5 sm:pt-2.5">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <div className="text-[10px] text-zinc-400 font-medium">
-                        Total Match Corners Over/Under
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1.5">
+                      <div className="text-[10px] text-zinc-400 font-medium">Total match corners</div>
+                      <div className="flex flex-wrap gap-1">
+                        {totalBand.over && (
+                          <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                            ✅ Over {totalBand.over.line} · {Math.round(totalBand.over.probability * 100)}%
+                          </span>
+                        )}
+                        {totalBand.under && (
+                          <span className="rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                            ✅ Under {totalBand.under.line} · {Math.round(totalBand.under.probability * 100)}%
+                          </span>
+                        )}
+                        {!totalBand.over && !totalBand.under && (
+                          <span className="rounded border border-zinc-700 bg-zinc-800/50 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                            Coin-flip — no ≥70% line
+                          </span>
+                        )}
                       </div>
-                      {bestTotal && (
-                        <div className="shrink-0 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-1.5 py-0.5 rounded">
-                          Best: {bestTotal.label} · {(bestTotal.probability * 100).toFixed(0)}%
-                        </div>
-                      )}
                     </div>
                     <LineStrip
                       items={totalLineOrder
                         .map((k) => ({ label: TOTAL_LINE_LABELS[k] || k, prob: totalLines[k] }))
                         .filter((x) => x.prob !== undefined)}
                     />
+                    {/* Most corners — 1X2 read on the corner count. Bookies
+                        price this poorly in niche leagues, which is why it is
+                        worth showing next to the totals. */}
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800/70 bg-zinc-900/30 px-2 py-1.5">
+                      <span className="text-[10px] font-medium text-zinc-400">Most corners</span>
+                      <div className="flex gap-2 text-[10px] font-semibold">
+                        {(() => {
+                          const top = Math.max(mostCorners.home, mostCorners.draw, mostCorners.away);
+                          const cls = (p: number) => (p === top ? "text-emerald-400" : "text-zinc-400");
+                          return (
+                            <>
+                              <span className={cls(mostCorners.home)}>
+                                Home {Math.round(mostCorners.home * 100)}%
+                              </span>
+                              <span className={cls(mostCorners.draw)}>
+                                Draw {Math.round(mostCorners.draw * 100)}%
+                              </span>
+                              <span className={cls(mostCorners.away)}>
+                                Away {Math.round(mostCorners.away * 100)}%
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

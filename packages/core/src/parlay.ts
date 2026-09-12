@@ -158,7 +158,7 @@ export function suggestParlays(
     // `pass` eligible legs, so pass 0 builds the best combo, pass 1 the
     // second-best, pass 2 the third — genuinely different tickets instead of
     // near-duplicates of the same one.
-    const perTierCount = tier.tier === "risky" ? 1 : 3;
+    const perTierCount = tier.tier === "risky" ? 2 : 3;
     const usedLegKeys = new Set<string>();
     const eligible = pool.filter((l) => l.probability >= tier.minProb);
 

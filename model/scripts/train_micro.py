@@ -32,6 +32,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+import math  # noqa: E402
+
 import numpy as np  # noqa: E402
 from sklearn.calibration import CalibratedClassifierCV  # noqa: E402
 
@@ -43,9 +45,11 @@ from features import (  # noqa: E402
 MICRO_VERSION_TAG = "micro-xgb-v1"
 MICRO_FALLBACK_TAG = "micro-gbc-v1"
 
-# Feature groups shared with the totals (ou) model — goals markets are driven
-# by the same base form/strength features plus the market-implied odds.
-GROUPS = ["base", "ou_odds", "ew_form", "rest"]
+# Feature groups shared with the totals (ou) model. `ou_goals` carries the
+# goal-VOLUME rates (how often each team scores / concedes, combined average,
+# Poisson expected total) — the single most relevant signal for "does this
+# team score at least once", which the v1 feature set did not include.
+GROUPS = ["base", "ou_goals", "ou_odds", "ew_form", "rest"]
 
 MARKETS = {
     "ou15": {
@@ -113,6 +117,43 @@ def fill_ou_features(matches: list) -> None:
         else:
             m.features["odd_over"] = 0.0
             m.features["odd_under"] = 0.0
+
+
+def reliability_table(p_pos: np.ndarray, y: np.ndarray, width: float = 0.1) -> list:
+    """Out-of-sample reliability per 0.1-wide probability band.
+
+    For each band: the holdout sample size, the OBSERVED outcome rate, and a
+    Wilson 95% interval around it. The predictor ships these bands so the
+    confidence interval shown in the app is the model's measured out-of-sample
+    uncertainty rather than an invented width (the old band was
+    +/- (0.08 + 0.25*|p-0.5|), which stretched 67%-99% at p=0.83).
+    """
+    z = 1.959963984540054
+    n_bands = int(round(1.0 / width))
+    bands = []
+    for i in range(n_bands):
+        lo, hi = i * width, (i + 1) * width
+        if i < n_bands - 1:
+            mask = (p_pos >= lo) & (p_pos < hi)
+        else:
+            mask = (p_pos >= lo) & (p_pos <= hi)
+        n = int(mask.sum())
+        if n == 0:
+            bands.append({"lo": round(lo, 2), "hi": round(hi, 2), "n": 0, "observed": None, "low": None, "high": None})
+            continue
+        r = float(y[mask].mean())
+        denom = 1 + (z * z) / n
+        center = (r + (z * z) / (2 * n)) / denom
+        half = z * math.sqrt(r * (1 - r) / n + (z * z) / (4 * n * n)) / denom
+        bands.append({
+            "lo": round(lo, 2),
+            "hi": round(hi, 2),
+            "n": n,
+            "observed": round(r, 4),
+            "low": round(max(0.0, center - half), 4),
+            "high": round(min(1.0, center + half), 4),
+        })
+    return bands
 
 
 def hit_rate_at_threshold(proba_pos: np.ndarray, y: np.ndarray, thresholds=(0.65, 0.70, 0.75, 0.80)) -> dict:
@@ -198,6 +239,8 @@ def main() -> int:
         thresholds = hit_rate_at_threshold(p_pos, y_te)
         overall_rate = float(y_te.mean())  # base rate of the market
 
+        reliability = reliability_table(p_pos, y_te)
+
         # ROI-style backtest with a FIXED fair price (1.0/implied) is meaningless
         # without a real book line — the user compares against their bookmaker
         # manually. Report hit rate + calibration instead (honest).
@@ -215,6 +258,7 @@ def main() -> int:
             "overall_positive_rate": round(overall_hit, 4),
             "overall_accuracy_at_0.5": round(overall_win, 4),
             "hit_rate_at_threshold": thresholds,
+            "reliability": reliability,
             "n_holdout": int(len(y_te)),
             "seed": args.seed,
         }

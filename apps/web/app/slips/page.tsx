@@ -15,7 +15,24 @@ import { api } from "../../lib/api";
 import { Badge, Card, CardHeader, EmptyState, PageSkeleton, SectionTitle, Skeleton, SkeletonList } from "../../components/ui";
 import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../../lib/format";
 import { renderSlipImage } from "../../lib/slip-image";
-import { VirtualList } from "../../components/virtual-list";
+
+type DayFilter = "any" | "today" | "tomorrow" | "week";
+
+/** Local midnight (unix seconds) for the day `nowSec` falls in. */
+function dayWindowStart(nowSec: number): number {
+  const d = new Date(nowSec * 1000);
+  d.setHours(0, 0, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
+/** Is a kickoff inside the selected matchday window? */
+function matchesDay(ts: number, day: DayFilter, nowSec: number): boolean {
+  if (day === "any") return true;
+  const today = dayWindowStart(nowSec);
+  if (day === "today") return ts >= today && ts < today + 86400;
+  if (day === "tomorrow") return ts >= today + 86400 && ts < today + 2 * 86400;
+  return ts >= today && ts < today + 7 * 86400;
+}
 
 export default function SlipsPage() {
   const { slips, allPredictions, bets, db, logBet, logParlay, refresh, sport } = useData();
@@ -30,6 +47,10 @@ export default function SlipsPage() {
   const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
   const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState("");
+  // Matchday scope for the multiple builder — build a whole day's tickets
+  // (several accumulators across one card) instead of mixing legs from a
+  // fixture window that stretches a week out.
+  const [multiplesDay, setMultiplesDay] = useState<DayFilter>("any");
   // Mobile only: the multiple builder is an accordion, collapsed on first
   // load so it doesn't push predictions off-screen. Desktop (lg+) always
   // shows it. Auto-opens when the first leg is selected.
@@ -183,10 +204,18 @@ export default function SlipsPage() {
    * guard — a hook after a conditional early-return makes React throw #310
    * (more hooks than the previous render) once db loads.
    */
+  const builderPool = useMemo(
+    () =>
+      multiplesDay === "any"
+        ? slips
+        : slips.filter((l) => matchesDay(l.fixture.commenceTime, multiplesDay, nowSec)),
+    [slips, multiplesDay, nowSec],
+  );
+
   const suggestions = useMemo(() => {
     if (!db || !db.settings.multiplesEnabled) return [];
-    return suggestParlays(slips, db.settings, sport, 9);
-  }, [db, slips, sport]);
+    return suggestParlays(builderPool, db.settings, sport, 12);
+  }, [db, builderPool, sport]);
 
   /**
    * Model-only accumulators.
@@ -205,10 +234,12 @@ export default function SlipsPage() {
    */
   const modelOnlySuggestions = useMemo(() => {
     if (!db) return [];
-    const unpriced = allPredictions.filter((l) => !(l.odds > 1));
+    const unpriced = allPredictions.filter(
+      (l) => !(l.odds > 1) && matchesDay(l.fixture.commenceTime, multiplesDay, nowSec),
+    );
     if (unpriced.length === 0) return [];
     return suggestParlays(unpriced, db.settings, sport, 3, "model-only");
-  }, [db, allPredictions, sport]);
+  }, [db, allPredictions, sport, multiplesDay, nowSec]);
 
   if (!db)
     return (
@@ -410,6 +441,51 @@ export default function SlipsPage() {
     }
   };
 
+  /**
+   * Share preview panel. Rendered OUTSIDE the manual-builder branch on
+   * purpose: a share launched from a SUGGESTED accumulator used to set
+   * shareState, but the panel only existed inside the "2+ legs selected"
+   * branch — so the suggestion's 📤 Share button appeared to do nothing.
+   */
+  const sharePanel =
+    shareState.status === "ready" || shareState.status === "sent" ? (
+      <div ref={sharePanelRef} className="space-y-2 rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
+        {shareState.imageUrl && (
+          <img
+            src={shareState.imageUrl}
+            alt="OddKet slip preview"
+            className="max-h-48 w-full rounded-lg border border-ink-700/50 object-contain"
+          />
+        )}
+        {shareState.status === "sent" && (
+          <p className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-1.5 text-[11px] font-medium text-emerald-300">
+            ✓ Sent to your Telegram
+          </p>
+        )}
+        <div className="grid grid-cols-3 gap-2">
+          <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={downloadSlipImage}>
+            💾 Save
+          </button>
+          <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={() => void shareToTelegram()}>
+            ✈️ Telegram
+          </button>
+          <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={() => void nativeShare()}>
+            📤 Share…
+          </button>
+        </div>
+        <button
+          className="w-full text-center text-[10px] text-slate-500 hover:text-slate-300"
+          onClick={() => setShareState({ status: "idle" })}
+        >
+          Close
+        </button>
+      </div>
+    ) : shareState.status === "error" ? (
+      <p className="rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-2 text-[11px] font-medium text-red-300">
+        ⚠ {shareState.error}
+      </p>
+    ) : null;
+
   return (
     <div className="animate-fade-in space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-700/50 pb-4">
@@ -534,19 +610,18 @@ export default function SlipsPage() {
               body={showAll ? "Try switching your filter or selecting another league." : "Try switching your filter or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."}
             />
           ) : (
-            <VirtualList
-              items={groupedSlips}
-              estimatedHeight={160}
-              overscan={10}
-              keyFn={(item) => item[0]}
-              // min-h on desktop guarantees the left column always fills the
-              // viewport, so the sticky multiple builder next to it has room
-              // to scroll — with one slip the card used to get clipped.
-              className="max-h-[calc(100vh-12rem)] lg:min-h-[calc(100vh-14rem)]"
-              renderItem={([fixtureId, legs]) => {
+            // Rows use `.cv-row` (content-visibility:auto) instead of a JS
+            // windowing library — the browser skips layout+paint for
+            // off-screen cards natively, so scrolling never jumps and
+            // variable-height cards stay exact.
+            <div className="min-w-0 space-y-3 lg:min-h-[calc(100vh-14rem)]">
+              {groupedSlips.map(([fixtureId, legs]) => {
                 const first = legs[0]!;
                 return (
-                  <div className="mb-3 card overflow-hidden rounded-xl border border-ink-700/50 bg-ink-900/50 transition-all hover:border-ink-600/70">
+                  <div
+                    key={fixtureId}
+                    className="cv-row card overflow-hidden rounded-xl border border-ink-700/50 bg-ink-900/50 transition-all hover:border-ink-600/70"
+                  >
                     <div className="flex flex-col gap-1 border-b border-ink-800/80 bg-ink-800/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
                       <div className="min-w-0 flex-1">
                         <span className="text-sm font-semibold text-slate-100">
@@ -661,8 +736,8 @@ export default function SlipsPage() {
                     </div>
                   </div>
                 );
-              }}
-            />
+              })}
+            </div>
           )}
         </div>
 
@@ -727,6 +802,36 @@ export default function SlipsPage() {
                     ⚠ {parlayError}
                   </div>
                 )}
+
+                {/* Matchday scope — build the day's card, not the week's. */}
+                <div>
+                  <p className="label mb-2">
+                    Matchday <span className="font-normal text-slate-600">· scope the suggestions</span>
+                  </p>
+                  <div className="scrollbar-none flex gap-1.5 overflow-x-auto">
+                    {([
+                      ["any", "All"],
+                      ["today", "Today"],
+                      ["tomorrow", "Tmrw"],
+                      ["week", "Week"],
+                    ] as const).map(([key, label]) => (
+                      <button
+                        key={key}
+                        onClick={() => setMultiplesDay(key)}
+                        className={`shrink-0 rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-all ${
+                          multiplesDay === key
+                            ? "border-emerald-400/40 bg-emerald-400/15 text-emerald-300 ring-1 ring-current/20"
+                            : "border-ink-800 bg-ink-900/30 text-slate-400 hover:border-ink-700 hover:text-slate-200"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[10px] text-slate-500">
+                    {builderPool.length} leg{builderPool.length === 1 ? "" : "s"} in scope
+                  </p>
+                </div>
 
                 {/* Auto-suggest: risk-tiered, independent-legs-only groupings,
                     built from the HIGHEST-probability flagged singles (never
@@ -890,6 +995,10 @@ export default function SlipsPage() {
                   </div>
                 )}
 
+                {/* Share preview — outside the builder branches so a share
+                    started from a suggested accumulator is always visible. */}
+                {sharePanel}
+
                 {/* Manual builder */}
                 {selectedLegs.length === 0 ? (
                   <p className="text-sm text-slate-500">
@@ -994,44 +1103,6 @@ export default function SlipsPage() {
                       ? "Sending to Telegram…"
                       : "📤 Share slip"}
                 </button>
-                {shareState.status === "ready" || shareState.status === "sent" ? (
-                  <div ref={sharePanelRef} className="space-y-2 rounded-lg border border-ink-700/60 bg-ink-800/40 p-3">
-                    {shareState.imageUrl && (
-                      <img
-                        src={shareState.imageUrl}
-                        alt="OddKet slip preview"
-                        className="max-h-48 w-full rounded-lg border border-ink-700/50 object-contain"
-                      />
-                    )}
-                    {shareState.status === "sent" && (
-                      <p className="rounded border border-emerald-400/30 bg-emerald-400/10 px-2 py-1.5 text-[11px] font-medium text-emerald-300">
-                        ✓ Sent to your Telegram
-                      </p>
-                    )}
-                    <div className="grid grid-cols-3 gap-2">
-                      <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={downloadSlipImage}>
-                        💾 Save
-                      </button>
-                      <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={() => void shareToTelegram()}>
-                        ✈️ Telegram
-                      </button>
-                      <button className="btn-ghost px-2 py-1.5 text-[11px]" onClick={() => void nativeShare()}>
-                        📤 Share…
-                      </button>
-                    </div>
-                    <button
-                      className="w-full text-center text-[10px] text-slate-500 hover:text-slate-300"
-                      onClick={() => setShareState({ status: "idle" })}
-                    >
-                      Close
-                    </button>
-                  </div>
-                ) : shareState.status === "error" ? (
-                  <p className="rounded-lg border border-red-400/40 bg-red-400/10 px-2.5 py-2 text-[11px] font-medium text-red-300">
-                    ⚠ {shareState.error}
-                  </p>
-                ) : null}
-
                 <button className="btn-ghost w-full" onClick={() => setSelected(new Set())}>
                   Clear selection
                 </button>

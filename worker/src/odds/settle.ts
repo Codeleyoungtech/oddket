@@ -1,7 +1,6 @@
-import { LEAGUE_SPORTS, TENNIS_SPORTS, type Outcome } from "@oddket/core";
+import type { Outcome } from "@oddket/core";
 import type { Env } from "../db";
 import {
-  getSettings,
   markFixturesFinished,
   markTennisFinished,
   settlePendingBets,
@@ -16,7 +15,60 @@ export interface SettleResult {
   footballSettled: number;
   tennisCompleted: number;
   tennisSettled: number;
+  /** How many /scores calls this run made — the credit cost of the run. */
+  scoresPulls?: number;
+  /** Sport keys actually queried (diagnostic for "why is nothing settling?"). */
+  sportsQueried?: string[];
   note?: string;
+}
+
+/**
+ * Sport keys that could ACTUALLY need settling right now:
+ *   - a pending bet on a fixture that has already kicked off (any age — a
+ *     late-logged bet must still settle), or
+ *   - a not-yet-finished fixture whose kickoff was inside the window
+ *     (so the result gets recorded and the fixture flips to finished).
+ *
+ * Why this exists: the old code pulled /scores for EVERY selected league +
+ * every tennis tournament on every run — with 12 football leagues + ~20 ATP
+ * tournaments twice a day that is ~1,900 requests/month against a
+ * 500-per-key free tier, so every key 429'd and the run silently reported
+ * "0 completed" while bets stayed pending for days. Scoping the pull to the
+ * handful of leagues that actually have unfinished business fixes the root
+ * cause instead of the symptom.
+ */
+async function relevantSports(
+  env: Env,
+  now: number,
+  windowDays: number,
+): Promise<{ football: string[]; tennis: string[] }> {
+  const since = now - windowDays * 86400;
+  const [footballRes, tennisRes] = await Promise.all([
+    env.DB.prepare(
+      `SELECT DISTINCT f.sport AS sport
+         FROM fixtures f
+         LEFT JOIN bets b ON b.fixture_id = f.id AND b.status = 'pending'
+        WHERE f.sport LIKE 'soccer%'
+          AND (
+            (b.id IS NOT NULL AND f.commence_time <= ?1)
+            OR (f.status != 'finished' AND f.commence_time <= ?1 AND f.commence_time >= ?2)
+          )`,
+    )
+      .bind(now, since)
+      .all<{ sport: string }>(),
+    env.DB.prepare(
+      `SELECT DISTINCT m.sport AS sport
+         FROM tennis_matches m
+         LEFT JOIN tennis_bets tb ON tb.fixture_id = m.id AND tb.status = 'pending'
+        WHERE (tb.id IS NOT NULL AND m.commence_time <= ?1)
+           OR (m.status != 'finished' AND m.commence_time <= ?1 AND m.commence_time >= ?2)`,
+    )
+      .bind(now, since)
+      .all<{ sport: string }>(),
+  ]);
+  const uniq = (rows: Array<{ sport: string }> | undefined) =>
+    [...new Set((rows ?? []).map((r) => r.sport).filter(Boolean))];
+  return { football: uniq(footballRes.results), tennis: uniq(tennisRes.results) };
 }
 
 interface ScoreEvent {
@@ -65,6 +117,12 @@ async function fetchScores(apiKey: string, sportKeys: string[], daysFrom = 2): P
         console.error(`[settle] ${sport} scores: fetch error — trying next key`);
       }
     }
+    if (!got) {
+      // Every configured key refused this sport. The usual cause is the
+      // free-tier monthly credit being spent (429) — which used to look like
+      // "the cron ran fine but nothing ever settles".
+      console.error(`[settle] ${sport}: no key returned scores (all keys 401/429/network) — credit budget likely exhausted`);
+    }
   }
   return all;
 }
@@ -88,17 +146,23 @@ export async function settleFinishedMatches(env: Env): Promise<SettleResult> {
     };
   }
 
-  const settings = await getSettings(env.DB);
-  const footballSports = (settings.leagues ?? [])
-    .map((name) => LEAGUE_SPORTS[name])
-    .filter((k): k is string => Boolean(k));
-  const selectedTennis = (settings.leagues ?? [])
-    .map((name) => TENNIS_SPORTS[name])
-    .filter((k): k is string => Boolean(k));
-  const envKeys = (env.TENNIS_SPORTS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const tennisSports = selectedTennis.length > 0 ? selectedTennis : envKeys.length > 0 ? envKeys : Object.values(TENNIS_SPORTS);
-
   const now = Math.floor(Date.now() / 1000);
+  const { football: footballSports, tennis: tennisSports } = await relevantSports(env, now, 3);
+  const scoresPulls = footballSports.length + tennisSports.length;
+  const sportsQueried = [...footballSports, ...tennisSports];
+
+  if (scoresPulls === 0) {
+    return {
+      mode: "live",
+      footballCompleted: 0,
+      footballSettled: 0,
+      tennisCompleted: 0,
+      tennisSettled: 0,
+      scoresPulls: 0,
+      sportsQueried: [],
+      note: "Nothing to settle — no pending bets on kicked-off fixtures and no recently-played unfinished fixtures.",
+    };
+  }
 
   /* ---------------- football ---------------- */
   let footballCompleted = 0;
@@ -148,5 +212,13 @@ export async function settleFinishedMatches(env: Env): Promise<SettleResult> {
     tennisSettled = await settleTennisBets(env.DB);
   }
 
-  return { mode: "live", footballCompleted, footballSettled, tennisCompleted, tennisSettled };
+  return {
+    mode: "live",
+    footballCompleted,
+    footballSettled,
+    tennisCompleted,
+    tennisSettled,
+    scoresPulls,
+    sportsQueried,
+  };
 }

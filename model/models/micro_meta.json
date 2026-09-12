@@ -3,6 +3,7 @@
   "source": "football-data.co.uk EPL/Bundesliga/LaLiga/SerieA 2019-2026 (historical.json)",
   "feature_groups": [
     "base",
+    "ou_goals",
     "ou_odds",
     "ew_form",
     "rest"
@@ -30,6 +31,13 @@
     "poi_d",
     "poi_a",
     "poi_over",
+    "ou_combined_avg_goals",
+    "ou_home_scored_rate",
+    "ou_away_scored_rate",
+    "ou_home_conceded_rate",
+    "ou_away_conceded_rate",
+    "ou_h2h_avg_total",
+    "ou_poisson_expected_total",
     "odd_over",
     "odd_under",
     "ew_home",
@@ -53,28 +61,110 @@
         "over"
       ],
       "baseRate": 0.7625,
-      "brier_raw": 0.1818,
-      "brier_calibrated": 0.1793,
-      "overall_positive_rate": 0.9951,
-      "overall_accuracy_at_0.5": 0.7585,
+      "brier_raw": 0.1822,
+      "brier_calibrated": 0.1787,
+      "overall_positive_rate": 0.9985,
+      "overall_accuracy_at_0.5": 0.761,
       "hit_rate_at_threshold": {
         "p>=0.65": {
-          "n": 1972,
-          "hitRate": 0.7642
+          "n": 1992,
+          "hitRate": 0.7631
         },
         "p>=0.70": {
-          "n": 1758,
-          "hitRate": 0.7742
+          "n": 1816,
+          "hitRate": 0.7687
         },
         "p>=0.75": {
-          "n": 1212,
-          "hitRate": 0.802
+          "n": 1222,
+          "hitRate": 0.7979
         },
         "p>=0.80": {
-          "n": 649,
-          "hitRate": 0.8197
+          "n": 615,
+          "hitRate": 0.8358
         }
       },
+      "reliability": [
+        {
+          "lo": 0.0,
+          "hi": 0.1,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.1,
+          "hi": 0.2,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.2,
+          "hi": 0.3,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.3,
+          "hi": 0.4,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.4,
+          "hi": 0.5,
+          "n": 3,
+          "observed": 1.0,
+          "low": 0.4385,
+          "high": 1.0
+        },
+        {
+          "lo": 0.5,
+          "hi": 0.6,
+          "n": 11,
+          "observed": 0.8182,
+          "low": 0.523,
+          "high": 0.9486
+        },
+        {
+          "lo": 0.6,
+          "hi": 0.7,
+          "n": 195,
+          "observed": 0.6974,
+          "low": 0.6297,
+          "high": 0.7576
+        },
+        {
+          "lo": 0.7,
+          "hi": 0.8,
+          "n": 1201,
+          "observed": 0.7344,
+          "low": 0.7087,
+          "high": 0.7586
+        },
+        {
+          "lo": 0.8,
+          "hi": 0.9,
+          "n": 608,
+          "observed": 0.8339,
+          "low": 0.8022,
+          "high": 0.8614
+        },
+        {
+          "lo": 0.9,
+          "hi": 1.0,
+          "n": 7,
+          "observed": 1.0,
+          "low": 0.6457,
+          "high": 1.0
+        }
+      ],
       "n_holdout": 2025,
       "seed": 20260813
     },
@@ -86,28 +176,110 @@
         "yes"
       ],
       "baseRate": 0.7649,
-      "brier_raw": 0.1733,
-      "brier_calibrated": 0.1725,
-      "overall_positive_rate": 0.998,
-      "overall_accuracy_at_0.5": 0.7659,
+      "brier_raw": 0.1732,
+      "brier_calibrated": 0.1721,
+      "overall_positive_rate": 0.9975,
+      "overall_accuracy_at_0.5": 0.7654,
       "hit_rate_at_threshold": {
         "p>=0.65": {
-          "n": 1942,
-          "hitRate": 0.7745
+          "n": 1966,
+          "hitRate": 0.7716
         },
         "p>=0.70": {
-          "n": 1782,
-          "hitRate": 0.7856
+          "n": 1764,
+          "hitRate": 0.7891
         },
         "p>=0.75": {
-          "n": 1482,
-          "hitRate": 0.809
+          "n": 1460,
+          "hitRate": 0.8082
         },
         "p>=0.80": {
-          "n": 1002,
-          "hitRate": 0.8403
+          "n": 1020,
+          "hitRate": 0.8382
         }
       },
+      "reliability": [
+        {
+          "lo": 0.0,
+          "hi": 0.1,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.1,
+          "hi": 0.2,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.2,
+          "hi": 0.3,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.3,
+          "hi": 0.4,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.4,
+          "hi": 0.5,
+          "n": 5,
+          "observed": 0.4,
+          "low": 0.1176,
+          "high": 0.7693
+        },
+        {
+          "lo": 0.5,
+          "hi": 0.6,
+          "n": 12,
+          "observed": 0.5,
+          "low": 0.2538,
+          "high": 0.7462
+        },
+        {
+          "lo": 0.6,
+          "hi": 0.7,
+          "n": 244,
+          "observed": 0.6107,
+          "low": 0.5482,
+          "high": 0.6697
+        },
+        {
+          "lo": 0.7,
+          "hi": 0.8,
+          "n": 744,
+          "observed": 0.7218,
+          "low": 0.6885,
+          "high": 0.7528
+        },
+        {
+          "lo": 0.8,
+          "hi": 0.9,
+          "n": 850,
+          "observed": 0.8176,
+          "low": 0.7903,
+          "high": 0.8422
+        },
+        {
+          "lo": 0.9,
+          "hi": 1.0,
+          "n": 170,
+          "observed": 0.9412,
+          "low": 0.8951,
+          "high": 0.9677
+        }
+      ],
       "n_holdout": 2025,
       "seed": 20260813
     },
@@ -119,28 +291,110 @@
         "yes"
       ],
       "baseRate": 0.7101,
-      "brier_raw": 0.1995,
-      "brier_calibrated": 0.1988,
-      "overall_positive_rate": 0.997,
-      "overall_accuracy_at_0.5": 0.7091,
+      "brier_raw": 0.201,
+      "brier_calibrated": 0.1992,
+      "overall_positive_rate": 0.9975,
+      "overall_accuracy_at_0.5": 0.7086,
       "hit_rate_at_threshold": {
         "p>=0.65": {
-          "n": 1393,
-          "hitRate": 0.7545
+          "n": 1427,
+          "hitRate": 0.7575
         },
         "p>=0.70": {
-          "n": 1085,
-          "hitRate": 0.7705
+          "n": 1044,
+          "hitRate": 0.7692
         },
         "p>=0.75": {
-          "n": 669,
-          "hitRate": 0.8072
+          "n": 675,
+          "hitRate": 0.7956
         },
         "p>=0.80": {
-          "n": 261,
-          "hitRate": 0.8621
+          "n": 320,
+          "hitRate": 0.8531
         }
       },
+      "reliability": [
+        {
+          "lo": 0.0,
+          "hi": 0.1,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.1,
+          "hi": 0.2,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.2,
+          "hi": 0.3,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.3,
+          "hi": 0.4,
+          "n": 0,
+          "observed": null,
+          "low": null,
+          "high": null
+        },
+        {
+          "lo": 0.4,
+          "hi": 0.5,
+          "n": 5,
+          "observed": 0.8,
+          "low": 0.3755,
+          "high": 0.9638
+        },
+        {
+          "lo": 0.5,
+          "hi": 0.6,
+          "n": 186,
+          "observed": 0.5753,
+          "low": 0.5034,
+          "high": 0.6441
+        },
+        {
+          "lo": 0.6,
+          "hi": 0.7,
+          "n": 790,
+          "observed": 0.6633,
+          "low": 0.6296,
+          "high": 0.6954
+        },
+        {
+          "lo": 0.7,
+          "hi": 0.8,
+          "n": 724,
+          "observed": 0.732,
+          "low": 0.6986,
+          "high": 0.763
+        },
+        {
+          "lo": 0.8,
+          "hi": 0.9,
+          "n": 291,
+          "observed": 0.8385,
+          "low": 0.7918,
+          "high": 0.8763
+        },
+        {
+          "lo": 0.9,
+          "hi": 1.0,
+          "n": 29,
+          "observed": 1.0,
+          "low": 0.883,
+          "high": 1.0
+        }
+      ],
       "n_holdout": 2025,
       "seed": 20260813
     }

@@ -34,6 +34,31 @@ from predict import NAME_MAP  # noqa: E402 — reuse the same team-name mapping
 
 MICRO_META = os.path.join(ROOT, "models", "micro_meta.json")
 
+# Used only when a market ships without a reliability table (older artifact).
+FALLBACK_HALF_WIDTH = 0.05
+
+
+def reliability_interval(p: float, bands: list | None) -> tuple[float, float]:
+    """Out-of-sample interval for a probability, from the model's own holdout
+    reliability table (observed rate + Wilson 95% bounds for the band `p`
+    falls in).
+
+    The shipped interval used to be an invented ±(0.08 + 0.25·|p−0.5|) band,
+    which produced absurd 67%–99% ranges at p≈0.83. A model's honest
+    uncertainty is how its own probabilities have held up out of sample —
+    which is exactly what this table measures.
+    """
+    if not bands:
+        return max(0.0, p - FALLBACK_HALF_WIDTH), min(1.0, p + FALLBACK_HALF_WIDTH)
+    for b in bands:
+        if b.get("n") and b.get("observed") is not None and b["lo"] <= p < b["hi"]:
+            return float(b["low"]), float(b["high"])
+    # Top band is inclusive of 1.0 — match it explicitly.
+    top = bands[-1]
+    if top.get("n") and p >= top["lo"]:
+        return float(top["low"]), float(top["high"])
+    return max(0.0, p - FALLBACK_HALF_WIDTH), min(1.0, p + FALLBACK_HALF_WIDTH)
+
 
 def normalize_name(name: str) -> str:
     if not name:
@@ -79,6 +104,13 @@ def main() -> int:
             load(os.path.join(ROOT, "models", f"{market}_calibrator.joblib")),
             meta["markets"][market],
         )
+        cfg = meta["markets"][market]
+        cfg["reliability"] = cfg.get("reliability")
+        print(
+            f"[predict] {market}: {cfg.get('version')} | holdout base {cfg.get('baseRate')} | "
+            f"reliability bands {len(cfg.get('reliability') or [])}",
+            file=sys.stderr,
+        )
 
     # Compute pair features ONCE per fixture; each market model consumes the
     # same feature vector (the ou_odds features come from the fixture's own
@@ -119,17 +151,18 @@ def main() -> int:
             classes = cfg["classes"]  # [under/no, over/yes]
             proba = cal.predict_proba(x)[0]
             version = cfg["version"]
+            bands = cfg.get("reliability")
             if market == "ou15":
                 # selection "over" = classes index 1
                 p_over = float(np.clip(proba[1], 0.01, 0.99))
-                hw = 0.08 + 0.25 * abs(p_over - 0.5)
+                lo, hi = reliability_interval(p_over, bands)
                 predictions.append({
                     "fixtureId": fx.get("id") or fx.get("fixture_id", ""),
                     "market": "ou15",
                     "selection": "over",
                     "probability": round(p_over, 4),
-                    "confidenceLow": round(max(0.0, p_over - hw), 4),
-                    "confidenceHigh": round(min(1.0, p_over + hw), 4),
+                    "confidenceLow": round(lo, 4),
+                    "confidenceHigh": round(hi, 4),
                     "modelVersion": version,
                 })
                 predictions.append({
@@ -137,21 +170,21 @@ def main() -> int:
                     "market": "ou15",
                     "selection": "under",
                     "probability": round(1.0 - p_over, 4),
-                    "confidenceLow": round(max(0.0, (1.0 - p_over) - hw), 4),
-                    "confidenceHigh": round(min(1.0, (1.0 - p_over) + hw), 4),
+                    "confidenceLow": round(1.0 - hi, 4),
+                    "confidenceHigh": round(1.0 - lo, 4),
                     "modelVersion": version,
                 })
             else:
                 side = "home" if market == "team_home" else "away"
                 p_yes = float(np.clip(proba[1], 0.01, 0.99))
-                hw = 0.08 + 0.25 * abs(p_yes - 0.5)
+                lo, hi = reliability_interval(p_yes, bands)
                 predictions.append({
                     "fixtureId": fx.get("id") or fx.get("fixture_id", ""),
                     "market": f"team_{side}_goals",
                     "selection": "yes",
                     "probability": round(p_yes, 4),
-                    "confidenceLow": round(max(0.0, p_yes - hw), 4),
-                    "confidenceHigh": round(min(1.0, p_yes + hw), 4),
+                    "confidenceLow": round(lo, 4),
+                    "confidenceHigh": round(hi, 4),
                     "modelVersion": version,
                 })
                 predictions.append({
@@ -159,8 +192,8 @@ def main() -> int:
                     "market": f"team_{side}_goals",
                     "selection": "no",
                     "probability": round(1.0 - p_yes, 4),
-                    "confidenceLow": round(max(0.0, (1.0 - p_yes) - hw), 4),
-                    "confidenceHigh": round(min(1.0, (1.0 - p_yes) + hw), 4),
+                    "confidenceLow": round(1.0 - hi, 4),
+                    "confidenceHigh": round(1.0 - lo, 4),
                     "modelVersion": version,
                 })
 

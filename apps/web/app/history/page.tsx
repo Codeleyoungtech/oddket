@@ -9,6 +9,13 @@ import { fmtDate, fmtPct } from "../../lib/format";
 type DayRange = "7" | "30" | "all";
 type ResultFilter = "all" | "settled" | "pending";
 
+function csvEscape(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
+  return text;
+}
+
 /** One graded prediction row for a fixture that has already kicked off. */
 interface GradedRow {
   fixtureId: string;
@@ -174,6 +181,55 @@ export default function HistoryPage() {
     return [...map.values()];
   }, [filtered]);
 
+  const exportCsv = () => {
+    const headers = [
+      "fixture_id",
+      "commence_time",
+      "league",
+      "home_team",
+      "away_team",
+      "market",
+      "selection",
+      "probability",
+      "confidence_low",
+      "confidence_high",
+      "model_version",
+      "result",
+      "score",
+    ];
+
+    const lines = filtered.map((r) => {
+      const result = r.won === null ? "pending" : r.won ? "won" : "lost";
+      return [
+        csvEscape(r.fixtureId),
+        csvEscape(new Date(r.commenceTime * 1000).toISOString()),
+        csvEscape(r.league),
+        csvEscape(r.homeTeam),
+        csvEscape(r.awayTeam),
+        csvEscape(r.market),
+        csvEscape(r.selection),
+        csvEscape(r.probability),
+        csvEscape(r.confidenceLow),
+        csvEscape(r.confidenceHigh),
+        csvEscape(r.modelVersion),
+        csvEscape(result),
+        csvEscape(r.score),
+      ].join(",");
+    });
+
+    const csv = [headers.join(","), ...lines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+    a.href = url;
+    a.download = `prediction-history-${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   if (mode === "loading")
     return (
       <PageSkeleton>
@@ -277,6 +333,14 @@ export default function HistoryPage() {
               <option key={lg} value={lg}>{lg}</option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className="shrink-0 rounded-lg border border-ink-700/60 bg-ink-800/80 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-emerald-400/40 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Export CSV
+          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="scrollbar-none flex flex-1 gap-1 overflow-x-auto">

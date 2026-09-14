@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql", "0006_telegram.sql", "0007_bet_source.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -513,6 +513,59 @@ console.log("\n[15] EV market integrity (football draw is 1X2, not binary)");
   const slips = await api("GET", "/api/slips");
   check("complete 1X2 draw edge is evaluated", slips.json?.some((l) => l.fixture.id === "draw-ev" && l.selection === "draw"), JSON.stringify(slips.json?.map((l) => `${l.fixture.id}:${l.selection}`)));
   check("football h2h without draw odds is skipped", !slips.json?.some((l) => l.fixture.id === "binary-ev"), JSON.stringify(slips.json?.map((l) => `${l.fixture.id}:${l.selection}`)));
+}
+
+console.log("\n[16] bet source tagging (model vs manual vs untagged)");
+{
+  const db = await api("GET", "/api/db");
+  const fixture = db.json.fixtures.find((x) => x.status !== "finished") ?? db.json.fixtures[0];
+  const base = {
+    fixtureId: fixture.id,
+    market: "h2h",
+    selection: "home",
+    odds: 2.0,
+    stake: 10,
+    edge: 0.04,
+    modelProbability: 0.52,
+  };
+
+  const before = await api("GET", "/api/dashboard");
+  const beforeModel = before.json?.modelSummary?.nBets ?? 0;
+  const beforeManual = before.json?.manualSummary?.nBets ?? 0;
+  const beforeUntagged = before.json?.untaggedBets ?? 0;
+  check("dashboard exposes untaggedBets", typeof before.json?.untaggedBets === "number", JSON.stringify(before.json?.untaggedBets));
+
+  const modelBet = await api("POST", "/api/bets", { ...base, source: "model", selection: "draw" });
+  const manualBet = await api("POST", "/api/bets", { ...base, source: "manual", selection: "away" });
+  const noTag = await api("POST", "/api/bets", { ...base, selection: "home" });
+  const bogusTag = await api("POST", "/api/bets", { ...base, source: "whatever", selection: "over" });
+  check("all four bets placed", [modelBet, manualBet, noTag, bogusTag].every((r) => r.status === 201), JSON.stringify([modelBet.status, manualBet.status, noTag.status, bogusTag.status]));
+
+  // The tag must survive the round trip — this is the bug: it used to be dropped
+  // on write and re-guessed on read.
+  const list = await api("GET", "/api/bets");
+  const byId = new Map(list.json.map((b) => [b.id, b]));
+  check("source 'model' persists", byId.get(modelBet.json?.bet?.id)?.source === "model", JSON.stringify(byId.get(modelBet.json?.bet?.id)));
+  check("source 'manual' persists", byId.get(manualBet.json?.bet?.id)?.source === "manual", JSON.stringify(byId.get(manualBet.json?.bet?.id)));
+  check("absent source stays untagged", byId.get(noTag.json?.bet?.id)?.source === undefined, JSON.stringify(byId.get(noTag.json?.bet?.id)));
+  check("unrecognised source is NOT defaulted to model", byId.get(bogusTag.json?.bet?.id)?.source === undefined, JSON.stringify(byId.get(bogusTag.json?.bet?.id)));
+
+  // Dashboard isolation: only the tagged-model bet moves the model bucket.
+  const after = await api("GET", "/api/dashboard");
+  check("model bucket grew by exactly 1", (after.json?.modelSummary?.nBets ?? 0) - beforeModel === 1, `${beforeModel} -> ${after.json?.modelSummary?.nBets}`);
+  check("manual bucket grew by exactly 1", (after.json?.manualSummary?.nBets ?? 0) - beforeManual === 1, `${beforeManual} -> ${after.json?.manualSummary?.nBets}`);
+  check("untagged bucket grew by 2", (after.json?.untaggedBets ?? 0) - beforeUntagged === 2, `${beforeUntagged} -> ${after.json?.untaggedBets}`);
+  check("headline summary is model-only", after.json?.summary?.nBets === after.json?.modelSummary?.nBets, JSON.stringify({ headline: after.json?.summary?.nBets, model: after.json?.modelSummary?.nBets }));
+
+  // Tennis mirror: same column, same normalisation.
+  const tdb = await api("GET", "/api/tennis/db");
+  const tfix = tdb.json?.fixtures?.find((x) => x.status !== "finished") ?? tdb.json?.fixtures?.[0];
+  if (tfix) {
+    const tbet = await api("POST", "/api/tennis/bets", { fixtureId: tfix.id, selection: "home", odds: 2.0, stake: 10, source: "manual" });
+    check("tennis bet placed", tbet.status === 201, JSON.stringify(tbet.json));
+    const tlist = await api("GET", "/api/tennis/bets");
+    check("tennis source persists", tlist.json?.find((b) => b.id === tbet.json?.bet?.id)?.source === "manual");
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -192,6 +192,8 @@ export interface Dashboard {
   modelSummary: DashboardSummary;
   /** Stats for manual/off-system bets (custom or gate-rejected). */
   manualSummary: DashboardSummary;
+  /** Bets logged before source tagging existed — excluded from BOTH buckets. */
+  untaggedBets: number;
   clvSeries: ClvPoint[];
   bankrollSeries: BankrollPoint[];
   calibration: CalibrationResult;
@@ -212,9 +214,13 @@ function summarizeBets(
   settings: Settings,
   isModel: boolean,
 ): DashboardSummary {
-  // Filter by source: model = passed all gates, manual = custom/gate-rejected.
-  // Bets without a source tag (legacy) default to 'model'.
-  const filtered = bets.filter((b) => (isModel ? (b.source ?? "model") === "model" : b.source === "manual"));
+  // Filter by source, STRICTLY. model = passed every gate at log time,
+  // manual = custom / gate-rejected.
+  //
+  // Untagged bets (source undefined) belong to NEITHER bucket. They used to be
+  // folded into "model" by a `?? "model"` default, which quietly contaminated
+  // the paper-trade numbers with bets that were never model-flagged.
+  const filtered = bets.filter((b) => (isModel ? b.source === "model" : b.source === "manual"));
   const settled = filtered.filter((b) => b.status === "won" || b.status === "lost");
   const won = settled.filter((b) => b.status === "won");
   const winRate = settled.length > 0 ? won.length / settled.length : 0;
@@ -260,27 +266,24 @@ export function buildDashboard(db: Database): Dashboard {
   const modelSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, true);
   // Manual/off-system bets — tracked separately, excluded from model metrics.
   const manualSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, false);
-  // Combined total for reference (nBets count only — ROI/CLV still model-only).
-  const totalSettled = bets.filter((b) => b.status === "won" || b.status === "lost");
-  const totalStaked = totalSettled.reduce((a, b) => a + b.stake, 0);
-  const totalReturn = totalSettled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
 
+  // Every series on the dashboard is MODEL-ONLY. Manual and untagged bets must
+  // not move the headline bankroll, CLV curve or per-market ROI — otherwise the
+  // "is the model any good?" answer is contaminated by bets the model never
+  // picked. (Calibration was already model-only: it grades predictions against
+  // outcomes, and never touches logged bets at all.)
+  const modelBets = bets.filter((b) => b.source === "model");
   const clvByBet = new Map(clv.map((c) => [c.betId, c]));
-  const byMarket = buildByMarket(totalSettled, clvByBet, totalStaked > 0 ? totalReturn / totalStaked : 0);
-
-  const bankrollSeries = buildBankrollSeries(bets, settings.bankroll);
-  const bankrollNow = bankrollSeries.length > 0 ? bankrollSeries[bankrollSeries.length - 1]!.bankroll : settings.bankroll;
+  const byMarket = buildByMarket(modelBets.filter((b) => b.status === "won" || b.status === "lost"), clvByBet);
+  const bankrollSeries = buildBankrollSeries(modelBets, settings.bankroll);
+  const untaggedBets = bets.filter((b) => b.source === undefined).length;
 
   return {
-    summary: {
-      ...modelSummary,
-      nBets: modelSummary.nBets + manualSummary.nBets, // total count for reference
-      settledBets: modelSummary.settledBets + manualSummary.settledBets,
-      bankrollNow,
-    },
+    summary: modelSummary,
     modelSummary,
     manualSummary,
-    clvSeries: buildClvSeries(bets, clv),
+    untaggedBets,
+    clvSeries: buildClvSeries(modelBets, clv),
     bankrollSeries,
     calibration: buildCalibration(predictions, outcomes, fixtures),
     byMarket,
@@ -290,7 +293,6 @@ export function buildDashboard(db: Database): Dashboard {
 function buildByMarket(
   settled: Bet[],
   clvByBet: Map<string, ClvResult>,
-  overallRoi: number,
 ): ByMarketRow[] {
   const groups = new Map<Market, Bet[]>();
   for (const b of settled) {

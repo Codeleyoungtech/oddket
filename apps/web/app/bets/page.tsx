@@ -1,13 +1,26 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { marketLabel, type Parlay, type Selection } from "@oddket/core";
+import { marketLabel, type BetSource, type Parlay, type Selection } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 
 
 // Bets logged in the last 24h can be undone (mistaken logs). Older rows are
 // kept immutable — undoing settled/CLV-scored history would corrupt the scoreboard.
 const UNDO_WINDOW_SEC = 24 * 3600;
+
+/**
+ * Source bucket for a bet.
+ *
+ * "Untagged" is a REAL third state, not a synonym for model: it means the bet
+ * was logged before the tag was persisted. The dashboards exclude those bets
+ * from both the model and manual buckets, so the UI must not label them either.
+ */
+function sourceMeta(source?: BetSource): { label: string; short: string; cls: string } {
+  if (source === "manual") return { label: "✋ Manual", short: "✋", cls: "border-amber-400/40 bg-amber-400/10 text-amber-300" };
+  if (source === "model") return { label: "🤖 Model", short: "🤖", cls: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" };
+  return { label: "— Untagged", short: "—", cls: "border-ink-600 bg-ink-800/60 text-slate-400" };
+}
 import { Badge, Card, EmptyState, PageSkeleton, SectionTitle, SkeletonCard, SkeletonStatGrid } from "../../components/ui";
 import { clvClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct, pnlClass } from "../../lib/format";
 
@@ -262,16 +275,24 @@ export default function BetsPage() {
   }, [bets, statusFilter, searchFilter, undoingIds]);
 
   const totals = useMemo(() => {
-    // Model-flagged bets only for the summary stats.
-    const modelBets = bets.filter((b) => (b.source ?? "model") === "model");
+    // STRICT source filtering — a bet counts as model only when it is tagged
+    // model. Untagged bets are counted separately and excluded from every stat.
+    const modelBets = bets.filter((b) => b.source === "model");
     const settled = modelBets.filter((b) => b.status === "won" || b.status === "lost");
     const staked = settled.reduce((a, b) => a + b.stake, 0);
     const ret = settled.reduce((a, b) => a + (b.outcomeAmount ?? 0), 0);
     const withClv = settled.filter((b) => b.clv !== undefined);
     const cumClv = withClv.reduce((a, b) => a + (b.clv ?? 0), 0);
-    // Manual bets count for reference.
     const manualSettled = bets.filter((b) => b.source === "manual" && (b.status === "won" || b.status === "lost"));
-    return { n: settled.length, staked, ret, cumClv, nClv: withClv.length, manualN: manualSettled.length };
+    return {
+      n: settled.length,
+      staked,
+      ret,
+      cumClv,
+      nClv: withClv.length,
+      manualN: manualSettled.length,
+      untaggedN: bets.filter((b) => b.source === undefined).length,
+    };
   }, [bets]);
 
   if (!db)
@@ -319,7 +340,9 @@ export default function BetsPage() {
         <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
           <p className="text-[11px] font-medium text-slate-400">Model Settled</p>
           <p className="mt-1 text-lg font-bold text-slate-100">{totals.n}</p>
-          <p className="mt-0.5 text-[10px] text-slate-500">{totals.manualN} manual · {bets.filter((b) => b.status === "pending").length} pending</p>
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            {totals.manualN} manual · {totals.untaggedN} untagged · {bets.filter((b) => b.status === "pending").length} pending
+          </p>
         </div>
         <div className="rounded-xl border border-ink-700/50 bg-ink-900/40 p-3.5">
           <p className="text-[11px] font-medium text-slate-400">Total Staked</p>
@@ -491,12 +514,17 @@ export default function BetsPage() {
                       <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>
                         {b.status}
                       </Badge>
-                      <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
-                        (b.source ?? "model") === "manual"
-                          ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                          : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                      }`}>
-                        {(b.source ?? "model") === "manual" ? "✋ Manual" : "🤖 Model"}
+                      <span
+                        className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${sourceMeta(b.source).cls}`}
+                        title={
+                          b.source === undefined
+                            ? "Logged before the model/manual tag was stored — excluded from both dashboard buckets"
+                            : b.source === "model"
+                              ? "Passed every gate at log time — counts toward the model ROI/CLV"
+                              : "Custom or gate-rejected — tracked separately from the model"
+                        }
+                      >
+                        {sourceMeta(b.source).label}
                       </span>
                       {b.status === "pending" && b.placedAt > Date.now() / 1000 - UNDO_WINDOW_SEC && (
                         <button
@@ -728,12 +756,8 @@ export default function BetsPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${
-                                (b.source ?? "model") === "manual"
-                                  ? "border-amber-400/40 bg-amber-400/10 text-amber-300"
-                                  : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                              }`}>
-                                {(b.source ?? "model") === "manual" ? "✋" : "🤖"}
+                              <span className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${sourceMeta(b.source).cls}`}>
+                                {sourceMeta(b.source).short}
                               </span>
                               <Badge tone={b.status === "won" ? "green" : b.status === "lost" ? "red" : "sky"}>{b.status}</Badge>
                             </div>

@@ -24,6 +24,7 @@ import {
   deletePushSubscription,
   getSettings,
   insertBet,
+  normaliseBetSource,
   insertClv,
   insertParlay,
   listRecentSettlements,
@@ -265,7 +266,7 @@ app.delete("/api/bets/:id", async (c) => {
 
 app.post("/api/bets", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const { fixtureId, market, selection, odds, stake, edge, modelProbability, placedAt } = body as Partial<Bet>;
+  const { fixtureId, market, selection, odds, stake, edge, modelProbability, placedAt, source } = body as Partial<Bet>;
   if (!fixtureId || !market || !selection || !odds || !stake) {
     return c.json({ ok: false, error: "fixtureId, market, selection, odds and stake are required." }, 400);
   }
@@ -290,6 +291,10 @@ app.post("/api/bets", async (c) => {
     bankrollAtBet: settings.bankroll,
     edge: edge ?? 0,
     modelProbability: modelProbability ?? 0,
+    // Persisted, not inferred. An absent/unrecognised tag stores NULL (untagged)
+    // rather than defaulting to "model" — guessing is what made the old
+    // model-vs-manual split untrustworthy.
+    source: normaliseBetSource(source) ?? undefined,
     status: "pending",
     placedAt: placedAt ?? now,
   };
@@ -584,7 +589,7 @@ app.delete("/api/tennis/bets/:id", async (c) => {
 
 app.post("/api/tennis/bets", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const { fixtureId, market, selection, odds, stake, edge, modelProbability, placedAt } = body as Partial<Bet>;
+  const { fixtureId, market, selection, odds, stake, edge, modelProbability, placedAt, source } = body as Partial<Bet>;
   if (!fixtureId || !selection || !odds || !stake) {
     return c.json({ ok: false, error: "fixtureId, selection, odds and stake are required." }, 400);
   }
@@ -609,6 +614,7 @@ app.post("/api/tennis/bets", async (c) => {
     bankrollAtBet: settings.bankroll,
     edge: edge ?? 0,
     modelProbability: modelProbability ?? 0,
+    source: normaliseBetSource(source) ?? undefined,
     status: "pending",
     placedAt: placedAt ?? now,
   };

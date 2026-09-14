@@ -56,7 +56,7 @@ export interface DataContextValue {
 
 const DataContext = createContext<DataContextValue | null>(null);
 
-function computeViews(db: Database) {
+function computeViews(db: Database, mode: Mode) {
   const dashboard = buildDashboard(db);
   const calibration = buildCalibration(db.predictions, db.outcomes, db.fixtures);
   const clvSeries = buildClvSeries(db.bets, db.clv);
@@ -74,22 +74,20 @@ function computeViews(db: Database) {
     db.odds,
     db.settings,
   );
-  // Tag bets: only auto-classify bets placed TODAY onwards.
-  // Legacy bets (before source tagging existed) keep no source tag —
-  // they won't show 🤖 or 🟡, and won't affect either dashboard summary.
+  // Tag bets. The worker PERSISTS the tag now, so a tag that arrives from the
+  // server is authoritative and is never second-guessed.
   const slipKeys = new Set(slips.map((s) => `${s.fixture.id}:${s.market}:${s.selection}`));
-  const startOfToday = (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return Math.floor(d.getTime() / 1000);
-  })();
   const bets = enrichBets(
     db.bets.map((b) => {
-      // Already tagged (logged after this feature shipped) — keep it.
       if (b.source) return b;
-      // Legacy bet placed before today — leave source undefined (untracked).
-      if (b.placedAt < startOfToday) return b;
-      // Bet placed today without a source — auto-classify.
+      // LIVE mode: untagged means untagged. Re-deriving the tag from the CURRENT
+      // flag list is what used to flip a bet between model and manual as odds
+      // moved — a bet logged as model-flagged could silently become "manual" a
+      // day later. Leave it untagged; the dashboards exclude it from both
+      // buckets and the bets page labels it.
+      if (mode === "live") return b;
+      // Demo seed only: classify from the flag list so the seeded dashboards
+      // still populate both buckets.
       return { ...b, source: slipKeys.has(`${b.fixtureId}:${b.market}:${b.selection}`) ? "model" : "manual" };
     }),
     db.fixtures,
@@ -148,7 +146,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [tick, sport, sportApi]);
 
-  const views = useMemo(() => (db ? computeViews(db) : null), [db]);
+  const views = useMemo(() => (db ? computeViews(db, mode) : null), [db, mode]);
 
   const saveSettings = useCallback(async (s: Settings) => {
     try {

@@ -4,7 +4,9 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 23 — **the frozen rule book**, now implemented in `packages/core/src/rules.ts`: the 13 hand-mined selection rules are tracked live on `/history` (progress toward the 300-fixture target), filterable on both `/history` and `/slips`, exported in the CSV, and guarded by a regression test that fails if any threshold moves. See `docs/RULES.md`.
+**Last updated:** Pass 24 — **bet tagging persisted** (model vs manual vs untagged is now real, and the dashboards are model-only), Telegram **`/rules`**, plus a walk-forward mining experiment that answers "what new rules would look like" without adding any. See `docs/RULES.md` §7.
+
+**Previously:** Pass 23 — **the frozen rule book**, now implemented in `packages/core/src/rules.ts`: the 13 hand-mined selection rules are tracked live on `/history` (progress toward the 300-fixture target), filterable on both `/history` and `/slips`, exported in the CSV, and guarded by a regression test that fails if any threshold moves. See `docs/RULES.md`.
 
 ---
 
@@ -778,6 +780,107 @@ threshold was touched: a rule that lost stays listed at its real record.
 - **The rule book is a post-hoc pattern search.** Expect regression toward the
   mean as the denominator grows past 118. That is what the 300-fixture target is
   for, not a reason to adjust anything.
+
+---
+
+## 24. Pass 24 — persistent bet tagging, `/rules`, and the honest answer on new rules
+
+### 24.1 Bet tagging was never actually stored (the §22/§23 "untagged" bug)
+
+**Root cause:** `bets` had **no `source` column at all**. The browser computed a
+`model`/`manual` tag and sent it, the worker dropped it on write, and the web app
+re-derived it on every read — from the *current* flag list. A bet could therefore
+change buckets as odds moved. Worse, `summarizeBets` used `(b.source ?? "model")`,
+so every untagged bet was silently counted as **model**, and the headline CLV and
+bankroll series were built from **all** bets — manual and untagged included.
+
+**Fixed:**
+
+- `0007_bet_source.sql` adds `source` to `bets` and `tennis_bets`. Pre-existing
+  rows keep **NULL = untagged**, deliberately: they are excluded from both buckets
+  rather than being guessed into one.
+- The worker persists the tag (`normaliseBetSource`) and never invents one — an
+  absent or unrecognised tag stores NULL instead of defaulting to `model`.
+- `data-provider` no longer re-guesses in live mode; a persisted tag is
+  authoritative, untagged stays untagged. (The guess survives only in demo mode,
+  where the seed has no tags.)
+- **Core `summarizeBets` is now strict**: model = `source === "model"`,
+  manual = `source === "manual"`, and `clvSeries` / `bankrollSeries` /
+  `byMarket` are all rebuilt from **model bets only**. Calibration was already
+  model-only (it grades predictions, never logged bets).
+- `Dashboard.untaggedBets` is exposed; the bets page shows a real third state
+  (🤖 Model / ✋ Manual / — Untagged) instead of folding untagged into model, and
+  the Overview states its scope in words.
+
+### 24.2 Telegram `/rules`
+
+The rule book on the phone: live record per active rule (frozen → now), the
+conditions, and the fixtures it fires on over the **next 3 days** with each leg's
+model probability — plus whether the feed actually prices that market. Added to
+the button menu, `/help` and the Telegram command list.
+
+### 24.3 "What new 100% rules would you generate?" — a walk-forward answer
+
+Rather than assert "more rules would be noise", the search was run: mine on the
+first **94** settled fixtures, test on the next **23**, across 1,842 candidate
+conditions and 11 targets (see `RULES.md` §7 for the full table).
+
+**1,842 conditions → 146,773 distinct 1–2-condition rules that hit 100% on batch 1
+→ 767 structural patterns → 624 of those had a variant break on batch 2.**
+
+The surviving knife-edge is the whole lesson: `A ≥ 21.25% AND A−D ≤ 2.89pp → Home
+to score` survives at 23/23 then 5/5, while widening one threshold to
+`A ≥ 19.42%` gives a *bigger* batch-1 sample (26/26) and **breaks** (5/6).
+
+**Nothing was added to the book.** Five candidates (C1–C5) are recorded in
+`RULES.md` as a watch-list only, explicitly *not* in `rules.ts`, so the
+300-fixture test stays clean. Zero surviving patterns exist for the draw, away
+win, home-goal-no or O/U 1.5 — which independently confirms the original mining
+notes.
+
+### 24.4 Should the model-only accumulators be capped? — no
+
+Asked directly, answered directly. **No cap, and here is the reasoning.**
+
+`settings.maxMultipleLegs` (2–6, default 3) is a **stake-sizing** guard. A
+model-only ticket has no bookmaker price, therefore no multiplier, no EV and no
+stake — capping it would apply a staking rule to something that carries no stake.
+It would also delete the risky tier (9–20 legs), which exists precisely because
+the owner asked for a long, clearly-labelled risky ticket, and whose length is
+what stops the pool starving.
+
+What a cap would *not* fix: the joint probability is a product of point estimates
+with wide CIs, so it is optimistic at long lengths. That is a labelling problem,
+and the UI already labels it (⚠ NOT EV-CHECKED, break-even odds, no multiplier).
+
+What **was** fixed is the inconsistency that made the question worth asking: the
+setting is now labelled **"Max legs per *manual* multiple"** in Settings, with text
+stating that it caps what you build or log by hand and does *not* cap the
+suggested tiers. That was previously unstated, so the risky 20-leg suggestion
+looked like it was ignoring a setting.
+
+### Verification (Pass 24)
+
+- core / web / worker typechecks clean; production build green
+- worker e2e **116/116** (new `[16]` section: source round-trip for model, manual,
+  absent and unrecognised tags; dashboard bucket isolation by exact delta;
+  headline summary proven model-only; tennis mirror)
+- core rule-book suite **41/41**
+- migration `0007` applied to production D1; worker deployed
+- live: `/api/bets` now returns a real `source`; `untaggedBets` present on `/api/dashboard`
+
+### Still open (Pass 24)
+
+- **The `source` backfill question.** The ~54 bets logged before this pass remain
+  NULL and now read as *untagged*, so the model summaries are smaller than they
+  looked. That is the honest reading, but it means the paper trade effectively
+  starts from the next model-flagged bet logged. Do not "fix" this by
+  re-classifying old rows from today's flag list — that is the bug that was just
+  removed.
+- **C1–C5 are unvalidated hypotheses.** Promote one only after it clears 300
+  fixtures as written.
+- The model still does not beat the closing line (§22.1) — unchanged and still the
+  highest-value problem in the repo.
 
 ---
 

@@ -149,6 +149,8 @@ interface BetRow {
   status: string;
   outcome_amount: number | null;
   placed_at: number;
+  /** 'model' | 'manual' | null (null = logged before tagging existed). */
+  source: string | null;
 }
 
 export function toBet(r: BetRow): Bet {
@@ -162,10 +164,18 @@ export function toBet(r: BetRow): Bet {
     bankrollAtBet: r.bankroll_at_bet,
     edge: r.edge,
     modelProbability: r.model_probability,
+    // NULL stays undefined: an untagged bet is NOT a model bet. The dashboards
+    // exclude it from both buckets rather than assuming it was model-flagged.
+    source: r.source === "model" || r.source === "manual" ? r.source : undefined,
     status: r.status as Bet["status"],
     outcomeAmount: r.outcome_amount ?? undefined,
     placedAt: r.placed_at,
   };
+}
+
+/** Normalise an incoming source tag — anything unexpected becomes untagged. */
+export function normaliseBetSource(v: unknown): "model" | "manual" | null {
+  return v === "model" || v === "manual" ? v : null;
 }
 
 interface ClvRow {
@@ -483,10 +493,10 @@ export async function upsertTennisPredictions(db: D1Database, rows: Prediction[]
 export async function insertTennisBet(db: D1Database, b: Bet): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO tennis_bets (id, fixture_id, market, selection, odds, stake, bankroll_at_bet, edge, model_probability, status, outcome_amount, placed_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+      `INSERT INTO tennis_bets (id, fixture_id, market, selection, odds, stake, bankroll_at_bet, edge, model_probability, status, outcome_amount, placed_at, source)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
     )
-    .bind(b.id, b.fixtureId, b.market, b.selection, b.odds, b.stake, b.bankrollAtBet, b.edge, b.modelProbability, b.status, b.outcomeAmount ?? null, b.placedAt)
+    .bind(b.id, b.fixtureId, b.market, b.selection, b.odds, b.stake, b.bankrollAtBet, b.edge, b.modelProbability, b.status, b.outcomeAmount ?? null, b.placedAt, b.source ?? null)
     .run();
 }
 
@@ -632,10 +642,10 @@ export async function listCornerPredictions(db: D1Database): Promise<{
 export async function insertBet(db: D1Database, b: Bet): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO bets (id, fixture_id, market, selection, odds, stake, bankroll_at_bet, edge, model_probability, status, outcome_amount, placed_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+      `INSERT INTO bets (id, fixture_id, market, selection, odds, stake, bankroll_at_bet, edge, model_probability, status, outcome_amount, placed_at, source)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
     )
-    .bind(b.id, b.fixtureId, b.market, b.selection, b.odds, b.stake, b.bankrollAtBet, b.edge, b.modelProbability, b.status, b.outcomeAmount ?? null, b.placedAt)
+    .bind(b.id, b.fixtureId, b.market, b.selection, b.odds, b.stake, b.bankrollAtBet, b.edge, b.modelProbability, b.status, b.outcomeAmount ?? null, b.placedAt, b.source ?? null)
     .run();
 }
 

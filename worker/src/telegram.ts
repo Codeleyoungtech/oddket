@@ -1,10 +1,18 @@
 import {
+  ACTIVE_RULES,
+  RULES,
+  RULES_TARGET_FIXTURES,
   allPredictionsAsLegs,
+  evaluateRuleStandings,
   flagSlips,
   marketLabel,
+  ruleApplicationsByFixture,
+  settledFixtureCount,
   suggestParlays,
   type Database,
   type Fixture,
+  type Market,
+  type Selection,
   type SlipLeg,
 } from "@oddket/core";
 import type { Env } from "./db";
@@ -163,6 +171,7 @@ function menuKeyboard(): InlineKeyboard {
       { text: "🧪 Model-only", callback_data: "modelonly" },
       { text: "🧾 Settled", callback_data: "settled" },
     ],
+    [{ text: "📕 Rule book", callback_data: "rules" }],
   ];
 }
 
@@ -173,6 +182,7 @@ I surface what the model already flagged — I never place or auto-log a bet.
 <b>Commands</b>
 /picks — today's flagged singles (edge-ranked)
 /multiples — safe · balanced · risky accumulators
+/rules — the frozen rule book + the next 3 days of rule picks
 /modelonly — accumulators with no odds (probability only)
 /corners — team corner line probabilities
 /leagues — league coverage + what's flagged
@@ -286,6 +296,71 @@ async function modelOnlyMessage(env: Env): Promise<string> {
     `The <b>break-even</b> figure is the price your bookmaker must beat for the ticket to be worth placing. Check every line yourself.\n\n` +
     `${blocks.join("\n\n")}\n\n` +
     `<i>Correlation-safe: at most one leg per match, so Over 1.5 and team-to-score never double-count the same goals.</i>`
+  );
+}
+
+/**
+ * The frozen rule book, on your phone.
+ *
+ * Two things per active rule: its live record (frozen → now, so a break is
+ * obvious) and the fixtures it fires on in the next 3 days. Failed rules are
+ * excluded from the pick list but still counted at the bottom, because their
+ * failures are the evidence the book is built on.
+ */
+async function rulesMessage(env: Env): Promise<string> {
+  const db = await loadDatabase(env.DB);
+  const real = db.fixtures.filter((f) => f.sport !== "soccer");
+  const settled = settledFixtureCount(real, db.outcomes);
+  const standings = evaluateRuleStandings(real, db.predictions, db.outcomes);
+  const apps = ruleApplicationsByFixture(db.predictions);
+
+  const now = Math.floor(Date.now() / 1000);
+  const horizon = now + 3 * DAY;
+  const upcoming = real.filter((f) => f.status === "scheduled" && f.commenceTime > now && f.commenceTime <= horizon);
+
+  const probabilityFor = (fixtureId: string, market: Market, selection: Selection): number | null =>
+    db.predictions.find((p) => p.fixtureId === fixtureId && p.market === market && p.selection === selection)?.probability ?? null;
+
+  const blocks = ACTIVE_RULES.map((rule) => {
+    const st = standings.find((s) => s.rule.id === rule.id);
+    const record =
+      st && st.qualifying > 0 && st.hitRate !== null
+        ? `${st.hits}/${st.qualifying} · ${fmtPct(st.hitRate, 0)}`
+        : "no sample yet";
+    const icon = rule.status === "surviving" ? "🔥" : "🧪";
+    // Only h2h + totals 2.5 exist in the odds feed; the rest are model-only.
+    const priced = rule.market === "h2h" || rule.market === "totals";
+
+    const head =
+      `${icon} <b>${rule.id} · ${esc(rule.targetLabel)}</b> — ${record}\n` +
+      `   <i>${rule.conditions.map((c) => esc(c.label)).join(" + ")}</i>`;
+
+    const picks = upcoming
+      .filter((f) => apps.get(f.id)?.some((a) => a.ruleId === rule.id))
+      .sort((a, b) => a.commenceTime - b.commenceTime);
+
+    if (picks.length === 0) return `${head}\n   <i>no qualifying fixture in the next 3 days</i>`;
+
+    const shown = picks.slice(0, 6);
+    const lines = shown
+      .map((f) => {
+        const p = probabilityFor(f.id, rule.market, rule.selection);
+        return `   • ${esc(f.homeTeam)} vs ${esc(f.awayTeam)} · ${fmtKickoff(f.commenceTime)}${p === null ? "" : ` · <b>${fmtPct(p)}</b>`}`;
+      })
+      .join("\n");
+    const more = picks.length > shown.length ? `\n   <i>+${picks.length - shown.length} more</i>` : "";
+    const priceNote = priced
+      ? "   ✅ the feed prices this one — it also appears as a flagged pick"
+      : "   ⚠️ no bookmaker price in the feed — check the line yourself before staking";
+    return `${head}\n${lines}${more}\n${priceNote}`;
+  });
+
+  const failed = RULES.filter((r) => r.status === "failed").length;
+  return (
+    `📕 <b>Rule book</b> — ${settled} / ${RULES_TARGET_FIXTURES} settled fixtures\n\n` +
+    `Rules mined from graded prediction history, then <b>frozen</b>. A rule that loses is recorded, never re-tuned.\n\n` +
+    `${blocks.join("\n\n")}\n\n` +
+    `<i>${failed} failed rules stay listed on /history for the record. A rule pick filters the model's own probabilities — it is not a licence to bet: check the price beats 1÷probability first.</i>`
   );
 }
 
@@ -466,6 +541,8 @@ async function replyFor(env: Env, action: string, chatId: string, label: string)
       return { text: await multiplesMessage(env), keyboard: menuKeyboard() };
     case "modelonly":
       return { text: await modelOnlyMessage(env), keyboard: menuKeyboard() };
+    case "rules":
+      return { text: await rulesMessage(env), keyboard: menuKeyboard() };
     case "leagues":
       return { text: await leaguesMessage(env), keyboard: menuKeyboard() };
     case "corners":
@@ -611,6 +688,7 @@ export async function registerTelegramWebhook(env: Env, origin: string): Promise
       { command: "picks", description: "Today's flagged singles" },
       { command: "multiples", description: "Safe / balanced / risky accumulators" },
       { command: "modelonly", description: "Accumulators with no odds (probability only)" },
+      { command: "rules", description: "Frozen rule book + next 3 days of rule picks" },
       { command: "corners", description: "Team corner line probabilities" },
       { command: "leagues", description: "League coverage and what's flagged" },
       { command: "settled", description: "Recent settled bets" },

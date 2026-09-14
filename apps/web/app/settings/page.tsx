@@ -664,11 +664,12 @@ export default function SettingsPage() {
         </p>
         <div className="mt-4 flex items-center justify-between gap-4 border-t border-ink-700/40 pt-4">
           <div>
-            <p className="label mb-1 block">Max legs per multiple ({form.maxMultipleLegs})</p>
+            <p className="label mb-1 block">Max legs per <span className="text-slate-300">manual</span> multiple ({form.maxMultipleLegs})</p>
             <p className="max-w-md text-xs leading-relaxed text-slate-500">
-              Default 3. More legs multiply the payout when it hits — but they also multiply variance and shrink the hit
-              rate, and model calibration error compounds with each leg. Raising this rarely helps ROI; it mostly adds
-              longshot risk.
+              Default 3. This caps the multiple <span className="text-slate-400">you</span> build by hand and the parlays
+              you log — it does not cap the suggested tiers (safe 2–4 · balanced 5–8 · risky 9–20), which are sized to
+              their own risk label. More legs multiply the payout when it hits, but they multiply variance and shrink the
+              hit rate, and calibration error compounds with each leg.
             </p>
           </div>
           <input

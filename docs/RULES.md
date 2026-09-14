@@ -161,7 +161,83 @@ own probabilities*. You still need the price to beat `1/p`:
 
 ---
 
-## 7. Verifying the rule book
+## 7. What a fresh mining pass would produce (and why nothing was added)
+
+Asked directly: *"if you were to generate new 100% rules, what would they be?"*
+The honest answer needed evidence, so the search was run properly — **walk-forward**,
+not in-sample:
+
+- mine on the **first 94** settled fixtures (the batch the current book was mined on),
+- test on the **next 23** (the batch that killed nine rules).
+- Candidate conditions: every metric (`H`, `D`, `A`, `O2.5`, `U2.5`, `HomeScores`,
+  `AwayScores`, `DC12`, and the six pairwise differences) compared `>=` / `<=`
+  against **every threshold actually observed in the data** → 1,842 distinct
+  conditions, then all 1-condition and 2-condition conjunctions across 11 targets.
+
+### Result
+
+| | |
+|---|---|
+| Distinct 1–2 condition rules hitting **100% on batch 1** (n ≥ 5) | **146,773** |
+| Collapsed to structural patterns (adjacent thresholds are the same rule) | **767** |
+| Patterns where a variant broke on batch 2 | **624** |
+| Patterns where at least one variant survived batch 2 | 481 (62.7%) |
+
+**That number is the answer to the question.** With ~1,800 candidate conditions you
+can always manufacture thousands of "100%" rules out of 94 fixtures. A search like
+this finding perfect rules is not evidence of edge — it is the definition of the
+overfitting trap the freeze exists to resist. And "survived" here is generous: it
+means *some* variant was still perfect over **23** fixtures, several on an n of 1.
+
+### The knife-edge problem, in one line of output
+
+```
+A >= 21.25% AND A-D <= 2.89%  → Home to score   b1 23/23  b2 5/5   ← survives
+A >= 19.42% AND A-D <= 2.89%  → Home to score   b1 26/26  b2 5/6   ← bigger sample, BREAKS
+```
+
+The rule that breaks is the one with the **larger**, more impressive batch-1 sample,
+and it breaks by widening a single threshold by less than 2 percentage points. This is
+exactly the R8 story (18/19) playing out in real time.
+
+### Family distribution of surviving patterns
+
+| Backs | Patterns |
+|---|---|
+| Home team to score | 132 |
+| Away team to score | 113 |
+| Over 1.5 | 104 |
+| DC12 | 72 |
+| Over 2.5 | 43 |
+| Under 2.5 | 9 |
+| Home win | 8 |
+
+**Zero** surviving patterns for the draw, away win, home-goal-no, or Over/Under 1.5 —
+which independently confirms the original mining notes ("no trustworthy rule" for draw,
+Under 1.5, home-goal-no).
+
+### Watch-list (NOT in the book)
+
+The strongest survivors, recorded for observation only. **These are not rules, they are
+candidate hypotheses** — they are deliberately *absent* from `rules.ts` so the
+300-fixture test stays clean:
+
+| # | Conditions | Backs | Batch 1 | Batch 2 | Knife-edge |
+|---|---|---|---|---|---|
+| C1 | `A ≥ 21.25%` AND `A − D ≤ 2.89pp` | Home team to score | 23/23 | 5/5 | ⚠️ yes |
+| C2 | `H − A ≤ 27.08pp` AND `A − D ≤ 2.89pp` | Home team to score | 21/21 | 4/4 | no |
+| C3 | `A ≤ 29.20%` AND `H − A ≤ 27.08pp` | Home team to score | 17/17 | 4/4 | no |
+| C4 | `O2.5 ≥ 60.77%` AND `A − D ≥ −14.84pp` | Over 1.5 | 15/15 | 5/5 | ⚠️ yes |
+| C5 | `HomeScores ≥ 76.42%` AND `H − D ≤ 13.36pp` | Away team to score | 15/15 | 5/5 | ⚠️ yes |
+
+C1 and C2 read sensibly — *"the away side is a live threat but not clearly ahead of the
+draw"* → the home team scores. That is the mirror of the failed R9, which is a reason
+for curiosity and not yet a reason for money. They get promoted only if they clear a
+full 300-fixture run **as written**, thresholds untouched.
+
+---
+
+## 8. Verifying the rule book
 
 ```bash
 pnpm test:core        # 41 assertions: frozen thresholds, evaluation, standings

@@ -71,6 +71,16 @@ export default function OverviewPage() {
         />
       </div>
 
+      {/* Scope note — the model-vs-manual split is the whole point of the
+          paper trade, so say out loud what is and is not in these numbers. */}
+      <p className="-mt-1 text-[11px] leading-relaxed text-slate-500">
+        Every figure on this page is <span className="font-semibold text-slate-400">model-flagged bets only</span>.
+        {dashboard.manualSummary.nBets > 0 && <> {dashboard.manualSummary.nBets} manual bet{dashboard.manualSummary.nBets === 1 ? "" : "s"}</>}
+        {dashboard.manualSummary.nBets > 0 && dashboard.untaggedBets > 0 && " and"}
+        {dashboard.untaggedBets > 0 && <> {dashboard.untaggedBets} untagged bet{dashboard.untaggedBets === 1 ? "" : "s"}</>}
+        {(dashboard.manualSummary.nBets > 0 || dashboard.untaggedBets > 0) && " are excluded from ROI, CLV and bankroll."}
+      </p>
+
       {/* CLV — the headline chart */}
       <Card>
         <CardHeader
@@ -83,12 +93,12 @@ export default function OverviewPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Bankroll" subtitle="With drawdown visible as dips from the peak" />
+          <CardHeader title="Bankroll" subtitle="Model-flagged bets only · drawdown dips from the peak" />
           {dashboard.bankrollSeries.length > 1 ? <BankrollChart data={dashboard.bankrollSeries} /> : <EmptyState title="No settled bets yet" />}
         </Card>
 
         <Card>
-          <CardHeader title="ROI by market" subtitle="Where the edge actually lives" />
+          <CardHeader title="ROI by market" subtitle="Model-flagged bets only · where the edge actually lives" />
           <ByMarketChart data={dashboard.byMarket} />
         </Card>
       </div>

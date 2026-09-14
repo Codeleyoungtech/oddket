@@ -4,7 +4,7 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 21 — **model-only accumulators** on the slips page *and* as a Telegram `/modelonly` command: the unpriced markets (O1.5 / team-to-score) combined on probability alone, with break-even odds and no payout claim.
+**Last updated:** Pass 23 — **the frozen rule book**, now implemented in `packages/core/src/rules.ts`: the 13 hand-mined selection rules are tracked live on `/history` (progress toward the 300-fixture target), filterable on both `/history` and `/slips`, exported in the CSV, and guarded by a regression test that fails if any threshold moves. See `docs/RULES.md`.
 
 ---
 
@@ -691,6 +691,93 @@ whoever picks this up:
 - 4 pre-`§21` logged bets still show as untagged in `/api/bets` while the
   dashboard counts them as "model" — must be resolved before the paper-trade
   numbers are trusted.
+
+---
+
+## 23. Pass 23 — the frozen rule book: tracked, filterable, tested
+
+The owner had been mining selection rules by hand from the `/history` CSV export
+(with an LLM), re-testing them batch by batch. Pass 23 turns that spreadsheet
+into code so the rules can be **tracked and filtered inside the app** instead of
+re-derived by hand. Full reference: **`docs/RULES.md`**.
+
+### 23.1 The rules are deterministic — and reproduce the hand-mined records exactly
+
+`packages/core/src/rules.ts` holds all 13 rules (3 surviving, 1 experimental,
+9 failed) as pure conditions on the model's own probabilities. Re-running them
+against the live database reproduced **every** hand-mined record to the fixture:
+
+| | R1 | R2 | R3 | R4 | R5 | R6 | R7 | R8 | R9 | R10 | R11 | R12 | R13 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| hand-mined | 12/12 | 9/9 | 9/9 | 5/5 | 11/12 | 13/14 | 11/12 | 18/19 | 19/21 | 16/17 | 13/14 | 5/6 | 19/21 |
+| `rules.ts` | 12/12 | 9/9 | 9/9 | 5/5 | 11/12 | 13/14 | 11/12 | 18/19 | 19/21 | 16/17 | 13/14 | 5/6 | 19/21 |
+
+That 1:1 match **is** the validation — the feature extraction in code is the same
+feature extraction the mining pass used. 118 settled fixtures at the time of
+writing; target 300.
+
+### 23.2 What shipped
+
+- **`/history` → Rule book card.** All 13 rules scored against every settled
+  fixture, `frozen → now` side by side, a progress bar to the 300-fixture target,
+  and a click-to-filter on each rule id. Scored over **all** settled fixtures,
+  deliberately not over the filtered table, so narrowing the view can never
+  change a rule's record.
+- **`/history` → rule filter** in the filter bar (`📕 Rule picks` or one specific
+  rule, with failed rules in a separate optgroup). The summary cards above then
+  report *that rule's* hit rate.
+- **`/history` → row chips.** Each graded row shows a `📕 R#` chip (status-coloured)
+  when a rule fires on that fixture + market + selection; hover shows the
+  conditions and the mining note.
+- **`/slips` → rule filter** on the live prediction list, plus the same chips on
+  each leg. Selecting a rule whose target market the odds feed can't price
+  auto-switches to 👁️ All, so the filter never lands on an empty list.
+- **CSV export** gained a `rules` column (`R1 R3`) for external analysis.
+- **`pnpm test:core`** — 41 new assertions, including a frozen-threshold guard
+  (moving any of the 13 thresholds fails the suite), fail-closed behaviour on a
+  missing market, and the rule that an unsettled fixture moves the denominator
+  rather than the rate.
+
+### 23.3 Live snapshot (2026-09-14, 152 upcoming fixtures)
+
+| Rule | Fixture picks | Priced by the feed |
+|---|---|---|
+| R1 Home team to score | 24 | 0 — model-only, check the line |
+| R2 Under 2.5 | 10 | **10** |
+| R3 Home win | 17 | **17** |
+| R4 Away NOT to score | 3 | 0 — model-only, check the line |
+
+38 of 152 upcoming fixtures have at least one active rule pick. R2 and R3 are the
+practically useful ones *today*, because they are the only rule legs the odds
+feed actually prices (so they carry both an EV check and a stake).
+
+### 23.4 Deliberately NOT done
+
+The owner was explicit: **no new rules yet.** The book is being validated, not
+expanded — adding a rule now would just reset the 300-fixture clock. Likewise no
+threshold was touched: a rule that lost stays listed at its real record.
+
+### Verification (Pass 23)
+
+- core / web typechecks clean; production build green
+- **core unit tests 41/41** (`pnpm test:core`) — new suite, built against the real
+  TypeScript module via esbuild
+- worker e2e **104/104** passing
+- live-DB replay of the 13 rules matches the hand-mined records exactly
+
+### Still open (Pass 23)
+
+- **R1/R4 cannot be EV-checked.** Their target markets have no bookmaker price in
+  the feed (`ODDS_MARKETS = h2h,totals`), so they surface as model-only picks that
+  must be compared by hand. Adding priced `team_totals` would need per-event API
+  calls (paid tier).
+- **A stale-model retrain would silently shift what a rule means.** Thresholds are
+  frozen, but the inputs are model probabilities — the rule book card recomputes
+  from live data and would show a break immediately; that should be re-read after
+  any retrain.
+- **The rule book is a post-hoc pattern search.** Expect regression toward the
+  mean as the denominator grows past 118. That is what the 300-fixture target is
+  for, not a reason to adjust anything.
 
 ---
 

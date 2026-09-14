@@ -5,6 +5,7 @@ export * from "./ev";
 export * from "./correlation";
 export * from "./aggregates";
 export * from "./parlay";
+export * from "./rules";
 export * from "./backtest";
 export * from "./corners";
 export * from "./seed";

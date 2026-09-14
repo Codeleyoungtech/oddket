@@ -1,7 +1,23 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { marketLabel, selectionWon, type Market, type Prediction, type Selection } from "@oddket/core";
+import {
+  ACTIVE_RULES,
+  RULES,
+  RULES_BY_ID,
+  RULES_FREEZE_FIXTURES,
+  RULES_TARGET_FIXTURES,
+  applicationsForLeg,
+  evaluateRuleStandings,
+  marketLabel,
+  ruleApplicationsByFixture,
+  selectionWon,
+  settledFixtureCount,
+  type Market,
+  type Prediction,
+  type RuleStatus,
+  type Selection,
+} from "@oddket/core";
 import { useData } from "../../lib/data-provider";
 import { Card, EmptyState, PageSkeleton, SectionTitle, Skeleton, SkeletonList } from "../../components/ui";
 import { fmtDate, fmtPct } from "../../lib/format";
@@ -40,6 +56,26 @@ const RESULT_BADGE: Record<string, string> = {
   pending: "border-ink-600 bg-ink-800/60 text-slate-400",
 };
 
+/** Rule-book status styling. A failed rule stays failed — this is a label, not
+ *  an invitation to re-tune a threshold. */
+const RULE_STATUS_BADGE: Record<RuleStatus, string> = {
+  surviving: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
+  experimental: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  failed: "border-red-400/40 bg-red-400/10 text-red-300",
+};
+
+const RULE_STATUS_LABEL: Record<RuleStatus, string> = {
+  surviving: "🔥 surviving",
+  experimental: "🧪 experimental",
+  failed: "❌ failed",
+};
+
+const RULE_STATUS_TEXT: Record<RuleStatus, string> = {
+  surviving: "text-emerald-300",
+  experimental: "text-amber-300",
+  failed: "text-red-300",
+};
+
 /**
  * Prediction History — every prediction the model made for a fixture that has
  * already kicked off, graded against the final score once the settle cron has
@@ -57,6 +93,8 @@ export default function HistoryPage() {
   const [marketFilter, setMarketFilter] = useState("all");
   const [resultFilter, setResultFilter] = useState<ResultFilter>("all");
   const [search, setSearch] = useState("");
+  /** "all" | "active" (non-failed rules) | a specific rule id from the book. */
+  const [ruleFilter, setRuleFilter] = useState<string>("all");
 
   const nowSec = Math.floor(Date.now() / 1000);
 
@@ -101,12 +139,53 @@ export default function HistoryPage() {
     return out.sort((a, b) => b.commenceTime - a.commenceTime);
   }, [db, days, nowSec]);
 
+  /**
+   * Rule book, scored over EVERY settled fixture — deliberately not over
+   * `rows`. The denominator has to keep growing, so narrowing the table with a
+   * filter must never change a rule's record.
+   */
+  const ruleApps = useMemo(
+    () => (db ? ruleApplicationsByFixture(db.predictions) : null),
+    [db],
+  );
+
+  const standings = useMemo(() => {
+    if (!db) return [];
+    return evaluateRuleStandings(
+      db.fixtures.filter((f) => f.sport !== "soccer"),
+      db.predictions,
+      db.outcomes,
+    );
+  }, [db]);
+
+  const settledTotal = useMemo(
+    () => (db ? settledFixtureCount(db.fixtures.filter((f) => f.sport !== "soccer"), db.outcomes) : 0),
+    [db],
+  );
+
+  /** Every rule that fires on this row's exact market + selection. */
+  const ruleIdsForRow = (r: GradedRow): string[] =>
+    applicationsForLeg(ruleApps?.get(r.fixtureId), r.market, r.selection).map((a) => a.ruleId);
+
+  /** Does a row survive the rule-book filter? */
+  const ruleFilterPasses = (r: GradedRow): boolean => {
+    if (ruleFilter === "all") return true;
+    const apps = ruleApps?.get(r.fixtureId);
+    if (!apps) return false;
+    const pool =
+      ruleFilter === "active"
+        ? apps.filter((a) => a.rule.status !== "failed")
+        : apps.filter((a) => a.ruleId === ruleFilter);
+    return pool.some((a) => a.market === r.market && a.selection === r.selection);
+  };
+
   const leagues = useMemo(() => [...new Set(rows.map((r) => r.league))].sort(), [rows]);
   const markets = useMemo(() => [...new Set(rows.map((r) => r.market))].sort(), [rows]);
 
   const filtered = useMemo(
     () =>
       rows.filter((r) => {
+        if (!ruleFilterPasses(r)) return false;
         if (leagueFilter !== "all" && r.league !== leagueFilter) return false;
         if (marketFilter !== "all" && r.market !== marketFilter) return false;
         if (resultFilter === "settled" && r.won === null) return false;
@@ -122,7 +201,7 @@ export default function HistoryPage() {
         }
         return true;
       }),
-    [rows, leagueFilter, marketFilter, resultFilter, search],
+    [rows, leagueFilter, marketFilter, resultFilter, search, ruleFilter, ruleApps],
   );
 
   /**
@@ -171,6 +250,10 @@ export default function HistoryPage() {
     return { settledCount: settled.length, totalCount: filtered.length, brier, pickCount: picks.length, hitRate, perMarket };
   }, [filtered]);
 
+  /** The single rule behind a specific-id filter, for the banner below. */
+  const activeRule =
+    ruleFilter !== "all" && ruleFilter !== "active" ? RULES_BY_ID[ruleFilter] : undefined;
+
   const grouped = useMemo(() => {
     const map = new Map<string, GradedRow[]>();
     for (const r of filtered) {
@@ -196,6 +279,7 @@ export default function HistoryPage() {
       "model_version",
       "result",
       "score",
+      "rules",
     ];
 
     const lines = filtered.map((r) => {
@@ -214,6 +298,7 @@ export default function HistoryPage() {
         csvEscape(r.modelVersion),
         csvEscape(result),
         csvEscape(r.score),
+        csvEscape(ruleIdsForRow(r).join(" ")),
       ].join(",");
     });
 
@@ -313,6 +398,85 @@ export default function HistoryPage() {
         </Card>
       )}
 
+      {/* Rule book — the frozen rules, tracked as the denominator grows */}
+      <Card className="p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="label">Rule book · frozen at {RULES_FREEZE_FIXTURES} fixtures</p>
+          <span className="text-[10px] text-slate-500">
+            {settledTotal} / {RULES_TARGET_FIXTURES} settled fixtures evaluated
+          </span>
+        </div>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink-800">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-sky-400 transition-all"
+            style={{ width: `${Math.min(100, (settledTotal / RULES_TARGET_FIXTURES) * 100).toFixed(1)}%` }}
+          />
+        </div>
+        <p className="mt-1.5 text-[10px] leading-relaxed text-slate-500">
+          Thresholds are frozen: a rule that loses is recorded, never re-tuned. Status only changes when the record does.
+          Tap a rule to filter the table below to just its picks.
+        </p>
+        <div className="mt-2.5 overflow-x-auto">
+          <table className="w-full min-w-[540px] text-left text-xs">
+            <thead className="text-[10px] uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="pb-1.5">Rule</th>
+                <th className="pb-1.5">Backs</th>
+                <th className="pb-1.5 text-right">Frozen</th>
+                <th className="pb-1.5 text-right">Now</th>
+                <th className="pb-1.5 text-right">Rate</th>
+                <th className="pb-1.5 text-right">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-ink-800/50">
+              {standings.map((s) => {
+                const r = s.rule;
+                const selected = ruleFilter === r.id;
+                return (
+                  <tr key={r.id} className={selected ? "bg-emerald-400/[0.06]" : undefined}>
+                    <td className="py-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setRuleFilter(selected ? "all" : r.id)}
+                        title={`${r.note}\n\n${r.conditions.map((c) => c.label).join("  AND  ")}`}
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-bold transition-colors ${RULE_STATUS_BADGE[r.status]} ${
+                          selected ? "ring-1 ring-current" : "hover:brightness-125"
+                        }`}
+                      >
+                        {r.id}
+                      </button>
+                    </td>
+                    <td className="max-w-[180px] truncate py-1.5 text-slate-300">{r.targetLabel}</td>
+                    <td className="num py-1.5 text-right text-slate-500">
+                      {r.frozenRecord.hits}/{r.frozenRecord.qualifying}
+                    </td>
+                    <td className="num py-1.5 text-right font-semibold text-slate-100">
+                      {s.hits}/{s.qualifying}
+                    </td>
+                    <td
+                      className={`num py-1.5 text-right font-semibold ${
+                        s.hitRate === null
+                          ? "text-slate-500"
+                          : s.hitRate >= 0.95
+                            ? "text-emerald-400"
+                            : s.hitRate >= 0.85
+                              ? "text-amber-300"
+                              : "text-red-400"
+                      }`}
+                    >
+                      {s.hitRate === null ? "—" : fmtPct(s.hitRate, 0)}
+                    </td>
+                    <td className={`py-1.5 text-right text-[10px] font-bold ${RULE_STATUS_TEXT[r.status]}`}>
+                      {s.brokenSinceFreeze && r.status !== "failed" ? "💥 broke" : RULE_STATUS_LABEL[r.status]}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       {/* Filters */}
       <div className="space-y-2 rounded-xl border border-ink-700/50 bg-ink-900/40 p-2.5">
         <div className="flex gap-2">
@@ -382,14 +546,59 @@ export default function HistoryPage() {
               <option key={m} value={m}>{m}</option>
             ))}
           </select>
+          <select
+            value={ruleFilter}
+            onChange={(e) => setRuleFilter(e.target.value)}
+            title="Show only predictions that match a rule from the frozen rule book"
+            className={`shrink-0 rounded-lg border px-2 py-1 text-[11px] font-medium outline-none ${
+              ruleFilter === "all"
+                ? "border-ink-700/60 bg-ink-800/80 text-slate-200"
+                : "border-emerald-400/50 bg-emerald-400/10 text-emerald-200"
+            }`}
+          >
+            <option value="all">All predictions</option>
+            <option value="active">📕 Rule picks ({ACTIVE_RULES.length} active rules)</option>
+            <optgroup label="Surviving / experimental">
+              {RULES.filter((r) => r.status !== "failed").map((r) => (
+                <option key={r.id} value={r.id}>{r.id} · {r.targetLabel}</option>
+              ))}
+            </optgroup>
+            <optgroup label="Failed (kept for the record)">
+              {RULES.filter((r) => r.status === "failed").map((r) => (
+                <option key={r.id} value={r.id}>{r.id} · {r.targetLabel}</option>
+              ))}
+            </optgroup>
+          </select>
         </div>
       </div>
+
+      {ruleFilter !== "all" && (
+        <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/[0.06] px-3 py-2 text-[11px] leading-relaxed text-emerald-200">
+          {activeRule ? (
+            <>
+              <span className="font-bold">📕 {activeRule.id} · {activeRule.targetLabel}</span>
+              {" — "}
+              {activeRule.conditions.map((c) => c.label).join(" AND ")}.
+              {" "}
+              <span className="text-emerald-300/70">
+                Frozen record {activeRule.frozenRecord.hits}/{activeRule.frozenRecord.qualifying}. {activeRule.note}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="font-bold">📕 Rule picks</span>
+              {" — "}
+              every prediction whose fixture satisfies one of the {ACTIVE_RULES.length} active rules ({ACTIVE_RULES.map((r) => r.id).join(", ")}). Failed rules are excluded here, but stay listed in the rule book above.
+            </>
+          )}
+        </div>
+      )}
 
       {/* Graded list */}
       {grouped.length === 0 ? (
         <EmptyState
           title="No past predictions in this view"
-          body="Once a fixture kicks off it moves here, and its picks are graded as soon as the settle cron records the final score. Try widening the date range or clearing filters."
+          body="Once a fixture kicks off it moves here, and its picks are graded as soon as the settle cron records the final score. Try widening the date range, clearing the rule filter, or selecting another league."
         />
       ) : (
         <div className="space-y-3">
@@ -422,8 +631,26 @@ export default function HistoryPage() {
                           className="flex items-center justify-between gap-3 px-4 py-2.5"
                         >
                           <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-slate-200">
-                              {marketLabel(r.market, r.selection)}
+                            <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-200">
+                              <span className="truncate">{marketLabel(r.market, r.selection)}</span>
+                              {ruleIdsForRow(r).map((id) => {
+                                const rule = RULES_BY_ID[id];
+                                return (
+                                  <span
+                                    key={id}
+                                    title={
+                                      rule
+                                        ? `${rule.id} · ${rule.targetLabel}\n${rule.conditions.map((c) => c.label).join("  AND  ")}`
+                                        : id
+                                    }
+                                    className={`shrink-0 rounded border px-1 py-px text-[9px] font-bold ${
+                                      RULE_STATUS_BADGE[rule?.status ?? "failed"]
+                                    }`}
+                                  >
+                                    📕 {id}
+                                  </span>
+                                );
+                              })}
                             </p>
                             <p className="text-[10px] text-slate-500">
                               Model {fmtPct(r.probability)} · {fmtPct(r.confidenceLow, 0)}–{fmtPct(r.confidenceHigh, 0)}

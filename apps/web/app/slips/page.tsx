@@ -2,10 +2,15 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import {
+  ACTIVE_RULES,
+  RULES,
+  RULES_BY_ID,
+  applicationsForLeg,
   buildMultiple,
   checkLegIndependence,
   legRefs,
   marketLabel,
+  ruleApplicationsByFixture,
   suggestParlays,
   type ParlaySuggestion,
   type SlipLeg,
@@ -17,6 +22,18 @@ import { edgeClass, fmtDate, fmtMoney, fmtOdds, fmtPct, fmtSignedPct } from "../
 import { renderSlipImage } from "../../lib/slip-image";
 
 type DayFilter = "any" | "today" | "tomorrow" | "week";
+
+/** Markets the odds feed never prices (ODDS_MARKETS = h2h + totals 2.5).
+ *  Picking a rule that targets one of these has to switch to "All" — there is
+ *  no flagged single to show for a market with no bookmaker price. */
+const UNPRICED_MARKETS = new Set<string>(["ou15", "team_home_goals", "team_away_goals"]);
+
+/** Rule-book chip styling, mirroring the rule status in core. */
+const RULE_CHIP: Record<string, string> = {
+  surviving: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
+  experimental: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  failed: "border-red-400/40 bg-red-400/10 text-red-300",
+};
 
 /** Local midnight (unix seconds) for the day `nowSec` falls in. */
 function dayWindowStart(nowSec: number): number {
@@ -47,6 +64,8 @@ export default function SlipsPage() {
   const [strategyFilter, setStrategyFilter] = useState<"all" | "high_prob" | "big_edge" | "favorites">("all");
   const [showAll, setShowAll] = useState(false);
   const [search, setSearch] = useState("");
+  // Rule-book filter: "all" | "active" (non-failed rules) | a specific rule id.
+  const [ruleFilter, setRuleFilter] = useState<string>("all");
   // Matchday scope for the multiple builder — build a whole day's tickets
   // (several accumulators across one card) instead of mixing legs from a
   // fixture window that stretches a week out.
@@ -79,6 +98,20 @@ export default function SlipsPage() {
 
   // When showAll is on, use allPredictions instead of flagged slips.
   const activeLegs = showAll ? allPredictions : slips;
+
+  /**
+   * Rule applications per fixture — powers both the rule filter and the chips.
+   * Hook-order note: this must stay before the `if (!db)` guard below, exactly
+   * like the parlay hooks, or React throws #310 on the first data load.
+   */
+  const ruleApps = useMemo(
+    () => (db ? ruleApplicationsByFixture(db.predictions) : null),
+    [db],
+  );
+
+  /** The rule-book picks for one leg (empty when no rule fires on it). */
+  const rulePickFor = (leg: SlipLeg, activeOnly: boolean) =>
+    applicationsForLeg(ruleApps?.get(leg.fixture.id), leg.market, leg.selection, { activeOnly });
 
   const selectedLegs = useMemo(
     () => activeLegs.filter((l) => selected.has(legKey(l))),
@@ -115,6 +148,8 @@ export default function SlipsPage() {
       if (strategyFilter === "high_prob" && l.probability < 0.60) return false;
       if (strategyFilter === "big_edge" && l.edge < 0.07) return false;
       if (strategyFilter === "favorites" && l.odds > 1.85) return false;
+      // Rule-book gate: keep only legs a frozen rule actually picks.
+      if (ruleFilter !== "all" && rulePickFor(l, ruleFilter === "active").length === 0) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         const ht = (l.fixture.homeTeam ?? "").toLowerCase();
@@ -124,7 +159,7 @@ export default function SlipsPage() {
       }
       return true;
     });
-  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, search, nowSec]);
+  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, search, nowSec, ruleFilter, ruleApps]);
 
   const handleLogBet = async (leg: SlipLeg) => {
     const key = legKey(leg);
@@ -564,6 +599,54 @@ export default function SlipsPage() {
                 {filteredSlips.length}
               </span>
             </div>
+            {/* Rule book filter — the frozen selection rules from /history. */}
+            <div className="flex items-center gap-2">
+              <select
+                value={ruleFilter}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setRuleFilter(v);
+                  const rule = v !== "all" && v !== "active" ? RULES_BY_ID[v] : undefined;
+                  // Active rules include the unpriced markets, so switch to All
+                  // rather than showing an empty list.
+                  if (v === "active" || (rule && UNPRICED_MARKETS.has(rule.market))) setShowAll(true);
+                }}
+                title="Show only legs that a frozen rule from the rule book picks"
+                className={`min-w-0 flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium outline-none ${
+                  ruleFilter === "all"
+                    ? "border-ink-700/60 bg-ink-800/80 text-slate-200"
+                    : "border-emerald-400/50 bg-emerald-400/10 text-emerald-200"
+                }`}
+              >
+                <option value="all">📕 No rule filter</option>
+                <option value="active">📕 Rule picks ({ACTIVE_RULES.length} active rules)</option>
+                <optgroup label="Surviving / experimental">
+                  {RULES.filter((r) => r.status !== "failed").map((r) => (
+                    <option key={r.id} value={r.id}>{r.id} · {r.targetLabel}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Failed (kept for the record)">
+                  {RULES.filter((r) => r.status === "failed").map((r) => (
+                    <option key={r.id} value={r.id}>{r.id} · {r.targetLabel}</option>
+                  ))}
+                </optgroup>
+              </select>
+              {ruleFilter !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setRuleFilter("all")}
+                  className="shrink-0 rounded-lg border border-ink-700/60 bg-ink-800/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300 hover:border-ink-600 hover:text-slate-100"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            {ruleFilter !== "all" && !showAll && (
+              <p className="text-[10px] leading-relaxed text-amber-300/80">
+                Rule picks span markets the bookmakers don't price, so they only appear in “All”. Tap 👁️ All to see every
+                rule-compliant prediction.
+              </p>
+            )}
           </div>
 
           {/* Quick Strategy Filters */}
@@ -607,7 +690,7 @@ export default function SlipsPage() {
           {filteredSlips.length === 0 ? (
             <EmptyState
               title={showAll ? "No predictions match your filters" : "No flagged singles in this view"}
-              body={showAll ? "Try switching your filter or selecting another league." : "Try switching your filter or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."}
+              body={showAll ? "Try switching your filter, clearing the rule filter, or selecting another league." : "Try switching your filter, clearing the rule filter, or selecting another league — every pick must clear the edge threshold and stay inside the strategy odds band."}
             />
           ) : (
             // Rows use `.cv-row` (content-visibility:auto) instead of a JS
@@ -677,6 +760,17 @@ export default function SlipsPage() {
                                       {fmtSignedPct(leg.edge)} EV
                                     </span>
                                   )}
+                                  {rulePickFor(leg, false).map((a) => (
+                                    <span
+                                      key={a.ruleId}
+                                      title={`${a.ruleId} · ${a.rule.targetLabel}\n${a.rule.conditions.map((c) => c.label).join("  AND  ")}\n\n${a.rule.note}`}
+                                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-bold ${
+                                        RULE_CHIP[a.rule.status] ?? RULE_CHIP.failed
+                                      }`}
+                                    >
+                                      📕 {a.ruleId}
+                                    </span>
+                                  ))}
                                 </div>
                                 <p className="mt-1 text-xs text-slate-400">
                                   Win Prob: <span className="font-semibold text-slate-200">{fmtPct(leg.probability)}</span>

@@ -197,6 +197,27 @@ check(
   })(),
 );
 
+// A leg can satisfy SEVERAL rules at once. Filtering "only R5" must not return a
+// leg that merely satisfies R6 — that bug made the slips rule filter show picks
+// from the wrong rule.
+check(
+  "ruleId narrows to exactly one rule",
+  (() => {
+    const apps = R.ruleApplications(predictionsFor("a", F_A));
+    const both = R.applicationsForLeg(apps, "totals", "over").map((a) => a.ruleId);
+    const onlyR5 = R.applicationsForLeg(apps, "totals", "over", { ruleId: "R5" }).map((a) => a.ruleId);
+    return both.length === 2 && both.includes("R5") && both.includes("R6") && onlyR5.length === 1 && onlyR5[0] === "R5";
+  })(),
+);
+check(
+  "ruleId for a rule that does not fire returns nothing",
+  R.applicationsForLeg(R.ruleApplications(predictionsFor("b", F_B)), "h2h", "home", { ruleId: "R3" }).length === 0,
+);
+check(
+  "activeOnly + ruleId compose (a failed rule is excluded even when asked for)",
+  R.applicationsForLeg(R.ruleApplications(predictionsFor("a", F_A)), "totals", "over", { ruleId: "R5", activeOnly: true }).length === 0,
+);
+
 console.log("\nRule book — standings over settled fixtures");
 
 const fixtures = [fixture("a"), fixture("b"), fixture("c")];

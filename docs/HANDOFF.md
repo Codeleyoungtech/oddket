@@ -4,7 +4,9 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 24 — **bet tagging persisted** (model vs manual vs untagged is now real, and the dashboards are model-only), Telegram **`/rules`**, plus a walk-forward mining experiment that answers "what new rules would look like" without adding any. See `docs/RULES.md` §7.
+**Last updated:** Pass 25 — **the slips rule filter actually selects the rule now** (`applicationsForLeg` never filtered by rule id, so all 13 rules returned the same 214 legs) plus the filter lag: deferred/transitioned filtering and a 40-card render window. See §24.5.
+
+**Previously:** Pass 24 — **bet tagging persisted** (model vs manual vs untagged is now real, and the dashboards are model-only), Telegram **`/rules`**, plus a walk-forward mining experiment that answers "what new rules would look like" without adding any. See `docs/RULES.md` §7.
 
 **Previously:** Pass 23 — **the frozen rule book**, now implemented in `packages/core/src/rules.ts`: the 13 hand-mined selection rules are tracked live on `/history` (progress toward the 300-fixture target), filterable on both `/history` and `/slips`, exported in the CSV, and guarded by a regression test that fails if any threshold moves. See `docs/RULES.md`.
 
@@ -868,6 +870,46 @@ looked like it was ignoring a setting.
 - core rule-book suite **41/41**
 - migration `0007` applied to production D1; worker deployed
 - live: `/api/bets` now returns a real `source`; `untaggedBets` present on `/api/dashboard`
+
+### 24.5 Pass 25 — the slips rule filter selected nothing (and everything)
+
+Reported as "the rule filter isn't working; it should show only that rule's picks". It was worse than that: **`applicationsForLeg` never filtered by rule id.** It
+only matched market + selection, so with a leg pool of 1,851 every one of the 13
+rule filters returned the **same 214 legs** — clicking R1 or R13 was
+indistinguishable. Quantified on live data: **2,527 leg-slots leaked across the
+13 filters**, and the filters that shared a target were the worst (R1 also
+showed R9's picks, R5 also showed R6's).
+
+Fixed by adding `ruleId` to `applicationsForLeg` and passing the selected rule
+through the slips filter. Live counts after the fix, and 0 off-target legs in
+every case:
+
+| Rule | Legs | Rule | Legs |
+|---|---|---|---|
+| R1 | 24 | R8 | 35 |
+| R2 | 10 | R9 | 32 |
+| R3 | 17 | R10 | 19 |
+| R4 | 4 | R11 | 25 |
+| R5 | 24 | R12 | 7 |
+| R6 | 18 | R13 | 19 |
+| R7 | 21 | `Rule picks` (active only) | 55 |
+
+Regression-guarded in `pnpm test:core` (now **44/44**): a leg satisfying both R5
+and R6 must return exactly one application when asked for R5, and
+`ruleId` + `activeOnly` must compose.
+
+**The lag was a separate cause and is also fixed.** Filtering the "All" view
+re-renders every card — ~1,851 legs across ~150 fixtures — synchronously inside
+the change handler, which is what made the dropdown crawl. Two changes:
+
+- `useDeferredValue(ruleFilter)` + `startTransition` — the select updates
+  immediately; the expensive list pass is low-priority, interruptible, and dims
+  the list (`opacity-60`) while it runs.
+- The list renders a **window of 40 fixture cards** with a "show more" control,
+  reset whenever a filter changes. All legs still participate in filtering,
+  counting and the multiple builder — only the mounted DOM is bounded. (Note:
+  `content-visibility` was never going to fix this; it skips painting, not
+  React's render pass.)
 
 ### Still open (Pass 24)
 

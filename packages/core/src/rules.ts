@@ -399,16 +399,27 @@ export function ruleApplicationsByFixture(
   return out;
 }
 
-/** Would this leg be a rule pick? Used for chips on slips and history rows. */
+/**
+ * Would this leg be a rule pick? Used for chips on slips and history rows, and
+ * by the rule filters.
+ *
+ * `ruleId` narrows to ONE rule from the book — without it a filter for R2 would
+ * happily match a leg that only R1 picks, which silently breaks "show me only
+ * this rule's picks".
+ */
 export function applicationsForLeg(
   apps: readonly RuleApplication[] | undefined,
   market: Market,
   selection: Selection,
-  opts: { activeOnly?: boolean } = {},
+  opts: { activeOnly?: boolean; ruleId?: string } = {},
 ): RuleApplication[] {
   if (!apps) return [];
   return apps.filter(
-    (a) => a.market === market && a.selection === selection && (!opts.activeOnly || a.rule.status !== "failed"),
+    (a) =>
+      a.market === market &&
+      a.selection === selection &&
+      (!opts.ruleId || a.ruleId === opts.ruleId) &&
+      (!opts.activeOnly || a.rule.status !== "failed"),
   );
 }
 

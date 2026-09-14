@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ACTIVE_RULES,
   RULES,
@@ -109,9 +109,31 @@ export default function SlipsPage() {
     [db],
   );
 
-  /** The rule-book picks for one leg (empty when no rule fires on it). */
-  const rulePickFor = (leg: SlipLeg, activeOnly: boolean) =>
-    applicationsForLeg(ruleApps?.get(leg.fixture.id), leg.market, leg.selection, { activeOnly });
+  /**
+   * The rule-book picks for one leg (empty when no rule fires on it).
+   * Pass `ruleId` to ask about ONE rule — the filter needs that, because a leg
+   * can satisfy several rules at once and "only R2" must not return R1's picks.
+   */
+  const rulePickFor = (leg: SlipLeg, opts: { activeOnly?: boolean; ruleId?: string } = {}) =>
+    applicationsForLeg(ruleApps?.get(leg.fixture.id), leg.market, leg.selection, opts);
+
+  /**
+   * Filtering the "All" view means re-rendering ~1,700 cards, which is far too
+   * much work to do inside the event handler — that is what made the rule
+   * dropdown crawl. `useDeferredValue` lets React keep the select responsive
+   * (it shows the new choice instantly) while the expensive list re-render
+   * happens in a low-priority pass that can be interrupted or skipped.
+   */
+  const deferredRuleFilter = useDeferredValue(ruleFilter);
+  const [isFiltering, startFilterTransition] = useTransition();
+
+  /** Does this leg satisfy the active rule filter? */
+  const ruleFilterAllows = (leg: SlipLeg): boolean => {
+    if (deferredRuleFilter === "all") return true;
+    return deferredRuleFilter === "active"
+      ? rulePickFor(leg, { activeOnly: true }).length > 0
+      : rulePickFor(leg, { ruleId: deferredRuleFilter }).length > 0;
+  };
 
   const selectedLegs = useMemo(
     () => activeLegs.filter((l) => selected.has(legKey(l))),
@@ -148,8 +170,8 @@ export default function SlipsPage() {
       if (strategyFilter === "high_prob" && l.probability < 0.60) return false;
       if (strategyFilter === "big_edge" && l.edge < 0.07) return false;
       if (strategyFilter === "favorites" && l.odds > 1.85) return false;
-      // Rule-book gate: keep only legs a frozen rule actually picks.
-      if (ruleFilter !== "all" && rulePickFor(l, ruleFilter === "active").length === 0) return false;
+      // Rule-book gate: keep only legs the selected rule (or any active rule) picks.
+      if (!ruleFilterAllows(l)) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         const ht = (l.fixture.homeTeam ?? "").toLowerCase();
@@ -159,7 +181,7 @@ export default function SlipsPage() {
       }
       return true;
     });
-  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, search, nowSec, ruleFilter, ruleApps]);
+  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, search, nowSec, deferredRuleFilter, ruleApps]);
 
   const handleLogBet = async (leg: SlipLeg) => {
     const key = legKey(leg);
@@ -220,6 +242,22 @@ export default function SlipsPage() {
 
   // Group slips by match so a fixture with legs in several markets (h2h +
   // totals) shows once, with all its qualifying picks inside one card.
+  /**
+   * How many fixture cards to mount. The "All" view can hold ~1,700 legs across
+   * ~150 fixtures; mounting every card makes the browser reconcile thousands of
+   * subtrees on every filter change, which is the other half of the sluggish
+   * feel (content-visibility helps painting, not React's render pass). Rendering
+   * a window of cards and extending it on demand keeps interaction instant while
+   * every leg still participates in filtering, counting and the multiple builder.
+   */
+  const [visibleGroups, setVisibleGroups] = useState(40);
+
+  // Any filter change starts the window over, so you always land on the top of a
+  // fresh result set rather than deep inside the previous one.
+  useEffect(() => {
+    setVisibleGroups(40);
+  }, [activeLegs, timeFilter, leagueFilter, strategyFilter, search, deferredRuleFilter, showAll]);
+
   const groupedSlips = useMemo(() => {
     const groups = new Map<string, SlipLeg[]>();
     for (const leg of filteredSlips) {
@@ -605,7 +643,9 @@ export default function SlipsPage() {
                 value={ruleFilter}
                 onChange={(e) => {
                   const v = e.target.value;
-                  setRuleFilter(v);
+                  // Low-priority update: the select re-renders immediately, the
+                  // list catches up without blocking the tap.
+                  startFilterTransition(() => setRuleFilter(v));
                   const rule = v !== "all" && v !== "active" ? RULES_BY_ID[v] : undefined;
                   // Active rules include the unpriced markets, so switch to All
                   // rather than showing an empty list.
@@ -697,8 +737,8 @@ export default function SlipsPage() {
             // windowing library — the browser skips layout+paint for
             // off-screen cards natively, so scrolling never jumps and
             // variable-height cards stay exact.
-            <div className="min-w-0 space-y-3 lg:min-h-[calc(100vh-14rem)]">
-              {groupedSlips.map(([fixtureId, legs]) => {
+            <div className={`min-w-0 space-y-3 lg:min-h-[calc(100vh-14rem)] transition-opacity ${isFiltering ? "opacity-60" : "opacity-100"}`}>
+              {groupedSlips.slice(0, visibleGroups).map(([fixtureId, legs]) => {
                 const first = legs[0]!;
                 return (
                   <div
@@ -760,7 +800,7 @@ export default function SlipsPage() {
                                       {fmtSignedPct(leg.edge)} EV
                                     </span>
                                   )}
-                                  {rulePickFor(leg, false).map((a) => (
+                                  {rulePickFor(leg).map((a) => (
                                     <span
                                       key={a.ruleId}
                                       title={`${a.ruleId} · ${a.rule.targetLabel}\n${a.rule.conditions.map((c) => c.label).join("  AND  ")}\n\n${a.rule.note}`}
@@ -831,6 +871,19 @@ export default function SlipsPage() {
                   </div>
                 );
               })}
+
+              {groupedSlips.length > visibleGroups && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleGroups((n) => n + 40)}
+                  className="w-full rounded-xl border border-ink-700/60 bg-ink-900/50 px-4 py-3 text-xs font-semibold text-slate-300 transition-colors hover:border-emerald-400/40 hover:text-emerald-200"
+                >
+                  Show {Math.min(40, groupedSlips.length - visibleGroups)} more fixtures
+                  <span className="ml-1.5 font-normal text-slate-500">
+                    ({visibleGroups} of {groupedSlips.length} shown · all {filteredSlips.length} legs still counted)
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </div>

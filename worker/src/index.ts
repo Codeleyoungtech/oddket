@@ -419,7 +419,27 @@ app.post("/api/corners/ingest", async (c) => {
       }
     }
     await upsertCornerPredictions(db, rows);
-    return c.json({ ok: true, ingested: rows.length });
+
+    // Retire rows written by an older model version.
+    //
+    // Ingest is keyed `fixture:corners:side`, so a new run REPLACES rows for the
+    // fixtures it predicts — but a fixture the new model deliberately declines
+    // (unresolvable club names, broken history) keeps its old row. Those stale
+    // rows carry the previous model's sigmas and total lines, so the page would
+    // silently mix two models' numbers. Only one version can be live at a time;
+    // the pipeline always sends the version it was built with, so this is
+    // self-healing rather than a manual cleanup.
+    const version = rows[0]?.modelVersion;
+    let retired = 0;
+    if (version) {
+      const res = await db
+        .prepare(`DELETE FROM corners_predictions WHERE model_version != ?1`)
+        .bind(version)
+        .run();
+      retired = res.meta?.changes ?? 0;
+    }
+
+    return c.json({ ok: true, ingested: rows.length, modelVersion: version, retired });
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 500);
   }

@@ -414,12 +414,9 @@ async function cornersMessage(env: Env): Promise<string> {
     })
     .map((r) => {
       const f = fixtureById.get(r.fixtureId)!;
-      let lineProbs: Record<string, number> = {};
-      try {
-        lineProbs = JSON.parse(r.lineProbs);
-      } catch {
-        lineProbs = {};
-      }
+      // `lineProbs` is already an object since the corner model v6 pass — it used
+      // to be a JSON string that had to be parsed here.
+      const lineProbs: Record<string, number> = (r.lineProbs ?? {}) as Record<string, number>;
       const over45 = lineProbs.over45 ?? 0;
       return { fixture: f, side: r.side, team: r.team, expected: r.predictedCorners, low: r.confidenceLow, high: r.confidenceHigh, over45 };
     });

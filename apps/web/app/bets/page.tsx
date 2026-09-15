@@ -18,6 +18,7 @@ const UNDO_WINDOW_SEC = 24 * 3600;
  */
 function sourceMeta(source?: BetSource): { label: string; short: string; cls: string } {
   if (source === "manual") return { label: "✋ Manual", short: "✋", cls: "border-amber-400/40 bg-amber-400/10 text-amber-300" };
+  if (source === "rule") return { label: "📕 Rule", short: "📕", cls: "border-violet-400/40 bg-violet-400/10 text-violet-300" };
   if (source === "model") return { label: "🤖 Model", short: "🤖", cls: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" };
   return { label: "— Untagged", short: "—", cls: "border-ink-600 bg-ink-800/60 text-slate-400" };
 }

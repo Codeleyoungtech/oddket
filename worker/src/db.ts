@@ -1,4 +1,5 @@
 import type {
+  CornerOutcome,
   Bet,
   ClvResult,
   CornerPrediction,
@@ -56,6 +57,14 @@ export interface Env {
    *  the X-Telegram-Bot-Api-Secret-Token header — stops anyone who guesses the
    *  webhook URL from driving the bot. */
   TELEGRAM_WEBHOOK_SECRET?: string;
+  /** API-Football keys for real corner RESULTS. Comma- or whitespace-separated;
+   *  each free-tier key carries its own quota and the client round-robins across
+   *  them, cooling a key down on 429/403 so one exhausted key never fails the
+   *  run. Absent = corner grading reports "not configured" and nothing else
+   *  breaks. */
+  API_FOOTBALL_KEYS?: string;
+  /** Override the API-Football base URL (defaults to v3.football.api-sports.io). */
+  API_FOOTBALL_BASE?: string;
 }
 
 /* ---------------- row mappers ---------------- */
@@ -166,7 +175,9 @@ export function toBet(r: BetRow): Bet {
     modelProbability: r.model_probability,
     // NULL stays undefined: an untagged bet is NOT a model bet. The dashboards
     // exclude it from both buckets rather than assuming it was model-flagged.
-    source: r.source === "model" || r.source === "manual" ? r.source : undefined,
+    source: r.source === "model" || r.source === "rule" || r.source === "manual"
+      ? r.source
+      : undefined,
     status: r.status as Bet["status"],
     outcomeAmount: r.outcome_amount ?? undefined,
     placedAt: r.placed_at,
@@ -174,8 +185,8 @@ export function toBet(r: BetRow): Bet {
 }
 
 /** Normalise an incoming source tag — anything unexpected becomes untagged. */
-export function normaliseBetSource(v: unknown): "model" | "manual" | null {
-  return v === "model" || v === "manual" ? v : null;
+export function normaliseBetSource(v: unknown): "model" | "rule" | "manual" | null {
+  return v === "model" || v === "rule" || v === "manual" ? v : null;
 }
 
 interface ClvRow {
@@ -227,6 +238,13 @@ interface CornerRow {
   line_probs: string;
   model_version: string;
   created_at: number;
+  total_corners: number | null;
+  total_line_probs: string | null;
+  sigma_home: number | null;
+  sigma_away: number | null;
+  sigma_total: number | null;
+  has_odds: number | null;
+  league: string | null;
 }
 
 function toCornerPrediction(r: CornerRow): CornerPrediction {
@@ -239,6 +257,14 @@ function toCornerPrediction(r: CornerRow): CornerPrediction {
     over75: 0,
     over85: 0,
   });
+  const totalLines = r.total_line_probs
+    ? safeParseJson<CornerPrediction["totalCorners"] extends undefined
+        ? never
+        : NonNullable<CornerPrediction["totalCorners"]>["lines"] | undefined>(
+        r.total_line_probs,
+        undefined,
+      )
+    : undefined;
   return {
     id: r.id,
     fixtureId: r.fixture_id,
@@ -248,15 +274,52 @@ function toCornerPrediction(r: CornerRow): CornerPrediction {
     confidenceLow: r.confidence_low,
     confidenceHigh: r.confidence_high,
     lineProbs,
+    // v6 fields. Present only for rows written by the v6 pipeline.
+    sigmaHome: r.sigma_home ?? undefined,
+    sigmaAway: r.sigma_away ?? undefined,
+    sigmaTotal: r.sigma_total ?? undefined,
+    hasOdds: r.has_odds == null ? undefined : r.has_odds === 1,
+    league: r.league ?? undefined,
+    totalCorners: r.total_corners == null
+      ? undefined
+      : {
+          expected: r.total_corners,
+          lines: totalLines ?? {
+            over55: 0, over65: 0, over75: 0, over85: 0,
+            over95: 0, over105: 0, over115: 0, over125: 0,
+          },
+        },
     modelVersion: r.model_version,
     createdAt: r.created_at,
+  };
+}
+
+interface CornerOutcomeRow {
+  fixture_id: string;
+  home_corners: number;
+  away_corners: number;
+  total_corners: number;
+  league: string | null;
+  source: string;
+  fetched_at: number;
+}
+
+function toCornerOutcome(r: CornerOutcomeRow): CornerOutcome {
+  return {
+    fixtureId: r.fixture_id,
+    homeCorners: r.home_corners,
+    awayCorners: r.away_corners,
+    totalCorners: r.total_corners,
+    league: r.league ?? undefined,
+    source: r.source,
+    fetchedAt: r.fetched_at,
   };
 }
 
 /* ---------------- queries ---------------- */
 
 export async function loadDatabase(db: D1Database): Promise<Database> {
-  const [fixtures, odds, predictions, bets, clv, outcomes, settingsRows, parlayRows, cornerRows] = await Promise.all([
+  const [fixtures, odds, predictions, bets, clv, outcomes, settingsRows, parlayRows, cornerRows, cornerOutcomeRows] = await Promise.all([
     db.prepare("SELECT * FROM fixtures").all<FixtureRow>(),
     db.prepare("SELECT * FROM odds_snapshots").all<OddsRow>(),
     db.prepare("SELECT * FROM predictions").all<PredictionRow>(),
@@ -266,6 +329,11 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     db.prepare("SELECT * FROM settings WHERE id = 1").first<SettingsRow>(),
     db.prepare("SELECT * FROM parlay_bets").all<ParlayRow>(),
     db.prepare("SELECT * FROM corners_predictions").all<CornerRow>().catch(() => ({ results: [] })),
+    // Real corner counts. Absent before migration 0008 lands, hence the catch —
+    // an unmigrated database must not take the whole dashboard down.
+    db.prepare("SELECT * FROM corner_outcomes")
+      .all<CornerOutcomeRow>()
+      .catch(() => ({ results: [] as CornerOutcomeRow[] })),
   ]);
 
   const settings = settingsRows ? rowToSettings(settingsRows) : defaultSettings();
@@ -280,6 +348,7 @@ export async function loadDatabase(db: D1Database): Promise<Database> {
     settings,
     parlayBets: (parlayRows.results ?? []).map(toParlay),
     cornerPredictions: (cornerRows.results ?? []).map(toCornerPrediction),
+    cornerOutcomes: (cornerOutcomeRows.results ?? []).map(toCornerOutcome),
   };
 }
 
@@ -598,45 +667,99 @@ export async function upsertPredictions(db: D1Database, rows: Prediction[]): Pro
 
 /* ---------------- corners predictions (isolated from h2h/totals) ---------------- */
 
+export interface CornerPredictionWrite {
+  id: string;
+  fixtureId: string;
+  team: string;
+  side: string;
+  predictedCorners: number;
+  confidenceLow: number;
+  confidenceHigh: number;
+  lineProbs: string;
+  modelVersion: string;
+  createdAt: number;
+  totalCorners?: number | null;
+  totalLineProbs?: string | null;
+  sigmaHome?: number | null;
+  sigmaAway?: number | null;
+  sigmaTotal?: number | null;
+  hasOdds?: boolean;
+  league?: string | null;
+}
+
 export async function upsertCornerPredictions(
   db: D1Database,
-  rows: { id: string; fixtureId: string; team: string; side: string;
-    predictedCorners: number; confidenceLow: number; confidenceHigh: number;
-    lineProbs: string; modelVersion: string; createdAt: number }[],
+  rows: CornerPredictionWrite[],
 ): Promise<void> {
   const stmt = db.prepare(
     `INSERT INTO corners_predictions
-       (id, fixture_id, team, side, predicted_corners, confidence_low, confidence_high, line_probs, model_version, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+       (id, fixture_id, team, side, predicted_corners, confidence_low, confidence_high,
+        line_probs, model_version, created_at,
+        total_corners, total_line_probs, sigma_home, sigma_away, sigma_total, has_odds, league)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
      ON CONFLICT(id) DO UPDATE SET
        predicted_corners = excluded.predicted_corners,
        confidence_low = excluded.confidence_low,
        confidence_high = excluded.confidence_high,
        line_probs = excluded.line_probs,
        model_version = excluded.model_version,
-       created_at = excluded.created_at`,
+       created_at = excluded.created_at,
+       total_corners = excluded.total_corners,
+       total_line_probs = excluded.total_line_probs,
+       sigma_home = excluded.sigma_home,
+       sigma_away = excluded.sigma_away,
+       sigma_total = excluded.sigma_total,
+       has_odds = excluded.has_odds,
+       league = excluded.league`,
   );
   const batch = rows.map((r) =>
     stmt.bind(r.id, r.fixtureId, r.team, r.side, r.predictedCorners,
-      r.confidenceLow, r.confidenceHigh, r.lineProbs, r.modelVersion, r.createdAt),
+      r.confidenceLow, r.confidenceHigh, r.lineProbs, r.modelVersion, r.createdAt,
+      r.totalCorners ?? null, r.totalLineProbs ?? null,
+      r.sigmaHome ?? null, r.sigmaAway ?? null, r.sigmaTotal ?? null,
+      r.hasOdds ? 1 : 0, r.league ?? null),
   );
   if (batch.length) await batchExecute(db, batch);
 }
 
-export async function listCornerPredictions(db: D1Database): Promise<{
-  id: string; fixtureId: string; team: string; side: string;
-  predictedCorners: number; confidenceLow: number; confidenceHigh: number;
-  lineProbs: string; modelVersion: string; createdAt: number
-}[]> {
-  const { results } = await db.prepare(
-    `SELECT id, fixture_id as fixtureId, team, side,
-            predicted_corners as predictedCorners, confidence_low as confidenceLow,
-            confidence_high as confidenceHigh, line_probs as lineProbs,
-            model_version as modelVersion, created_at as createdAt
-     FROM corners_predictions
-     ORDER BY created_at DESC`,
-  ).all();
-  return results as any[];
+export async function listCornerPredictions(db: D1Database): Promise<CornerPrediction[]> {
+  const { results } = await db
+    .prepare(`SELECT * FROM corners_predictions ORDER BY created_at DESC`)
+    .all<CornerRow>();
+  return (results ?? []).map(toCornerPrediction);
+}
+
+/* ---------------- corner outcomes (real corner counts) ---------------- */
+
+export async function upsertCornerOutcomes(
+  db: D1Database,
+  rows: CornerOutcome[],
+): Promise<void> {
+  const stmt = db.prepare(
+    `INSERT INTO corner_outcomes
+       (fixture_id, home_corners, away_corners, total_corners, league, source, fetched_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+     ON CONFLICT(fixture_id) DO UPDATE SET
+       home_corners = excluded.home_corners,
+       away_corners = excluded.away_corners,
+       total_corners = excluded.total_corners,
+       league = excluded.league,
+       source = excluded.source,
+       fetched_at = excluded.fetched_at`,
+  );
+  const batch = rows.map((r) =>
+    stmt.bind(r.fixtureId, r.homeCorners, r.awayCorners, r.totalCorners,
+      r.league ?? null, r.source, r.fetchedAt),
+  );
+  if (batch.length) await batchExecute(db, batch);
+}
+
+export async function listCornerOutcomes(db: D1Database): Promise<CornerOutcome[]> {
+  const { results } = await db
+    .prepare(`SELECT * FROM corner_outcomes ORDER BY fetched_at DESC`)
+    .all<CornerOutcomeRow>()
+    .catch(() => ({ results: [] as CornerOutcomeRow[] }));
+  return (results ?? []).map(toCornerOutcome);
 }
 
 export async function insertBet(db: D1Database, b: Bet): Promise<void> {

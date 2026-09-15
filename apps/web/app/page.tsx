@@ -76,9 +76,11 @@ export default function OverviewPage() {
       <p className="-mt-1 text-[11px] leading-relaxed text-slate-500">
         Every figure on this page is <span className="font-semibold text-slate-400">model-flagged bets only</span>.
         {dashboard.manualSummary.nBets > 0 && <> {dashboard.manualSummary.nBets} manual bet{dashboard.manualSummary.nBets === 1 ? "" : "s"}</>}
-        {dashboard.manualSummary.nBets > 0 && dashboard.untaggedBets > 0 && " and"}
+        {dashboard.manualSummary.nBets > 0 && (dashboard.ruleSummary.nBets > 0 || dashboard.untaggedBets > 0) && " and"}
+        {dashboard.ruleSummary.nBets > 0 && <> {dashboard.ruleSummary.nBets} rule bet{dashboard.ruleSummary.nBets === 1 ? "" : "s"}</>}
+        {dashboard.ruleSummary.nBets > 0 && dashboard.untaggedBets > 0 && " and"}
         {dashboard.untaggedBets > 0 && <> {dashboard.untaggedBets} untagged bet{dashboard.untaggedBets === 1 ? "" : "s"}</>}
-        {(dashboard.manualSummary.nBets > 0 || dashboard.untaggedBets > 0) && " are excluded from ROI, CLV and bankroll."}
+        {(dashboard.manualSummary.nBets > 0 || dashboard.ruleSummary.nBets > 0 || dashboard.untaggedBets > 0) && " are excluded from the headline ROI, CLV and bankroll."}
       </p>
 
       {/* CLV — the headline chart */}

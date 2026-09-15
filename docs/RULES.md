@@ -237,11 +237,69 @@ full 300-fixture run **as written**, thresholds untouched.
 
 ---
 
+### §7b. Second mining run (124 settled fixtures) — and the one candidate it produced
+
+The search was repeated after the denominator grew from 118 to **124** settled
+fixtures, using the same walk-forward split and the new standalone tool
+`model/scripts/mine_rules.py` (bitset search — the naive version is 26M
+conjunctions and does not finish):
+
+```
+batch 1 = 99 oldest settled fixtures   (mine here)
+batch 2 = 25 newest                    (test here)
+```
+
+| | |
+|---|---|
+| Candidate conditions | 6,516 |
+| 1–2 condition rules hitting **100% on batch 1** (n ≥ 5) | **2,003** |
+| Also held on batch 2 | 814 (**40.6%**) |
+
+**40.6% of search-generated "100%" rules survived a fresh 25 fixtures.** If the
+book were assembled by this search, two out of five of its rules would be
+artifacts — and it would look like a great book on batch 1, with samples like
+13/13 and 14/14. That number is the case for the freeze, not against it.
+
+### C6 — watch-list candidate (NOT in the book)
+
+The strongest *shape* to recur, chosen for recurrence rather than for its best
+single sample:
+
+| # | Conditions | Backs | Batch 1 | Batch 2 | Knife-edge |
+|---|---|---|---|---|---|
+| **C6** | `D − O25 ≤ −39.68pp` | Over 1.5 goals | **8/8** | **3/3** | ⚠️ yes |
+
+It reads sensibly — *the draw is priced much less likely than Over 2.5 is priced
+likely* → a decisive, high-tempo match → at least two goals. It is the mirror of
+**R2**, which backs Under 2.5 on `O25 − U25 ≤ −2.5pp AND DC12 ≥ 70%`.
+
+The variants are the reason it is only a watch-list entry: `D − O25 ≤ −39.52pp`
+and `D − O25 ≤ −39.68pp` both hit 100% on batch 1, so a neighbour one fifth of a
+percentage point away is the same rule at a different knife edge. Batch 2 gave it
+**three** fixtures. Three fixtures is not evidence — it is a reason to keep
+looking.
+
+**Nothing was added to `rules.ts`.** The rule book is being validated, not
+expanded; adding C6 now would reset the 300-fixture clock for a rule with an n of
+three. It gets promoted only if it clears 300 fixtures **as written**, with every
+threshold untouched.
+
+Also worth noting from the same run: the surviving patterns remain heavily
+concentrated in the *safe goal* markets, and **zero** patterns survived for
+draw, away win, home-goal-no or Under 1.5 — the third independent confirmation
+of the original mining notes.
+
+---
+
 ## 8. Verifying the rule book
 
 ```bash
-pnpm test:core        # 41 assertions: frozen thresholds, evaluation, standings
-pnpm test             # core + worker e2e (104)
+pnpm test:core        # core assertions: frozen thresholds, evaluation, standings
+pnpm test             # core + worker e2e (134)
+
+# Re-run the mining pass against the live database:
+curl -s "$ODDKET_WORKER_URL/api/db" -o model/output/db_live.json
+cd model && .venv/bin/python scripts/mine_rules.py output/db_live.json
 ```
 
 The test builds the real TypeScript module and asserts, among other things:

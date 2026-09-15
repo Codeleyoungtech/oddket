@@ -59,9 +59,12 @@ jobs:
         working-directory: model
         run: python3 scripts/predict.py --source fixtures --data data/fixtures.json --market ou
 
-      - name: Predict corners (per-team corner totals, V5 NB line probs)
+      - name: Predict corners (V6 — real odds, walk-forward Elo, direct total model)
+        # Uses the best h2h + totals odds carried in data/fixtures.json, so the
+        # six market-derived features match how the model was trained. The V5
+        # predictor fed them hardcoded constants.
         working-directory: model
-        run: python3 scripts/predict_corners_v5.py --fixtures data/fixtures.json --output data/corners_predictions.json
+        run: python3 scripts/predict_corners_v6.py --fixtures data/fixtures.json --output data/corners_predictions.json
 
       - name: Predict micro markets (O1.5 + team to score)
         working-directory: model
@@ -87,7 +90,7 @@ jobs:
           done
           # Corners predictions (isolated from h2h/totals)
           if [ -s model/data/corners_predictions.json ]; then
-            # Convert V5 format to worker ingest format
+            # Convert the v6 output (line probs + sigmas + total) to the ingest shape
             python3 model/scripts/corners_to_ingest.py model/data/corners_predictions.json > /tmp/corners_ingest.json
             curl -sS -m 60 -X POST "$WORKER_URL/api/corners/ingest" \
               -H "Content-Type: application/json" \

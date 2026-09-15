@@ -4,6 +4,7 @@ import React, { useMemo, useState } from "react";
 import {
   computeTeamCornerLines,
   computeTotalCornerLines,
+  gradeCornerPredictions,
   totalCornerSafeBand,
   mostCorners3Way,
 } from "@oddket/core";
@@ -164,6 +165,20 @@ export default function CornersPage() {
   const [search, setSearch] = useState("");
 
   // Build fixture groups from predictions
+  // Graded corner predictions: every stored line scored against the real count
+  // fetched from API-Football (or entered by hand). Replaces looking the match
+  // up manually to see whether a line was any good.
+  const cornerScoreboard = useMemo(() => {
+    if (!cornerPredictions?.length) return null;
+    const outcomes = (db as any)?.cornerOutcomes ?? [];
+    if (outcomes.length === 0) return null;
+    return gradeCornerPredictions(
+      cornerPredictions as any,
+      outcomes,
+      (db?.fixtures ?? []) as any,
+    );
+  }, [cornerPredictions, db]);
+
   const fixtureGroups = useMemo(() => {
     if (!cornerPredictions?.length) return [];
     const map = new Map<string, { fixture: any; home: any; away: any }>();
@@ -335,6 +350,85 @@ export default function CornersPage() {
           </div>
         </div>
       </details>
+
+      {/* Scoreboard — how the corner predictions actually turned out.
+          Deliberately placed above the fixtures: checking these by hand was the
+          only way to validate the model before this existed. */}
+      {cornerScoreboard && cornerScoreboard.scoreboard.graded > 0 && (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-zinc-200">
+              📊 Corner scoreboard
+              <span className="ml-2 font-normal text-zinc-500">
+                {cornerScoreboard.scoreboard.graded} graded · {cornerScoreboard.scoreboard.pending} pending
+              </span>
+            </div>
+            <div className="text-[10px] text-zinc-500">
+              Every stored line is graded — nothing is filtered to &quot;picks&quot;
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {([
+              ["Team lines", cornerScoreboard.scoreboard.team],
+              ["Total lines", cornerScoreboard.scoreboard.total],
+            ] as const).map(([label, s]) => (
+              <div key={label} className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+                <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label}</div>
+                <div className="mt-0.5 text-sm font-semibold text-zinc-100">
+                  {(s.lineAccuracy * 100).toFixed(1)}%
+                  <span className="ml-1 text-[10px] font-normal text-zinc-500">called right</span>
+                </div>
+                <div className="text-[10px] text-zinc-500">Brier {s.brier.toFixed(4)} · n={s.n}</div>
+              </div>
+            ))}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500">Mean error</div>
+              <div className="mt-0.5 text-sm font-semibold text-zinc-100">
+                {cornerScoreboard.scoreboard.mae.home.toFixed(2)}
+                <span className="ml-1 text-[10px] font-normal text-zinc-500">home</span>
+              </div>
+              <div className="text-[10px] text-zinc-500">
+                away {cornerScoreboard.scoreboard.mae.away.toFixed(2)} · total {cornerScoreboard.scoreboard.mae.total.toFixed(2)}
+              </div>
+            </div>
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2">
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500">80% band hit</div>
+              <div className="mt-0.5 text-sm font-semibold text-zinc-100">
+                {(cornerScoreboard.scoreboard.bandCoverage * 100).toFixed(1)}%
+              </div>
+              <div className="text-[10px] text-zinc-500">target 80%</div>
+            </div>
+          </div>
+          {cornerScoreboard.scoreboard.calibration.length > 0 && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-zinc-500">
+                    <th className="py-1 text-left font-medium">Claimed</th>
+                    {cornerScoreboard.scoreboard.calibration.map((b) => (
+                      <th key={b.label} className="py-1 text-right font-medium">{b.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="text-zinc-300">
+                  <tr>
+                    <td className="py-1 text-zinc-400">Model</td>
+                    {cornerScoreboard.scoreboard.calibration.map((b) => (
+                      <td key={b.label} className="py-1 text-right">{(b.predicted * 100).toFixed(0)}%</td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-1 text-zinc-400">Actual</td>
+                    {cornerScoreboard.scoreboard.calibration.map((b) => (
+                      <td key={b.label} className="py-1 text-right">{(b.observed * 100).toFixed(0)}%</td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Fixture cards */}
       <div className="grid gap-3">

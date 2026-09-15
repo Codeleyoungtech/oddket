@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql", "0006_telegram.sql", "0007_bet_source.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql", "0006_telegram.sql", "0007_bet_source.sql", "0008_corner_v6.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -565,6 +565,77 @@ console.log("\n[16] bet source tagging (model vs manual vs untagged)");
     check("tennis bet placed", tbet.status === 201, JSON.stringify(tbet.json));
     const tlist = await api("GET", "/api/tennis/bets");
     check("tennis source persists", tlist.json?.find((b) => b.id === tbet.json?.bet?.id)?.source === "manual");
+  }
+}
+
+console.log("\n[17] rule bets are their own cohort");
+{
+  const before = await api("GET", "/api/dashboard");
+  const beforeRule = before.json?.ruleSummary?.nBets ?? 0;
+  const beforeModel = before.json?.modelSummary?.nBets ?? 0;
+
+  const db = await api("GET", "/api/db");
+  const fix = db.json?.fixtures?.find((f) => f.status !== "finished") ?? db.json?.fixtures?.[0];
+  if (fix) {
+    const ruleBet = await api("POST", "/api/bets", { fixtureId: fix.id, market: "h2h", selection: "home", odds: 2.0, stake: 10, source: "rule" });
+    check("rule bet placed", ruleBet.status === 201, JSON.stringify(ruleBet.json));
+
+    const list = await api("GET", "/api/bets");
+    check("source 'rule' persists", list.json?.find((b) => b.id === ruleBet.json?.bet?.id)?.source === "rule", JSON.stringify(list.json?.find((b) => b.id === ruleBet.json?.bet?.id)));
+
+    const after = await api("GET", "/api/dashboard");
+    check("rule bucket grew by exactly 1", (after.json?.ruleSummary?.nBets ?? 0) - beforeRule === 1, `${beforeRule} -> ${after.json?.ruleSummary?.nBets}`);
+    check("rule bet does NOT move the model bucket", (after.json?.modelSummary?.nBets ?? 0) === beforeModel, `${beforeModel} -> ${after.json?.modelSummary?.nBets}`);
+    check("dashboard exposes a rule CLV series", Array.isArray(after.json?.ruleClvSeries));
+    check("dashboard exposes ruleByMarket", Array.isArray(after.json?.ruleByMarket));
+    check("headline stays model-only with rule bets present", after.json?.summary?.nBets === after.json?.modelSummary?.nBets);
+  }
+}
+
+console.log("\n[18] corner v6 ingest (line prob passthrough + grading)");
+{
+  const db = await api("GET", "/api/db");
+  const fix = db.json?.fixtures?.[0];
+  if (fix) {
+    // The model's own numbers must survive ingestion rather than being
+    // recomputed from hardcoded constants in TypeScript.
+    const payload = [{
+      fixtureId: fix.id,
+      homeCorners: 5.8, awayCorners: 4.1, totalCorners: 9.9,
+      homeLines: { "O2.5": 0.91, "O3.5": 0.8, "O4.5": 0.64, "O5.5": 0.47, "O6.5": 0.31, "O7.5": 0.19, "O8.5": 0.1 },
+      awayLines: { "O2.5": 0.86, "O3.5": 0.7, "O4.5": 0.51, "O5.5": 0.34, "O6.5": 0.2, "O7.5": 0.11, "O8.5": 0.06 },
+      totalLines: { "O6.5": 0.85, "O7.5": 0.75, "O8.5": 0.63, "O9.5": 0.5, "O10.5": 0.38, "O11.5": 0.27, "O12.5": 0.18 },
+      sigmaHome: 2.31, sigmaAway: 2.12, sigmaTotal: 2.88,
+      hasOdds: true, league: "EPL",
+    }];
+    const ing = await api("POST", "/api/corners/ingest", payload);
+    check("corner ingest accepted", ing.status === 200 && ing.json?.ok === true, JSON.stringify(ing.json));
+
+    const corners = await api("GET", "/api/corners");
+    const row = (corners.json ?? []).find((c) => c.fixtureId === fix.id && c.side === "home");
+    check("corner row stored with v6 sigmas", row?.sigmaHome === 2.31, JSON.stringify({ sigmaHome: row?.sigmaHome }));
+    check("corner row carries hasOdds", row?.hasOdds === true, JSON.stringify({ hasOdds: row?.hasOdds }));
+    check("corner row carries the league", row?.league === "EPL", JSON.stringify({ league: row?.league }));
+    check("model line prob survives ingest (0.91, not a recomputed constant)", Math.abs((row?.lineProbs?.over25 ?? 0) - 0.91) < 1e-9, JSON.stringify(row?.lineProbs));
+    check("total lines are stored, not recomputed", Math.abs((row?.totalCorners?.lines?.over95 ?? 0) - 0.5) < 1e-9, JSON.stringify(row?.totalCorners));
+
+    // Real corner counts → graded scoreboard.
+    const res = await api("POST", "/api/corners/outcomes", {
+      fixtureId: fix.id, homeCorners: 6, awayCorners: 3, league: "EPL", source: "manual",
+    });
+    check("corner outcome stored", res.status === 200 && res.json?.stored === 1, JSON.stringify(res.json));
+
+    const out = await api("GET", "/api/corners/outcomes");
+    const rowOut = (out.json?.outcomes ?? []).find((o) => o.fixtureId === fix.id);
+    check("corner outcome round-trips", rowOut?.homeCorners === 6 && rowOut?.totalCorners === 9, JSON.stringify(rowOut));
+    check("key pool reports unconfigured, not a crash", out.json?.apiFootball?.configured === false, JSON.stringify(out.json?.apiFootball));
+
+    const dbAfter = await api("GET", "/api/db");
+    check("corner outcomes ride along on /api/db", Array.isArray(dbAfter.json?.cornerOutcomes) && dbAfter.json.cornerOutcomes.length >= 1);
+
+    // Bad payload must not be accepted silently.
+    const bad = await api("POST", "/api/corners/outcomes", { fixtureId: fix.id });
+    check("corner outcome rejects a payload without counts", bad.status === 400, JSON.stringify(bad.json));
   }
 }
 

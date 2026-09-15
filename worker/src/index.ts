@@ -14,6 +14,7 @@ import {
   runBacktest,
   type Bet,
   type ClvResult,
+  type CornerOutcome,
   type Database,
   type Fixture,
   type Parlay,
@@ -27,16 +28,25 @@ import {
   normaliseBetSource,
   insertClv,
   insertParlay,
+  listCornerOutcomes,
   listRecentSettlements,
   loadDatabase,
   loadParlays,
   putSettings,
   settleParlayBets,
   settlePendingBets,
+  upsertCornerOutcomes,
   upsertOutcomes,
   upsertPredictions,
   upsertPushSubscription,
 } from "./db";
+import {
+  ApiFootballKeyPool,
+  parseCornerStatistics,
+  utcDate,
+  type ApiFootballFixture,
+  type ApiFootballStatisticBlock,
+} from "./corners/api-football";
 import { notifySettlements, sendTestPush } from "./push";
 import {
   handleTelegramUpdate,
@@ -341,13 +351,9 @@ app.get("/api/calibration", async (c) => {
 /* ---------------- corners predictions ---------------- */
 
 app.get("/api/corners", async (c) => {
-  const preds = await listCornerPredictions(c.env.DB);
-  // Parse lineProbs JSON back to object for each prediction
-  const parsed = preds.map((p) => ({
-    ...p,
-    lineProbs: JSON.parse(p.lineProbs || "{}"),
-  }));
-  return c.json(parsed);
+  // listCornerPredictions already returns parsed line probabilities (the v6
+  // fields included); re-parsing them here was the old v5 shape.
+  return c.json(await listCornerPredictions(c.env.DB));
 });
 
 app.post("/api/corners/ingest", async (c) => {
@@ -362,7 +368,7 @@ app.post("/api/corners/ingest", async (c) => {
     const db = c.env.DB;
     // Load fixtures to get match details
     const { results: fixtures } = await db.prepare(
-      `SELECT id, home_team as homeTeam, away_team as awayTeam FROM fixtures`
+      `SELECT id, home_team as homeTeam, away_team as awayTeam, league FROM fixtures`
     ).all();
     const fixtureMap = new Map(fixtures.map((f: any) => [f.id, f]));
 
@@ -371,10 +377,29 @@ app.post("/api/corners/ingest", async (c) => {
     for (const pred of predictions) {
       const fixture = fixtureMap.get(pred.fixtureId);
       if (!fixture) continue;
+      // The v6 predictor ships its own line probabilities and sigmas. They are
+      // stored verbatim — recomputing them here from hardcoded constants is what
+      // made the numbers on screen differ from the model's actual output.
+      const precomputed = pred.homeLines || pred.totalLines
+        ? {
+            homeLines: pred.homeLines,
+            awayLines: pred.awayLines,
+            totalLines: pred.totalLines,
+            totalCorners: pred.totalCorners,
+            sigmaHome: pred.sigmaHome ?? undefined,
+            sigmaAway: pred.sigmaAway ?? undefined,
+            sigmaTotal: pred.sigmaTotal ?? undefined,
+            hasOdds: pred.hasOdds,
+            league: pred.league ?? fixture.league ?? undefined,
+          }
+        : undefined;
       const cornerPreds = buildCornerPredictions(
         { id: pred.fixtureId, homeTeam: fixture.homeTeam, awayTeam: fixture.awayTeam,
-          sport: "soccer", league: "", commenceTime: 0, status: "scheduled" },
+          sport: "soccer", league: pred.league ?? fixture.league ?? "", commenceTime: 0,
+          status: "scheduled" },
         pred.homeCorners, pred.awayCorners,
+        precomputed?.hasOdds === false ? "corners-lgb-v6" : "corners-lgb-v6",
+        precomputed,
       );
       for (const cp of cornerPreds) {
         rows.push({
@@ -383,6 +408,13 @@ app.post("/api/corners/ingest", async (c) => {
           confidenceHigh: cp.confidenceHigh,
           lineProbs: JSON.stringify(cp.lineProbs),
           modelVersion: cp.modelVersion, createdAt: now,
+          totalCorners: pred.totalCorners ?? cp.totalCorners?.expected ?? null,
+          totalLineProbs: cp.totalCorners ? JSON.stringify(cp.totalCorners.lines) : null,
+          sigmaHome: pred.sigmaHome ?? null,
+          sigmaAway: pred.sigmaAway ?? null,
+          sigmaTotal: pred.sigmaTotal ?? null,
+          hasOdds: pred.hasOdds === true,
+          league: pred.league ?? fixture.league ?? null,
         });
       }
     }
@@ -391,6 +423,162 @@ app.post("/api/corners/ingest", async (c) => {
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 500);
   }
+});
+
+/* ---------------- corner results (real corner counts) ---------------- */
+
+app.get("/api/corners/outcomes", async (c) => {
+  const outcomes = await listCornerOutcomes(c.env.DB);
+  const keyPool = new ApiFootballKeyPool(c.env.API_FOOTBALL_KEYS);
+  return c.json({ outcomes, apiFootball: keyPool.report() });
+});
+
+/**
+ * Ingest corner results — either from API-Football or hand-entered.
+ *
+ * Body: [{fixtureId, homeCorners, awayCorners, league?, source?}]
+ */
+app.post("/api/corners/outcomes", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized" }, 401);
+  const body = await c.req.json().catch(() => null);
+  const list = Array.isArray(body) ? body : body ? [body] : [];
+  const now = Math.floor(Date.now() / 1000);
+  const rows = list
+    .filter((o: any) =>
+      o && typeof o.fixtureId === "string" &&
+      Number.isFinite(o.homeCorners) && Number.isFinite(o.awayCorners))
+    .map((o: any) => ({
+      fixtureId: o.fixtureId,
+      homeCorners: Math.round(o.homeCorners),
+      awayCorners: Math.round(o.awayCorners),
+      totalCorners: Math.round(o.homeCorners) + Math.round(o.awayCorners),
+      league: o.league ?? undefined,
+      source: typeof o.source === "string" ? o.source : "manual",
+      fetchedAt: now,
+    }));
+  if (rows.length === 0) {
+    return c.json({ ok: false, error: "Expected [{fixtureId, homeCorners, awayCorners}]." }, 400);
+  }
+  await upsertCornerOutcomes(c.env.DB, rows);
+  return c.json({ ok: true, stored: rows.length });
+});
+
+/**
+ * Pull real corner counts from API-Football for fixtures we predicted.
+ *
+ * One `/fixtures?date=` call per date (cheap), then one `/fixtures/statistics`
+ * call per matched fixture (the expensive part), so only fixtures that are BOTH
+ * finished and already predicted are fetched — never the whole feed.
+ */
+app.post("/api/corners/fetch-results", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized" }, 401);
+  const pool = new ApiFootballKeyPool(c.env.API_FOOTBALL_KEYS);
+  if (!pool.configured) {
+    return c.json({
+      ok: false,
+      configured: false,
+      error: "API_FOOTBALL_KEYS is not set — add it as a worker secret (comma-separate multiple keys).",
+    }, 501);
+  }
+
+  const body = await c.req.json().catch(() => ({} as any));
+  const windowDays = Math.min(Math.max(Number(body?.windowDays ?? 3), 1), 10);
+  const now = Math.floor(Date.now() / 1000);
+
+  const { results: fixtures } = await c.env.DB.prepare(
+    `SELECT id, home_team as homeTeam, away_team as awayTeam, league, commence_time as commenceTime, status
+     FROM fixtures
+     WHERE commence_time <= ?1 AND commence_time >= ?2
+       AND EXISTS (SELECT 1 FROM corners_predictions cp WHERE cp.fixture_id = fixtures.id)`,
+  ).bind(now, now - windowDays * 86400).all<any>();
+
+  const already = new Set((await listCornerOutcomes(c.env.DB)).map((o) => o.fixtureId));
+  const pending = (fixtures ?? []).filter((f) => !already.has(f.id));
+  if (pending.length === 0) {
+    return c.json({ ok: true, matched: 0, fetched: 0, stored: 0, note: "nothing new to look up" });
+  }
+
+  // Group by UTC date so the fixture list is pulled once per day.
+  const byDate = new Map<string, any[]>();
+  for (const f of pending) {
+    const d = utcDate(f.commenceTime);
+    const arr = byDate.get(d) ?? [];
+    arr.push(f);
+    byDate.set(d, arr);
+  }
+
+  const norm = (s: string) =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\b(fc|cf|afc|sc|ac|bc|sv|calcio|club)\b/g, "")
+      .replace(/[^a-z0-9]/g, "");
+
+  const matched: { fixtureId: string; apiId: number; league?: string }[] = [];
+  const failures: string[] = [];
+  let listCalls = 0;
+
+  for (const [date, batch] of byDate) {
+    const res = await pool.get<ApiFootballFixture[]>(
+      "/fixtures", { date, status: "FT" }, c.env.API_FOOTBALL_BASE,
+    );
+    listCalls += 1;
+    if (!res.ok) {
+      failures.push(`${date}: ${res.reason}`);
+      continue;
+    }
+    for (const af of res.data) {
+      const hid = af?.fixture?.id;
+      const ah = norm(af?.teams?.home?.name ?? "");
+      const aa = norm(af?.teams?.away?.name ?? "");
+      if (!hid || !ah || !aa) continue;
+      for (const f of batch) {
+        if (norm(f.homeTeam) === ah && norm(f.awayTeam) === aa) {
+          matched.push({ fixtureId: f.id, apiId: hid, league: f.league });
+          break;
+        }
+      }
+    }
+  }
+
+  const nowTs = Math.floor(Date.now() / 1000);
+  const rows: CornerOutcome[] = [];
+  for (const m of matched) {
+    const st = await pool.get<ApiFootballStatisticBlock[]>(
+      "/fixtures/statistics", { fixture: m.apiId }, c.env.API_FOOTBALL_BASE,
+    );
+    if (!st.ok) {
+      failures.push(`stats ${m.apiId}: ${st.reason}`);
+      continue;
+    }
+    const parsed = parseCornerStatistics(st.data);
+    if (!parsed) {
+      failures.push(`stats ${m.apiId}: no corner statistics`);
+      continue;
+    }
+    rows.push({
+      fixtureId: m.fixtureId,
+      homeCorners: parsed.homeCorners,
+      awayCorners: parsed.awayCorners,
+      totalCorners: parsed.homeCorners + parsed.awayCorners,
+      league: m.league,
+      source: "api-football",
+      fetchedAt: nowTs,
+    });
+  }
+
+  if (rows.length > 0) await upsertCornerOutcomes(c.env.DB, rows);
+
+  return c.json({
+    ok: true,
+    candidates: pending.length,
+    listCalls,
+    matched: matched.length,
+    stored: rows.length,
+    failures: failures.slice(0, 20),
+    keyPool: pool.report(),
+  });
 });
 
 /* ---------------- backtest ---------------- */

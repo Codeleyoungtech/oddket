@@ -1,234 +1,687 @@
 {
-  "version": "corners-lgb-v5",
-  "market": "corners",
-  "source": "football-data.co.uk EPL/LaLiga/Bundesliga/SerieA 2014-2026",
+  "version": "corners-lgb-v6",
   "features": [
-    "a_attack_x_h_defense",
-    "a_baseline",
-    "a_ca_l10",
-    "a_ca_l15",
-    "a_ca_l5",
-    "a_ca_season",
-    "a_cards_l10",
-    "a_cards_l5",
-    "a_cf_cv",
-    "a_cf_ew",
-    "a_cf_l10",
-    "a_cf_l15",
-    "a_cf_l5",
-    "a_cf_max",
-    "a_cf_median",
-    "a_cf_min",
-    "a_cf_prev_season",
-    "a_cf_season",
-    "a_cf_std",
-    "a_conceded_l10",
-    "a_conceded_l5",
-    "a_fouls_l10",
-    "a_fouls_l5",
-    "a_goals_l10",
-    "a_goals_l5",
-    "a_over_3.5",
-    "a_over_4.5",
-    "a_over_5.5",
-    "a_over_6.5",
-    "a_shots_corners_ratio",
-    "a_shots_l10",
-    "a_shots_l5",
-    "a_shots_x_h_conceded",
-    "a_sot_l10",
-    "a_sot_l5",
-    "ah_home",
-    "away_ca_away_l10",
-    "away_cf_away_l10",
-    "away_elo",
-    "away_matchup",
-    "away_n",
-    "away_rest",
-    "away_total_away_l10",
-    "elo_diff",
-    "elo_expected_home",
-    "h_attack_x_a_defense",
-    "h_baseline",
-    "h_ca_l10",
-    "h_ca_l15",
-    "h_ca_l5",
-    "h_ca_season",
-    "h_cards_l10",
-    "h_cards_l5",
-    "h_cf_cv",
-    "h_cf_ew",
-    "h_cf_l10",
-    "h_cf_l15",
     "h_cf_l5",
-    "h_cf_max",
+    "h_ca_l5",
+    "h_cf_l10",
+    "h_ca_l10",
+    "h_cf_l15",
+    "h_ca_l15",
+    "h_cf_season",
+    "h_ca_season",
+    "h_cf_ew",
+    "h_cf_std",
+    "h_cf_cv",
     "h_cf_median",
     "h_cf_min",
-    "h_cf_prev_season",
-    "h_cf_season",
-    "h_cf_std",
-    "h_conceded_l10",
-    "h_conceded_l5",
-    "h_fouls_l10",
-    "h_fouls_l5",
-    "h_goals_l10",
-    "h_goals_l5",
+    "h_cf_max",
     "h_over_3.5",
     "h_over_4.5",
     "h_over_5.5",
     "h_over_6.5",
-    "h_shots_corners_ratio",
+    "h_attack_rating",
+    "h_defence_rating",
     "h_shots_l10",
-    "h_shots_l5",
-    "h_shots_x_a_conceded",
     "h_sot_l10",
-    "h_sot_l5",
-    "home_ca_home_l10",
-    "home_cf_home_l10",
+    "h_fouls_l10",
+    "h_cards_l10",
+    "h_goals_l10",
+    "h_conceded_l10",
+    "h_shot_per_corner",
+    "h_n",
+    "h_rest",
+    "a_cf_l5",
+    "a_ca_l5",
+    "a_cf_l10",
+    "a_ca_l10",
+    "a_cf_l15",
+    "a_ca_l15",
+    "a_cf_season",
+    "a_ca_season",
+    "a_cf_ew",
+    "a_cf_std",
+    "a_cf_cv",
+    "a_cf_median",
+    "a_cf_min",
+    "a_cf_max",
+    "a_over_3.5",
+    "a_over_4.5",
+    "a_over_5.5",
+    "a_over_6.5",
+    "a_attack_rating",
+    "a_defence_rating",
+    "a_shots_l10",
+    "a_sot_l10",
+    "a_fouls_l10",
+    "a_cards_l10",
+    "a_goals_l10",
+    "a_conceded_l10",
+    "a_shot_per_corner",
+    "a_n",
+    "a_rest",
+    "h_attack_x_a_defence",
+    "a_attack_x_h_defence",
+    "matchup_diff",
+    "expected_total",
+    "home_venue_edge",
     "home_elo",
-    "home_matchup",
-    "home_n",
-    "home_rest",
-    "home_total_home_l10",
-    "implied_away",
-    "implied_draw",
-    "implied_goals_over25",
+    "away_elo",
+    "elo_diff",
+    "elo_expected_home",
     "implied_home",
-    "league_2. Bundesliga",
-    "league_Bundesliga",
-    "league_Championship",
+    "implied_draw",
+    "implied_away",
+    "odds_overround",
+    "has_odds",
+    "implied_goals_over25",
+    "league_pace",
     "league_EPL",
     "league_La Liga",
+    "league_Bundesliga",
+    "league_Serie A",
+    "league_Championship",
     "league_League One",
     "league_League Two",
+    "league_2. Bundesliga",
     "league_Segunda",
-    "league_Serie A",
     "league_Serie B",
-    "league_Super Lig",
-    "matchup_diff",
-    "odds_overround",
-    "rest_diff"
+    "league_Super Lig"
   ],
-  "n_features": 105,
-  "n_train": 25086,
-  "n_test": 6272,
+  "n_features": 85,
+  "n_train": 22577,
+  "n_holdout": 6272,
   "holdout_range": "2022-02-24 -> 2026-05-24",
   "home_metrics": {
-    "mae": 2.2396,
-    "rmse": 2.8337,
-    "r2": 0.1088,
-    "consistency_1": 0.275,
-    "consistency_05": 0.1365,
-    "line_accuracy": {
-      "over_3.5": 0.7152,
-      "over_4.5": 0.6181,
-      "over_5.5": 0.6134,
-      "over_6.5": 0.6864,
-      "over_7.5": 0.7776,
-      "over_8.5": 0.85
+    "mae": 2.2445,
+    "rmse": 2.8419,
+    "r2": 0.1037,
+    "bias": -0.0986,
+    "residual_sigma": 2.8404,
+    "naive_mae": 2.3649,
+    "skill_vs_naive": 0.0509,
+    "sigma_curve": {
+      "slope": 0.768585,
+      "intercept": 0.511695,
+      "bins": [
+        [
+          1.5983,
+          1.599
+        ],
+        [
+          1.9028,
+          1.7181
+        ],
+        [
+          2.0107,
+          2.1445
+        ],
+        [
+          2.0939,
+          2.1986
+        ],
+        [
+          2.1587,
+          2.0936
+        ],
+        [
+          2.2198,
+          2.4732
+        ],
+        [
+          2.2821,
+          2.3217
+        ],
+        [
+          2.3394,
+          2.285
+        ],
+        [
+          2.401,
+          2.3287
+        ],
+        [
+          2.4793,
+          2.8499
+        ],
+        [
+          2.5999,
+          2.5275
+        ],
+        [
+          2.8706,
+          2.3187
+        ]
+      ]
     },
-    "sigma": 2.832,
-    "feature_importance_top20": {
-      "h_cf_ew": 1557.0,
-      "odds_overround": 1369.0,
-      "elo_diff": 1175.0,
-      "away_rest": 1117.0,
-      "h_cf_l15": 1088.0,
-      "away_elo": 1057.0,
-      "h_cf_cv": 1049.0,
-      "a_ca_season": 1045.0,
-      "implied_away": 1013.0,
-      "implied_draw": 988.0,
-      "implied_home": 958.0,
-      "h_cf_l10": 953.0,
-      "home_elo": 941.0,
-      "home_rest": 933.0,
-      "h_cf_std": 928.0,
-      "h_cf_l5": 918.0,
-      "h_cf_prev_season": 911.0,
-      "h_cf_max": 890.0,
-      "h_ca_season": 887.0,
-      "a_ca_l5": 879.0
+    "sigma_curve_in_sample": {
+      "slope": 0.81163,
+      "intercept": -0.142386,
+      "bins": [
+        [
+          1.4919,
+          0.9169
+        ],
+        [
+          1.8383,
+          1.2106
+        ],
+        [
+          1.9802,
+          1.4202
+        ],
+        [
+          2.0814,
+          1.5098
+        ],
+        [
+          2.1598,
+          1.6874
+        ],
+        [
+          2.228,
+          1.8388
+        ],
+        [
+          2.2929,
+          1.85
+        ],
+        [
+          2.3587,
+          1.9316
+        ],
+        [
+          2.4297,
+          1.9284
+        ],
+        [
+          2.5195,
+          1.9448
+        ],
+        [
+          2.6471,
+          2.038
+        ],
+        [
+          2.9665,
+          1.924
+        ]
+      ]
     },
-    "version": "corners-lgb-v5"
+    "model_type": "lightgbm"
   },
   "away_metrics": {
-    "mae": 1.9495,
-    "rmse": 2.462,
-    "r2": 0.096,
-    "consistency_1": 0.3117,
-    "consistency_05": 0.1614,
-    "line_accuracy": {
-      "over_3.5": 0.6032,
-      "over_4.5": 0.6129,
-      "over_5.5": 0.7089,
-      "over_6.5": 0.8176,
-      "over_7.5": 0.8865,
-      "over_8.5": 0.9342
+    "mae": 1.9523,
+    "rmse": 2.4643,
+    "r2": 0.0943,
+    "bias": 0.1597,
+    "residual_sigma": 2.4594,
+    "naive_mae": 2.0882,
+    "skill_vs_naive": 0.0651,
+    "sigma_curve": {
+      "slope": 0.838571,
+      "intercept": 0.432023,
+      "bins": [
+        [
+          1.4827,
+          1.534
+        ],
+        [
+          1.7865,
+          1.7464
+        ],
+        [
+          1.9067,
+          2.095
+        ],
+        [
+          1.9836,
+          2.1347
+        ],
+        [
+          2.0415,
+          2.2168
+        ],
+        [
+          2.0953,
+          2.3032
+        ],
+        [
+          2.1467,
+          2.2574
+        ],
+        [
+          2.2013,
+          2.3499
+        ],
+        [
+          2.2619,
+          2.5588
+        ],
+        [
+          2.3329,
+          2.3075
+        ],
+        [
+          2.4273,
+          2.5108
+        ],
+        [
+          2.7446,
+          2.4788
+        ]
+      ]
     },
-    "sigma": 2.4585,
-    "feature_importance_top20": {
-      "a_cf_ew": 1644.0,
-      "odds_overround": 1383.0,
-      "elo_diff": 1145.0,
-      "away_rest": 1061.0,
-      "h_ca_season": 1054.0,
-      "a_cf_l15": 1049.0,
-      "implied_draw": 1019.0,
-      "a_cf_l5": 981.0,
-      "a_cf_cv": 974.0,
-      "implied_away": 973.0,
-      "away_elo": 960.0,
-      "a_cf_std": 958.0,
-      "a_cf_prev_season": 948.0,
-      "a_cf_l10": 936.0,
-      "home_elo": 917.0,
-      "h_cf_prev_season": 914.0,
-      "h_ca_l5": 906.0,
-      "a_cf_max": 863.0,
-      "a_ca_season": 842.0,
-      "implied_home": 838.0
+    "sigma_curve_in_sample": {
+      "slope": 0.710164,
+      "intercept": 0.162639,
+      "bins": [
+        [
+          1.4296,
+          0.8804
+        ],
+        [
+          1.7488,
+          1.2745
+        ],
+        [
+          1.8784,
+          1.4469
+        ],
+        [
+          1.9592,
+          1.5826
+        ],
+        [
+          2.0223,
+          1.6821
+        ],
+        [
+          2.0785,
+          1.7639
+        ],
+        [
+          2.1334,
+          1.8499
+        ],
+        [
+          2.1932,
+          1.9473
+        ],
+        [
+          2.2584,
+          1.9686
+        ],
+        [
+          2.3387,
+          1.9494
+        ],
+        [
+          2.4606,
+          1.9108
+        ],
+        [
+          2.7808,
+          1.6496
+        ]
+      ]
     },
-    "version": "corners-lgb-v5"
+    "model_type": "lightgbm"
   },
-  "backtest": {
-    "n_matches": 6272,
-    "home_mae": 2.2396,
-    "away_mae": 1.9494,
-    "total_mae": 2.7078,
-    "home_consistency": 0.276,
-    "away_consistency": 0.3136,
-    "total_consistency": 0.3379,
-    "team_line_accuracy": {
-      "team_3.5": 0.6589,
-      "team_4.5": 0.6164,
-      "team_5.5": 0.6614,
-      "team_6.5": 0.7519,
-      "team_7.5": 0.832
+  "total_metrics": {
+    "mae": 2.6888,
+    "rmse": 3.3632,
+    "r2": 0.0129,
+    "bias": 0.0758,
+    "residual_sigma": 3.3626,
+    "naive_mae": 2.7113,
+    "skill_vs_naive": 0.0083,
+    "sigma_curve": {
+      "slope": 0.270166,
+      "intercept": 2.063714,
+      "bins": [
+        [
+          2.6245,
+          2.5127
+        ],
+        [
+          2.8778,
+          2.9616
+        ],
+        [
+          2.9668,
+          2.629
+        ],
+        [
+          3.0159,
+          2.9634
+        ],
+        [
+          3.0589,
+          2.9182
+        ],
+        [
+          3.096,
+          3.2632
+        ],
+        [
+          3.1303,
+          2.8326
+        ],
+        [
+          3.1648,
+          2.8747
+        ],
+        [
+          3.2049,
+          2.9112
+        ],
+        [
+          3.2571,
+          3.1363
+        ],
+        [
+          3.3379,
+          3.2035
+        ],
+        [
+          3.6067,
+          2.6466
+        ]
+      ]
     },
-    "total_line_accuracy": {
-      "total_7.5": 0.7266,
-      "total_8.5": 0.6186,
-      "total_9.5": 0.5335,
-      "total_10.5": 0.5918,
-      "total_11.5": 0.7141,
-      "total_12.5": 0.8004
+    "sigma_curve_in_sample": {
+      "slope": 1.001247,
+      "intercept": -0.752166,
+      "bins": [
+        [
+          2.5456,
+          1.5442
+        ],
+        [
+          2.8364,
+          1.9707
+        ],
+        [
+          2.9565,
+          2.1533
+        ],
+        [
+          3.0239,
+          2.292
+        ],
+        [
+          3.0729,
+          2.4344
+        ],
+        [
+          3.1141,
+          2.5026
+        ],
+        [
+          3.1518,
+          2.6257
+        ],
+        [
+          3.1898,
+          2.5645
+        ],
+        [
+          3.2318,
+          2.6568
+        ],
+        [
+          3.2831,
+          2.6754
+        ],
+        [
+          3.3585,
+          2.6261
+        ],
+        [
+          3.59,
+          2.3293
+        ]
+      ]
+    },
+    "model_type": "lightgbm"
+  },
+  "total_model_comparison": {
+    "summed_mae": 2.691,
+    "direct_mae": 2.6888,
+    "naive_mae": 2.7113
+  },
+  "line_calibration": {
+    "home": {
+      "label": "team home",
+      "lines": [
+        {
+          "line": 2.5,
+          "claimed": 0.875,
+          "claimed_in_sample_sigma": 0.8767,
+          "actual": 0.8359,
+          "error": 0.039,
+          "abs_error": 0.039,
+          "abs_error_in_sample_sigma": 0.0408
+        },
+        {
+          "line": 3.5,
+          "claimed": 0.7488,
+          "claimed_in_sample_sigma": 0.7498,
+          "actual": 0.7122,
+          "error": 0.0366,
+          "abs_error": 0.0366,
+          "abs_error_in_sample_sigma": 0.0376
+        },
+        {
+          "line": 4.5,
+          "claimed": 0.5937,
+          "claimed_in_sample_sigma": 0.5935,
+          "actual": 0.5729,
+          "error": 0.0209,
+          "abs_error": 0.0209,
+          "abs_error_in_sample_sigma": 0.0207
+        },
+        {
+          "line": 5.5,
+          "claimed": 0.4352,
+          "claimed_in_sample_sigma": 0.4342,
+          "actual": 0.4369,
+          "error": -0.0016,
+          "abs_error": 0.0016,
+          "abs_error_in_sample_sigma": 0.0026
+        },
+        {
+          "line": 6.5,
+          "claimed": 0.2956,
+          "claimed_in_sample_sigma": 0.2944,
+          "actual": 0.3227,
+          "error": -0.0271,
+          "abs_error": 0.0271,
+          "abs_error_in_sample_sigma": 0.0283
+        },
+        {
+          "line": 7.5,
+          "claimed": 0.1868,
+          "claimed_in_sample_sigma": 0.1858,
+          "actual": 0.2227,
+          "error": -0.0359,
+          "abs_error": 0.0359,
+          "abs_error_in_sample_sigma": 0.0369
+        },
+        {
+          "line": 8.5,
+          "claimed": 0.1104,
+          "claimed_in_sample_sigma": 0.1098,
+          "actual": 0.1491,
+          "error": -0.0386,
+          "abs_error": 0.0386,
+          "abs_error_in_sample_sigma": 0.0393
+        }
+      ],
+      "mean_abs_error": 0.0285,
+      "max_abs_error": 0.039,
+      "mean_abs_error_in_sample_sigma": 0.0295,
+      "max_abs_error_in_sample_sigma": 0.0408,
+      "method": "negative binomial, out-of-fold sigma(mu)"
+    },
+    "away": {
+      "label": "team away",
+      "lines": [
+        {
+          "line": 2.5,
+          "claimed": 0.7891,
+          "claimed_in_sample_sigma": 0.8009,
+          "actual": 0.7368,
+          "error": 0.0523,
+          "abs_error": 0.0523,
+          "abs_error_in_sample_sigma": 0.0642
+        },
+        {
+          "line": 3.5,
+          "claimed": 0.6254,
+          "claimed_in_sample_sigma": 0.6334,
+          "actual": 0.5729,
+          "error": 0.0525,
+          "abs_error": 0.0525,
+          "abs_error_in_sample_sigma": 0.0606
+        },
+        {
+          "line": 4.5,
+          "claimed": 0.4536,
+          "claimed_in_sample_sigma": 0.4547,
+          "actual": 0.4104,
+          "error": 0.0432,
+          "abs_error": 0.0432,
+          "abs_error_in_sample_sigma": 0.0443
+        },
+        {
+          "line": 5.5,
+          "claimed": 0.302,
+          "claimed_in_sample_sigma": 0.297,
+          "actual": 0.2876,
+          "error": 0.0143,
+          "abs_error": 0.0143,
+          "abs_error_in_sample_sigma": 0.0094
+        },
+        {
+          "line": 6.5,
+          "claimed": 0.1854,
+          "claimed_in_sample_sigma": 0.1777,
+          "actual": 0.18,
+          "error": 0.0054,
+          "abs_error": 0.0054,
+          "abs_error_in_sample_sigma": 0.0023
+        },
+        {
+          "line": 7.5,
+          "claimed": 0.1056,
+          "claimed_in_sample_sigma": 0.0981,
+          "actual": 0.1127,
+          "error": -0.0071,
+          "abs_error": 0.0071,
+          "abs_error_in_sample_sigma": 0.0147
+        },
+        {
+          "line": 8.5,
+          "claimed": 0.0561,
+          "claimed_in_sample_sigma": 0.0502,
+          "actual": 0.0657,
+          "error": -0.0096,
+          "abs_error": 0.0096,
+          "abs_error_in_sample_sigma": 0.0154
+        }
+      ],
+      "mean_abs_error": 0.0263,
+      "max_abs_error": 0.0525,
+      "mean_abs_error_in_sample_sigma": 0.0301,
+      "max_abs_error_in_sample_sigma": 0.0642,
+      "method": "negative binomial, out-of-fold sigma(mu)"
+    },
+    "total": {
+      "label": "match total",
+      "lines": [
+        {
+          "line": 6.5,
+          "claimed": 0.8505,
+          "claimed_in_sample_sigma": 0.8505,
+          "actual": 0.8275,
+          "error": 0.0231,
+          "abs_error": 0.0231,
+          "abs_error_in_sample_sigma": 0.0231
+        },
+        {
+          "line": 7.5,
+          "claimed": 0.7547,
+          "claimed_in_sample_sigma": 0.7547,
+          "actual": 0.7261,
+          "error": 0.0286,
+          "abs_error": 0.0286,
+          "abs_error_in_sample_sigma": 0.0286
+        },
+        {
+          "line": 8.5,
+          "claimed": 0.6388,
+          "claimed_in_sample_sigma": 0.6388,
+          "actual": 0.6165,
+          "error": 0.0222,
+          "abs_error": 0.0222,
+          "abs_error_in_sample_sigma": 0.0222
+        },
+        {
+          "line": 9.5,
+          "claimed": 0.5136,
+          "claimed_in_sample_sigma": 0.5136,
+          "actual": 0.5027,
+          "error": 0.0109,
+          "abs_error": 0.0109,
+          "abs_error_in_sample_sigma": 0.0109
+        },
+        {
+          "line": 10.5,
+          "claimed": 0.3915,
+          "claimed_in_sample_sigma": 0.3915,
+          "actual": 0.3897,
+          "error": 0.0018,
+          "abs_error": 0.0018,
+          "abs_error_in_sample_sigma": 0.0018
+        },
+        {
+          "line": 11.5,
+          "claimed": 0.2827,
+          "claimed_in_sample_sigma": 0.2827,
+          "actual": 0.2811,
+          "error": 0.0016,
+          "abs_error": 0.0016,
+          "abs_error_in_sample_sigma": 0.0016
+        },
+        {
+          "line": 12.5,
+          "claimed": 0.1934,
+          "claimed_in_sample_sigma": 0.1934,
+          "actual": 0.2001,
+          "error": -0.0066,
+          "abs_error": 0.0066,
+          "abs_error_in_sample_sigma": 0.0067
+        }
+      ],
+      "mean_abs_error": 0.0135,
+      "max_abs_error": 0.0286,
+      "mean_abs_error_in_sample_sigma": 0.0135,
+      "max_abs_error_in_sample_sigma": 0.0286,
+      "method": "negative binomial, out-of-fold sigma(mu)"
     }
   },
-  "seeds": [
-    "2014_15",
-    "2015_16",
-    "2016_17",
-    "2017_18",
-    "2018_19",
-    "2019_20",
-    "2020_21",
-    "2021_22",
-    "2022_23",
-    "2023_24",
-    "2024_25",
-    "2025_26"
-  ],
+  "residuals": {
+    "home_away_corr": -0.1947,
+    "cov_home_away": -1.3604,
+    "var_home": 8.0678,
+    "var_away": 6.0484,
+    "var_total_actual": 11.3955,
+    "var_total_if_independent": 14.1163
+  },
+  "line_method": "negative binomial with out-of-fold sigma(mu) = a*sqrt(mu)+b",
+  "market": "corners",
+  "source": "football-data.co.uk 11 leagues 2012-2026",
   "leagues": [
     "EPL",
     "La Liga",
@@ -241,5 +694,121 @@
     "Segunda",
     "Serie B",
     "Super Lig"
-  ]
+  ],
+  "team_lines": [
+    2.5,
+    3.5,
+    4.5,
+    5.5,
+    6.5,
+    7.5,
+    8.5
+  ],
+  "total_lines": [
+    6.5,
+    7.5,
+    8.5,
+    9.5,
+    10.5,
+    11.5,
+    12.5
+  ],
+  "neutral_odds": {
+    "implied_home": 0.33,
+    "implied_draw": 0.33,
+    "implied_away": 0.33,
+    "odds_overround": 1.0,
+    "implied_goals_over25": 0.5
+  },
+  "odds_features": [
+    "implied_home",
+    "implied_draw",
+    "implied_away",
+    "odds_overround",
+    "implied_goals_over25",
+    "has_odds"
+  ],
+  "feature_importance": {
+    "home": {
+      "h_cf_ew": 1146.0,
+      "odds_overround": 925.0,
+      "h_rest": 892.0,
+      "h_cf_l15": 765.0,
+      "h_cf_max": 717.0,
+      "h_cf_std": 705.0,
+      "implied_home": 696.0,
+      "implied_away": 680.0,
+      "h_cf_cv": 667.0,
+      "h_cf_l5": 658.0,
+      "league_pace": 640.0,
+      "a_ca_l5": 626.0,
+      "implied_draw": 599.0,
+      "a_fouls_l10": 540.0,
+      "h_ca_season": 524.0,
+      "h_attack_rating": 516.0,
+      "h_cf_min": 483.0,
+      "a_shot_per_corner": 478.0,
+      "away_elo": 478.0,
+      "h_cf_l10": 474.0,
+      "a_over_4.5": 469.0,
+      "h_shots_l10": 466.0,
+      "a_over_3.5": 461.0,
+      "matchup_diff": 459.0,
+      "a_cf_season": 458.0
+    },
+    "away": {
+      "a_cf_ew": 1116.0,
+      "h_rest": 692.0,
+      "a_cf_l15": 615.0,
+      "implied_away": 571.0,
+      "h_ca_l5": 551.0,
+      "a_cf_l5": 545.0,
+      "a_cf_max": 542.0,
+      "odds_overround": 536.0,
+      "a_cf_cv": 470.0,
+      "a_cf_min": 460.0,
+      "a_cf_std": 458.0,
+      "league_pace": 453.0,
+      "a_cf_l10": 450.0,
+      "implied_home": 448.0,
+      "implied_draw": 429.0,
+      "a_attack_rating": 403.0,
+      "home_elo": 386.0,
+      "matchup_diff": 385.0,
+      "a_cf_season": 374.0,
+      "h_cf_season": 358.0,
+      "a_rest": 356.0,
+      "a_over_3.5": 351.0,
+      "h_ca_season": 339.0,
+      "a_ca_season": 339.0,
+      "elo_diff": 335.0
+    },
+    "total": {
+      "a_cf_ew": 609.0,
+      "h_cf_ew": 591.0,
+      "h_ca_l5": 520.0,
+      "a_ca_l5": 492.0,
+      "odds_overround": 492.0,
+      "h_rest": 488.0,
+      "expected_total": 395.0,
+      "implied_draw": 362.0,
+      "league_pace": 347.0,
+      "h_cf_max": 342.0,
+      "a_ca_season": 332.0,
+      "a_cf_cv": 330.0,
+      "h_cf_season": 326.0,
+      "h_cf_std": 322.0,
+      "h_cf_cv": 313.0,
+      "home_venue_edge": 295.0,
+      "a_rest": 294.0,
+      "h_ca_season": 290.0,
+      "a_cf_l5": 286.0,
+      "a_fouls_l10": 285.0,
+      "h_cf_l5": 284.0,
+      "a_cf_season": 284.0,
+      "h_shot_per_corner": 281.0,
+      "home_elo": 280.0,
+      "implied_home": 279.0
+    }
+  }
 }

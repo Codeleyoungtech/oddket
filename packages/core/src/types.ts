@@ -69,7 +69,18 @@ export type Market = "h2h" | "totals" | "btts" | "spreads" | "dc12" | "ou15" | "
 export type Selection = "home" | "draw" | "away" | "over" | "under" | "yes" | "no" | "12";
 export type FixtureStatus = "scheduled" | "live" | "finished";
 export type BetStatus = "pending" | "won" | "lost" | "void";
-export type BetSource = "model" | "manual";
+/**
+ * Where a logged bet came from.
+ *
+ * - `model`  — cleared the EV gate at log time
+ * - `rule`   — matched a frozen selection rule (see docs/RULES.md)
+ * - `manual` — anything else (custom ticket, gate-rejected pick)
+ *
+ * `rule` exists because the rule book is what gets bet, and it is NOT the same
+ * cohort as the EV gate: logging a rule pick used to tag it `manual`, so the
+ * tracked ROI/CLV could never answer "does the rule book beat the gate?".
+ */
+export type BetSource = "model" | "rule" | "manual";
 
 export interface Fixture {
   id: string;
@@ -247,6 +258,16 @@ export interface CornerPrediction {
     over75: number;
     over85: number;
   };
+  // ---- v6 fields. Absent on rows written by the v5 pipeline.
+  /** Dispersion the model used for this side: sigma(mu), not a global constant. */
+  sigmaHome?: number;
+  sigmaAway?: number;
+  sigmaTotal?: number;
+  /** Whether a real 1X2 book existed at prediction time. The model uses six
+   *  market-derived features, so a prediction without a book is weaker and the
+   *  UI must not present the two identically. */
+  hasOdds?: boolean;
+  league?: string;
   /** total match corners prediction */
   totalCorners?: {
     expected: number;
@@ -265,6 +286,23 @@ export interface CornerPrediction {
   createdAt: number;
 }
 
+/**
+ * The real corner count for a finished fixture.
+ *
+ * Without this there was no way to check a corner prediction without looking
+ * the match up by hand — which is exactly what the owner was doing.
+ */
+export interface CornerOutcome {
+  fixtureId: string;
+  homeCorners: number;
+  awayCorners: number;
+  totalCorners: number;
+  league?: string;
+  /** 'api-football' | 'manual' */
+  source: string;
+  fetchedAt: number;
+}
+
 export interface Database {
   fixtures: Fixture[];
   odds: OddsSnapshot[];
@@ -275,4 +313,6 @@ export interface Database {
   settings: Settings;
   parlayBets: Parlay[];
   cornerPredictions: CornerPrediction[];
+  /** Optional so existing demo seeds keep working. */
+  cornerOutcomes?: CornerOutcome[];
 }

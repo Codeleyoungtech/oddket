@@ -1,5 +1,6 @@
 import type {
   Bet,
+  BetSource,
   ClvResult,
   Database,
   Fixture,
@@ -190,14 +191,28 @@ export interface Dashboard {
   summary: DashboardSummary;
   /** Stats for model-flagged bets only (passed all gates). */
   modelSummary: DashboardSummary;
+  /**
+   * Stats for RULE bets — legs matching a frozen selection rule.
+   *
+   * This bucket exists because the rule book is what actually gets bet, and it
+   * is not the same cohort as the EV gate. Logging a rule pick used to tag it
+   * `manual`, so the tracked numbers could never answer the only question that
+   * matters about rules: does the rule book beat the gate?
+   */
+  ruleSummary: DashboardSummary;
   /** Stats for manual/off-system bets (custom or gate-rejected). */
   manualSummary: DashboardSummary;
-  /** Bets logged before source tagging existed — excluded from BOTH buckets. */
+  /** Bets logged before source tagging existed — excluded from ALL buckets. */
   untaggedBets: number;
   clvSeries: ClvPoint[];
   bankrollSeries: BankrollPoint[];
+  /** CLV for rule bets only — the honest scoreboard for the rule book. */
+  ruleClvSeries: ClvPoint[];
+  ruleBankrollSeries: BankrollPoint[];
   calibration: CalibrationResult;
   byMarket: ByMarketRow[];
+  /** Per-market ROI for rule bets, so rules can be compared to the gate by market. */
+  ruleByMarket: ByMarketRow[];
 }
 
 /**
@@ -212,15 +227,15 @@ function summarizeBets(
   outcomes: Outcome[],
   fixtures: Fixture[],
   settings: Settings,
-  isModel: boolean,
+  sources: BetSource[],
 ): DashboardSummary {
   // Filter by source, STRICTLY. model = passed every gate at log time,
-  // manual = custom / gate-rejected.
+  // rule = matched a frozen rule, manual = custom / gate-rejected.
   //
-  // Untagged bets (source undefined) belong to NEITHER bucket. They used to be
-  // folded into "model" by a `?? "model"` default, which quietly contaminated
-  // the paper-trade numbers with bets that were never model-flagged.
-  const filtered = bets.filter((b) => (isModel ? b.source === "model" : b.source === "manual"));
+  // Untagged bets (source undefined) belong to NO bucket. They used to be folded
+  // into "model" by a `?? "model"` default, which quietly contaminated the
+  // paper-trade numbers with bets that were never model-flagged.
+  const filtered = bets.filter((b) => b.source !== undefined && sources.includes(b.source));
   const settled = filtered.filter((b) => b.status === "won" || b.status === "lost");
   const won = settled.filter((b) => b.status === "won");
   const winRate = settled.length > 0 ? won.length / settled.length : 0;
@@ -263,9 +278,11 @@ export function buildDashboard(db: Database): Dashboard {
   const { bets, odds, clv, predictions, fixtures, outcomes, settings } = db;
 
   // Model-flagged bets only — these drive the official ROI/CLV metrics.
-  const modelSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, true);
+  const modelSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, ["model"]);
+  // Rule bets — their own scoreboard.
+  const ruleSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, ["rule"]);
   // Manual/off-system bets — tracked separately, excluded from model metrics.
-  const manualSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, false);
+  const manualSummary = summarizeBets(bets, odds, clv, predictions, outcomes, fixtures, settings, ["manual"]);
 
   // Every series on the dashboard is MODEL-ONLY. Manual and untagged bets must
   // not move the headline bankroll, CLV curve or per-market ROI — otherwise the
@@ -273,20 +290,26 @@ export function buildDashboard(db: Database): Dashboard {
   // picked. (Calibration was already model-only: it grades predictions against
   // outcomes, and never touches logged bets at all.)
   const modelBets = bets.filter((b) => b.source === "model");
+  const ruleBets = bets.filter((b) => b.source === "rule");
   const clvByBet = new Map(clv.map((c) => [c.betId, c]));
-  const byMarket = buildByMarket(modelBets.filter((b) => b.status === "won" || b.status === "lost"), clvByBet);
+  const settledOf = (list: Bet[]) => list.filter((b) => b.status === "won" || b.status === "lost");
+  const byMarket = buildByMarket(settledOf(modelBets), clvByBet);
   const bankrollSeries = buildBankrollSeries(modelBets, settings.bankroll);
   const untaggedBets = bets.filter((b) => b.source === undefined).length;
 
   return {
     summary: modelSummary,
     modelSummary,
+    ruleSummary,
     manualSummary,
     untaggedBets,
     clvSeries: buildClvSeries(modelBets, clv),
     bankrollSeries,
+    ruleClvSeries: buildClvSeries(ruleBets, clv),
+    ruleBankrollSeries: buildBankrollSeries(ruleBets, settings.bankroll),
     calibration: buildCalibration(predictions, outcomes, fixtures),
     byMarket,
+    ruleByMarket: buildByMarket(settledOf(ruleBets), clvByBet),
   };
 }
 

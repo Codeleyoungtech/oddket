@@ -8,8 +8,11 @@ import {
   buildDashboard,
   buildSeedDatabase,
   buildTennisSeedDatabase,
+  applicationsForLeg,
   enrichBets,
   flagSlips,
+  ruleApplications,
+  ruleApplicationsByFixture,
   runBacktest,
   type BacktestResult,
   type Bet,
@@ -87,7 +90,11 @@ function computeViews(db: Database, mode: Mode) {
       // buckets and the bets page labels it.
       if (mode === "live") return b;
       // Demo seed only: classify from the flag list so the seeded dashboards
-      // still populate both buckets.
+      // still populate every bucket.
+      const demoApps = ruleApplicationsByFixture(db.predictions).get(b.fixtureId);
+      if (applicationsForLeg(demoApps, b.market, b.selection, { activeOnly: true }).length > 0) {
+        return { ...b, source: "rule" };
+      }
       return { ...b, source: slipKeys.has(`${b.fixtureId}:${b.market}:${b.selection}`) ? "model" : "manual" };
     }),
     db.fixtures,
@@ -158,12 +165,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logBet = useCallback(async (bet: Omit<Bet, "id" | "status" | "bankrollAtBet" | "source">) => {
-    // Auto-detect source: if this (fixtureId, market, selection) is in the
-    // flagged slips list, it passed all gates → 'model'. Otherwise → 'manual'.
+    // Decide the cohort, in priority order.
+    //
+    // 1. RULE — if the leg matches a frozen selection rule. This takes precedence
+    //    over the EV gate on purpose. The rule book is what actually gets bet,
+    //    and the two buckets need to be disjoint for "does the rule book beat the
+    //    gate?" to mean anything. Tagging a rule pick as `manual` (the old
+    //    behaviour) made rule ROI unmeasurable, and tagging it `model` would hide
+    //    it inside the gate's own numbers.
+    // 2. MODEL — passed every EV gate.
+    // 3. MANUAL — everything else.
+    // Evaluated from the fixture's own predictions, so it is independent of
+    // which filters happen to be active on screen when the bet is logged.
+    const fixturePreds = (db?.predictions ?? []).filter((p) => p.fixtureId === bet.fixtureId);
+    const isRulePick =
+      applicationsForLeg(ruleApplications(fixturePreds), bet.market, bet.selection, { activeOnly: true })
+        .length > 0;
     const isInSlips = (views?.slips ?? []).some(
       (s) => s.fixture.id === bet.fixtureId && s.market === bet.market && s.selection === bet.selection,
     );
-    const source = isInSlips ? "model" : "manual";
+    const source = isRulePick ? "rule" : isInSlips ? "model" : "manual";
     const withMeta = {
       ...bet,
       id: `bet-${Date.now()}`,

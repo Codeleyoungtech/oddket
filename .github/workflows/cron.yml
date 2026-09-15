@@ -30,6 +30,11 @@ on:
     # Daily Telegram digest — top flagged picks + accumulator tiers, pushed to
     # every subscribed chat (07:00 UTC = 08:00 WAT).
     - cron: "0 7 * * *"
+    # Corner RESULTS — pull real corner counts for finished, predicted fixtures
+    # so the corner scoreboard grades itself. Runs shortly after the evening
+    # settle. Costs API-Football credits only for fixtures we predicted and have
+    # not graded yet, so a quiet day costs nothing.
+    - cron: "45 21 * * *"
   workflow_dispatch:
     # Manual "Run workflow" button. Pick which pipeline to fire so settle can
     # be re-run on demand (e.g. after a match finishes) without waiting for a
@@ -43,6 +48,7 @@ on:
           - settle
           - closing
           - digest
+          - corners
         default: ingest
 
 jobs:
@@ -66,6 +72,7 @@ jobs:
             30\ 18\ *\ *\ *) echo "endpoint=closing" >> "$GITHUB_OUTPUT" ;;
             15\ 8\ *\ *\ *|15\ 21\ *\ *\ *) echo "endpoint=settle" >> "$GITHUB_OUTPUT" ;;
             0\ 7\ *\ *\ *) echo "endpoint=digest" >> "$GITHUB_OUTPUT" ;;
+            45\ 21\ *\ *\ *) echo "endpoint=corners" >> "$GITHUB_OUTPUT" ;;
             *) echo "endpoint=ingest" >> "$GITHUB_OUTPUT" ;;
           esac
 
@@ -91,6 +98,16 @@ jobs:
             echo "firing /api/telegram/digest"
             curl -sS -m 120 -X POST "$WORKER_URL/api/telegram/digest" \
               -H "x-predict-key: $PREDICT_SECRET"
+            echo
+          elif [ "$ENDPOINT" = "corners" ]; then
+            # Real corner counts for finished fixtures (no tennis prefix).
+            # Reports configured:false with a 501 when API_FOOTBALL_KEYS is
+            # unset — that is a no-op, not a failure.
+            echo "firing /api/corners/fetch-results"
+            curl -sS -m 240 -X POST "$WORKER_URL/api/corners/fetch-results" \
+              -H "x-predict-key: $PREDICT_SECRET" \
+              -H "Content-Type: application/json" \
+              --data '{"windowDays":3}'
             echo
           else
             for prefix in "" "tennis/"; do

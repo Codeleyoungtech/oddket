@@ -4,7 +4,9 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 25 — **the slips rule filter actually selects the rule now** (`applicationsForLeg` never filtered by rule id, so all 13 rules returned the same 214 legs) plus the filter lag: deferred/transitioned filtering and a 40-card render window. See §24.5.
+**Last updated:** Pass 26 — **the corner model was rebuilt honestly (§26).** Three measured defects: six odds features were hardcoded constants at serve time (`odds_overround` was the #2 feature), Elo was computed over the whole history and used as a feature for every past match, and the match total was a sum of two independent models whose **independence assumption is measurably false** (residual covariance −1.28). The deployed total was *worse than predicting the league average*. v6 fixes all three, adds a direct total model, feeds real odds, resolves team names in tiers (coverage 0 → 97 of 145 fixtures), and grades every stored line on a new `/corners` scoreboard. Bet tagging gained a third cohort, **`rule`**. See **`docs/CORNERS.md`** for the full report.
+
+**Previously:** Pass 25 — **the slips rule filter actually selects the rule now** (`applicationsForLeg` never filtered by rule id, so all 13 rules returned the same 214 legs) plus the filter lag: deferred/transitioned filtering and a 40-card render window. See §24.5.
 
 **Previously:** Pass 24 — **bet tagging persisted** (model vs manual vs untagged is now real, and the dashboards are model-only), Telegram **`/rules`**, plus a walk-forward mining experiment that answers "what new rules would look like" without adding any. See `docs/RULES.md` §7.
 
@@ -923,6 +925,176 @@ the change handler, which is what made the dropdown crawl. Two changes:
   fixtures as written.
 - The model still does not beat the closing line (§22.1) — unchanged and still the
   highest-value problem in the repo.
+
+---
+
+## 26. Pass 26 — the corner model was three defects deep, and bet tagging gained `rule`
+
+### 26.1 🔴 The corner model's reported metrics did not describe the deployed model
+
+Full report: **`docs/CORNERS.md`**. Reproduce with `model/scripts/diag_corners_v5.py`
+and `model/scripts/train_corners_v6.py`.
+
+The owner said *"I don't know if it is overfitting or something, something just
+ doesn't fit right with the corner model."* It was not overfitting. It was three
+specific, measurable defects — and one of them made the live model worse than a
+constant.
+
+| defect | measured cost |
+|---|---|
+| Six odds features real in training, **hardcoded constants at serve time** (`odds_overround` was the **#2 feature by gain**) | +0.099 corners home MAE; **0.81 corners** of systematic output shift |
+| **Elo look-ahead**: one final rating per team, used as a feature for every historical match (top-6 feature) | inflated every reported metric |
+| Total = sum of two models, `sigma_total = sqrt(σh²+σa²)` — **residual covariance is −1.283**, so σ was ~11% too wide | the total was **worse than the league average** (MAE 2.8054 vs 2.7113 naive) |
+
+That last row is the arithmetic behind "all totals is shite": the match total was
+not merely uninformative, it was **actively harmful**, and it was feeding live
+flagged bets.
+
+**v6 rebuild** (`train_corners_v6.py` / `predict_corners_v6.py`):
+
+* **Real odds at serve time.** `/api/fixtures/export` already carries best h2h +
+totals prices, so the six market features get real values in production.
+`ah_home` is dropped (never available live) and a `has_odds` flag records whether
+a book existed. **`build_features` is now one function shared by trainer and
+predictor** — v5 had two hand-copied implementations, which is how they drifted.
+* **Walk-forward Elo.** Updated inside the chronological walk; only the pre-match
+rating is a feature.
+* **A direct total model** (`corners_total_model.joblib`) with its own
+dispersion — no summing, no independence assumption.
+* **Heteroscedastic `sigma(mu)` fitted on out-of-fold residuals.** In-sample
+residuals understate real error (σ 1.85 in-sample vs 2.27 out-of-fold, 1.22×), so
+every line probability built on them was too extreme.
+
+**Honest before/after** (holdout 2022-02-24 → 2026-05-24, n=6,272), skill measured
+against the naive league-average baseline:
+
+| | naive MAE | v5 **as deployed** | skill | **v6** | skill |
+|---|---|---|---|---|---|
+| home corners | 2.3649 | 2.3384 | +1.1% | **2.2445** | **+5.1%** |
+| away corners | 2.0882 | 1.9978 | +4.3% | **1.9523** | **+6.5%** |
+| match total | 2.7113 | 2.8054 | **−3.5%** | **2.6888** | **+0.8%** |
+
+Line-probability calibration (holdout, out-of-fold σ): team home mean |error|
+**0.0285** (max 0.0390), team away **0.0263** (max 0.0525), match total **0.0135**
+(max 0.0286 — within 0.2pp at Over 10.5 and Over 11.5).
+
+**The honest caveat that should shape the UI:** the match total is *barely*
+predictable (R² 0.0129, +0.8% skill). Team lines carry the signal (R² ≈ 0.10,
++5.1% / +6.5%). And the team ladders still carry a **+3 to +5pp optimism on the
+low rungs** — the remaining known weakness, and the reason the safe band can call
+a line 75% that is closer to 71%.
+
+**A rejected idea, recorded:** a distribution-free empirical z-table was tried
+first and scored **2–3× worse** (mean |error| 0.070 vs 0.030) because it fit the
+in-sample tail shape and applied it out-of-sample. Keeping the parametric
+Negative Binomial and fixing σ was correct.
+
+### 26.2 Team-name resolution — coverage 0 → 97 of 145 fixtures
+
+v5 used a hand-written alias table covering only the original four leagues, so
+every club in the seven added leagues failed to match and was then scored from a
+**league-average default** — a confident-looking prediction built on no
+information. `model/scripts/corners_names.py` resolves in tiers
+(`exact → override → normalised → token-set → token-subset → fuzzy`), always
+reporting *how*, and **skips** rather than guesses.
+
+Getting the token-subset tier right took two attempts worth recording: an
+exact-token-set requirement missed `Newcastle United` → `Newcastle`, and a
+string-ratio floor (0.75) *also* rejected it because `newcastle united` vs
+`Newcastle` scores only 0.69 on `SequenceMatcher` purely because of the extra
+word. The correct guard is **ambiguity**, not similarity. Reserve sides are
+rejected outright so a B team can never fold onto its first team.
+
+**The remaining gap is data, not code.** `footballdata/` holds 12 seasons × 4
+leagues but only **3 seasons** (2012, 2020, 2021) for the seven second-tier
+leagues, so clubs promoted since 2021 have no history. Downloading more
+`E1/E2/E3/D2/SP2/I2/T1` seasons fixes it. J-League is out of scope and the model
+correctly declines.
+
+### 26.3 Corner results are no longer checked by hand
+
+`gradeCornerPredictions` (`packages/core/src/corners.ts`) scores **every stored
+line, both sides of each rung**, and `/corners` opens with a scoreboard: team vs
+total line accuracy and Brier, MAE per side, **80% band coverage** (should be
+~80%), and a claimed-vs-observed reliability table. Nothing is filtered to
+"picks", so the scoreboard cannot be improved by hiding bad lines.
+
+`worker/migrations/0008_corner_v6.sql` adds `total_corners`,
+`total_line_probs`, `sigma_home/away/total`, `has_odds`, `league` to
+`corners_predictions`, plus a **`corner_outcomes`** table.
+
+**The app no longer recomputes the model's numbers.** The predictor ships its
+line probabilities and sigmas and the worker stores them verbatim. The old
+TypeScript constants (2.849 / 2.456) did not even match the trainer's own
+metadata (2.832 / 2.4585) — what was on screen was not what the model produced.
+
+`worker/src/corners/api-football.ts` is the API-Football client for real corner
+counts: a **round-robin key pool** over comma-separated `API_FOOTBALL_KEYS` that
+puts a key on cooldown on 429/403 and retries the next one, so one exhausted key
+never fails a run. Cron gained a `corners` endpoint (21:45 UTC daily).
+
+### 26.4 Bet tagging gained a third cohort: `rule`
+
+`BetSource` is now `"model" | "rule" | "manual"`. This closes a real measurement
+hole: logging a rule pick used to tag it **manual**, so the tracked ROI/CLV could
+never answer the only question that matters about the rule book — *does it beat
+the EV gate?*
+
+**Rule takes precedence over the gate, deliberately.** The two cohorts are
+**disjoint** so they can be compared: `rule` = matched a frozen rule, `model` =
+cleared the gate and matched no rule, `manual` = everything else. Evaluated from
+the fixture's own predictions, so it does not depend on which filters happen to
+be on screen. `Dashboard` gained `ruleSummary`, `ruleClvSeries`,
+`ruleBankrollSeries` and `ruleByMarket`; the headline series remain model-only.
+
+### 26.5 One more rule? The search says not yet
+
+`model/scripts/mine_rules.py` (bitset search — the naive conjunction sweep is 26M
+combinations and does not finish) re-ran the walk-forward mining on **124**
+settled fixtures: mine on the oldest 99, test on the newest 25.
+
+| | |
+|---|---|
+| Candidate conditions | 6,516 |
+| Rules hitting **100% on batch 1** (n ≥ 5) | **2,003** |
+| Also held on batch 2 | 814 (**40.6%**) |
+
+**40.6% of search-generated "perfect" rules survived a fresh 25 fixtures.** Two
+in five would be artifacts, and it would look like a great book on batch 1.
+
+One candidate is recorded as a **watch-list entry only** (`docs/RULES.md` §7b):
+**C6** `D − O25 ≤ −39.68pp → Over 1.5`, batch 1 **8/8**, batch 2 **3/3**,
+knife-edge ⚠️. It reads sensibly (draw priced unlikely, goals priced likely) and
+is the mirror of R2 — but batch 2 gave it three fixtures, and a neighbouring
+threshold a fifth of a percentage point away is the same rule at a different
+knife edge. **Nothing was added to `rules.ts`.**
+
+### Verification (Pass 26)
+
+* core / web / worker typechecks clean; production build green for the web app
+* **worker e2e 134/134** — new `[17]` rule-cohort section (tag round-trips, the
+rule bucket moves by exactly 1, the model bucket does **not** move, `ruleClvSeries`
+and `ruleByMarket` exist) and `[18]` corner-v6 section (sigmas/`hasOdds`/`league`
+stored, a model line probability of 0.91 survives ingest rather than being
+recomputed, total lines stored, outcome round-trip, key pool reports
+`configured:false` instead of crashing, malformed payload rejected)
+* migration `0008` added to the e2e list
+* corner coverage verified against the live feed: **97 of 145** fixtures across 11 leagues, all 97 with real odds
+* `predict_corners_v6.py` verified end-to-end against live fixtures
+
+### Still open (Pass 26)
+
+* **`API_FOOTBALL_KEYS` is not configured.** Set it on the worker (comma- or
+whitespace-separated). Without it `POST /api/corners/fetch-results` returns
+`501 {configured:false}` and the corner scoreboard stays empty — nothing else
+breaks. Confirm `/fixtures/statistics` is in the plan; that is where corner
+counts live.
+* **Corner rule book not built.** It needs graded corner history, which needs the
+keys above to run for a while. Same discipline as the football book.
+* **Team-line low-rung optimism (+3 to +5pp)** is the next real modelling win.
+* **Match totals are barely predictable** (R² 0.013) — size expectations to that.
+* **More second-tier seasons** in `footballdata/` lift both name coverage and
+history depth (§26.2).
 
 ---
 

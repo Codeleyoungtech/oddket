@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import numpy as np  # noqa: E402
 
+from corners_names import build_index  # noqa: E402
 from features import TeamState, build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
 
 # Map The Odds API team names -> football-data.co.uk names.
@@ -134,15 +135,29 @@ def _ascii(name: str) -> str:
     return unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
 
 
-def normalize(name: str, _fuzzy_cache: dict | None = None) -> str:
+def normalize(name: str) -> str:
+    """Curated aliases only: an exact NAME_MAP hit, then a trailing club-type suffix.
+
+    Deliberately NO fuzzy matching here. The fuzzy fallback that used to live in
+    this function ran at a 0.6 ratio, which is loose enough to map *different
+    clubs* onto each other. Measured against the live fixture list it resolved
+    Millwall -> Milan, Cesena FC -> Chelsea, Cardiff City / Lincoln City /
+    Salford City -> Man City, Oxford / Cambridge / Rotherham United -> Man
+    United, Barnsley -> Burnley, Palermo -> Parma, Vicenza -> Venezia,
+    Samsunspor -> Sampdoria, and `Real Sociedad B` -> the first team. Every one
+    of those published a confident prediction built from another club's Elo and
+    form.
+
+    Fuzzy resolution is not gone — it moved to `resolve_team` below, which uses
+    the tiered, ambiguity-guarded `TeamIndex` the corner model already relies on:
+    token-subset matching, an explicit reserve-side guard, and a 0.86 ratio floor.
+    """
     if name in NAME_MAP:
         return NAME_MAP[name]
     n = _ascii(name)
     if n in NAME_MAP:
         return NAME_MAP[n]
-    # Fuzzy fallback: strip common suffixes (FC, CF, City, United, etc.)
-    # and try again — catches "Deportivo La Coruña" -> "Deportivo La Coruna"
-    # -> "La Coruna" variants.
+    # Strip a trailing club-type word and retry the curated table.
     stripped = n
     for suffix in (" CF", " FC", " United", " City", " Town", " BC",
                    " AC", " SC", " 1913", " 1907", " 05"):
@@ -150,13 +165,22 @@ def normalize(name: str, _fuzzy_cache: dict | None = None) -> str:
             stripped = stripped[:-len(suffix)].strip()
             if stripped in NAME_MAP:
                 return NAME_MAP[stripped]
-    # If we have a fuzzy cache (built from training data), try close matches
-    if _fuzzy_cache is not None:
-        import difflib
-        matches = difflib.get_close_matches(n, list(_fuzzy_cache.keys()), n=1, cutoff=0.6)
-        if matches:
-            return _fuzzy_cache[matches[0]]
     return n
+
+
+def resolve_team(name: str, index) -> str:
+    """Feed spelling -> training-data spelling, or the input unchanged.
+
+    Curated aliases first (they are hand-checked), then the tiered resolver.
+    Returning the input unchanged means "no history", which the caller already
+    handles by scoring on a neutral prior. That is the honest outcome, and
+    strictly better than a confident prediction built from the wrong club.
+    """
+    base = normalize(name)
+    if base in index.exact:
+        return base
+    resolved, _method = index.resolve(name)
+    return resolved or base
 
 
 def logit(p: float) -> float:
@@ -222,13 +246,9 @@ def main() -> int:
     history = load_matches_dict(hist_path)
     states = build_team_states(history)
 
-    # Build fuzzy lookup cache: normalizedName -> training team name.
-    # Used by normalize() as a fallback for teams not in NAME_MAP.
-    _fuzzy_cache: dict[str, str] = {}
-    for team_name in states:
-        norm = normalize(team_name)
-        if norm not in _fuzzy_cache:
-            _fuzzy_cache[norm] = team_name
+    # Name resolution index over the training set. Replaces the old 0.6-ratio
+    # fuzzy cache, which mapped unrelated clubs onto each other (see normalize).
+    _index = build_index({t: "" for t in states})
 
     # Neutral prior for teams with no history. IMPORTANT: the field's Elo has
     # drifted far below START_RATING (1500) — the median real team sits around
@@ -252,7 +272,7 @@ def main() -> int:
     rows = []
     unknown = 0
     for f in fixtures:
-        home, away = normalize(f.get("home", ""), _fuzzy_cache), normalize(f.get("away", ""), _fuzzy_cache)
+        home, away = resolve_team(f.get("home", ""), _index), resolve_team(f.get("away", ""), _index)
         # Unknown teams get a FRESH field-average TeamState (median Elo, form
         # 0.5, avg goals 1.3/1.2, no H2H) — scored honestly on the prior, never
         # skipped. This is what guarantees every fixture gets a prediction,

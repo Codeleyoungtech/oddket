@@ -43,6 +43,15 @@ jobs:
         working-directory: model
         run: pip install -r requirements.txt
 
+      - name: Check name resolution
+        # Fails the run instead of silently dropping fixtures. Two failure modes
+        # this catches, both of which have happened: a feed spelling that no
+        # longer resolves (fixture vanishes from every page), and a spelling that
+        # resolves to a DIFFERENT club (a confident prediction built from the
+        # wrong team's form). Cheap — no model is loaded.
+        working-directory: model
+        run: python3 scripts/check_names.py
+
       - name: Fetch fixtures + best odds from the worker
         env:
           WORKER_URL: ${{ secrets.ODDKET_WORKER_URL }}

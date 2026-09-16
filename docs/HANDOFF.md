@@ -1275,6 +1275,132 @@ cup-specific data or explicit cup handling — not a resolution fallback.
 
 ---
 
+## 29. Pass 29 — three name-resolution defects: fixtures were missing, and some
+## were being scored as the WRONG CLUB
+
+Pass 28's "still open" blamed the 12 unresolved fixtures on **cup ties**. That was
+wrong, and one command disproved it: those fixtures carry ordinary league labels
+(Championship, EPL, League 1, La Liga 2, Turkey Super Lig). They were plain
+name-resolution failures in leagues the model trains on. Three defects, all
+silent, all fixed here.
+
+### 29.1 The subset guard used token LENGTH as a proxy for distinctiveness
+
+`_subset_candidates` required the smaller token set to hold a token of 5+
+characters. Its own docstring says the intent was to stop a bare club-type word
+(`united`, `real`, `city`) bridging two clubs. Length is the wrong instrument, and
+it failed in both directions:
+
+* it **rejected** `Hull` (4), `York` (4) and `West Ham` (4/3) — unmistakable club
+  names, with their clubs sitting in the index the entire time;
+* it **accepted** any long generic word.
+
+Replaced with `_has_identifying_token`: the smaller set needs at least one token
+that is not a club-type word (`GENERIC_TOKENS`) and is 3+ characters. This is
+strictly *tighter* on the case the guard exists for — a bare `{united}` passed the
+length test and no longer passes this one.
+
+### 29.2 football-data.co.uk shortens club names mid-word
+
+`peterborough` → `peterboro`, `wednesday` → `weds`, `bromwich` → `brom`. Added to
+`ABBREV` at the **word** level rather than as per-pair overrides, so every
+spelling of the club benefits. Genuinely irregular pairs went to `OVERRIDES`:
+QPR, `Sp Gijon`, `Buyuksehyr`, `Amedspor`.
+
+Also fixed: `OVERRIDES` was keyed on `name.lower()`, so an accented spelling
+(`Sporting Gijón`) could never hit an unaccented key. A folded lookup now follows
+the literal one — it can only add matches, never remove.
+
+### 29.3 A reserve side could fold onto its parent club
+
+`Celta Fortuna` (Segunda) resolved to `Celta` (La Liga) — a B team scored as the
+first team. `fortuna` joined `RESERVE_MARKERS`, and an explicit override maps it to
+`Celta B`, which is what the history file calls that squad. Verified
+`Fortuna Dusseldorf` is unaffected: it is an exact index hit, so it resolves a tier
+earlier and never reaches this guard.
+
+**Corner coverage: 134 → 145 fixtures.** The 10 remaining skips are all J-League —
+a league with no training data, correctly declined.
+
+### 29.4 The worse one — predict.py was scoring clubs as OTHER clubs
+
+`predict.py` (h2h + totals) carried its own name resolution, ending in a
+`difflib.get_close_matches(cutoff=0.6)` fallback. 0.6 is loose enough to map
+*different clubs* onto each other. Measured against the live fixture list:
+
+| feed name | was resolved to | so it published |
+|---|---|---|
+| Millwall | **Milan** | Milan's Elo and form |
+| Cesena FC | **Chelsea** | Chelsea's |
+| Cardiff City, Lincoln City, Salford City, Swansea City | **Man City** | Man City's |
+| Oxford United, Cambridge United, Rotherham United | **Man United** | Man United's |
+| Barnsley, Barnet | **Burnley** | Burnley's |
+| Palermo | **Parma** | Parma's |
+| Vicenza | **Venezia** | |
+| Samsunspor | **Sampdoria** | |
+| Modena | **Monza** | |
+| Portsmouth | **Bournemouth** | |
+| Northampton Town | **Southampton** | |
+| Sheffield Wednesday | **Sheffield United** | a different club in the same city |
+| Real Sociedad **B** | **Sociedad** | the reserve side as the first team |
+
+21 wrong-club mappings on a single fixture list. That fuzzy tier is gone;
+`resolve_team` now uses the same tiered `TeamIndex`. Cost of the fix: those
+fixtures fall to the neutral prior instead of a confident wrong answer, and **2
+correct matches were gained** (`Sheffield United` → `Sheffield Utd`, `Celta
+Fortuna` → `Celta`) with **0 correct matches lost**.
+
+A guess replaced by an honest "no history" is the entire point. Live slips change
+as a result.
+
+### 29.5 predict_micro.py had the prior bug predict.py already documented
+
+`predict_micro.py` (O1.5 + team-to-score) scored clubs with no history on a bare
+`TeamState()` — `START_RATING = 1500`. predict.py's own comment records the
+consequence: the field's Elo has drifted to a median near **939**, so 1500 makes a
+club with no data look stronger than the best real team. Every fixture in a league
+micro never trained on was scored as two elite sides. It now takes the same
+field-median prior and the same resolver. `predict_dc12` derives from h2h, so it
+inherits the fix without its own change.
+
+### 29.6 The guard against this coming back
+
+`model/scripts/check_names.py` asserts three properties and runs in
+`.github/workflows/predict.yml` **before** any prediction:
+
+1. every club in the history resolves to itself (**319/319**);
+2. 24 hand-checked feed spellings resolve to the right club;
+3. 20 "must never resolve to this other club" pairs — §29.4's table, encoded.
+
+**363 assertions.** It fails the workflow rather than silently dropping a fixture
+or publishing another club's numbers.
+
+### Verification (Pass 29)
+
+* `check_names.py` — **363/363** assertions pass
+* corner predictor — **145 predictions**, 10 skipped (all J-League), 145 with odds
+* corner resolution diff vs pre-fix — **0 mapping changes** across the 134 fixtures
+  that resolved both times; the +11 are purely additions
+* h2h 155/155 → 465 predictions · ou 310 · micro 930 · dc12 155 — all files written
+* `pnpm typecheck` clean · **139/139** worker e2e
+
+### Still open (Pass 29)
+
+* **h2h still trains on 4 leagues.** `historical.json` is 10,122 matches over
+  EPL/La Liga/Bundesliga/Serie A while the live feed covers 11, so every fixture
+  in the other 7 leagues is scored on the field-median prior rather than on club
+  data. The 50,935-match `footballdata/` set already in the repo is the fix — but
+  it is a retrain that moves every h2h number and must be validated against the
+  closing line, not assumed. Deliberately **not** done in this pass.
+* **Neutral-prior predictions are not labelled in the UI.** They are honest
+  internally (the pipeline prints each one) but the slips page shows them like any
+  other prediction. Worth a flag on the card.
+* **Corner rule book** still needs graded corner history to accumulate.
+* **Cup ties** remain declined, and genuinely need cup-aware training — the league
+  one-hot would otherwise be all-zero, which the model has never seen.
+
+---
+
 ## 11. Tennis build — scope blockers + pivot (Pass 2)
 
 The Tennis PRD/Build-Prompt called for **ATP Challenger** tennis with CLV
@@ -1768,3 +1894,68 @@ run extra manual ingests on the same day as the scheduled ones, or the daily quo
    - **In-card Quick Settle:** Direct score inputs inside the details drawer on `/bets`.
 4. **Automated Monthly Retraining:**
    - GitHub Actions workflow runs monthly on the 1st (`.github/workflows/retrain-monthly.yml`) to fetch fresh historical data, retrain XGBoost/sklearn models, generate calibrated predictions, and ingest into the Cloudflare Worker DB automatically.
+
+---
+
+## 30. Where tennis and basketball actually stand (Pass 29 measurement)
+
+### Tennis — already shipped, and that is the problem it has
+
+Tennis is **not** a thing to build next. It is wired end to end already:
+`predict-tennis` job in `predict.yml`, `/api/tennis/fixtures/export`,
+`/api/tennis/ingest`, its own 5 isolated tables (`0001_tennis.sql`), settle logic
+that reads `tennis_matches.winner`, and a ⚽/🎾 selector in the web nav.
+
+What it does **not** have is a verdict. From `output/tennis_backtest.json`
+(`tennis-xgb-v1`):
+
+| holdout | value |
+|---|---|
+| bets | 1,347 |
+| win rate | 40.8% |
+| ROI | **−3.52%** |
+| avg edge at entry | 5.68% |
+| **CLV measured** | **0** |
+
+`nClvMeasured = 0` is the number that matters. ROI cannot separate "the model has
+no edge" from "the model has an edge and got unlucky in one season"; the closing
+line can, and tennis has never measured one. So the next move on tennis is **not
+more modelling** — it is to let the paper trade produce graded bets and measure
+CLV against the closing price. Until that number exists, any "improvement" to the
+tennis model is unfalsifiable.
+
+Gate to apply when the CLV data lands, same as football §22.1: **beat the closing
+line or the model does not get trusted.** Tennis main tour is the sharpest,
+best-modelled market on the board (recorded in §11 before any of it was built),
+so expect the honest answer to be "thin to nothing" — the build's job was always
+to find out, not to assume.
+
+### Basketball — greenfield, and the data comes first
+
+There is **no basketball code in the repo** (no model, no tables, no workflow, and
+`BASKETBALL`/`NBA` appear nowhere outside the venv). Nothing to fix — the question
+is whether the data exists to do it properly.
+
+Order of work, and it inverts the football order deliberately:
+
+1. **Confirm the input before writing a model.** Two unknowns, both cheap to
+   settle and both fatal if assumed: (a) does The Odds API's free tier carry the
+   basketball keys we would need, in the same per-league shape football uses, with
+   closing lines; (b) is there a free, scriptable historical results+odds source of
+   the `football-data.co.uk` kind. If either is missing, basketball stalls at the
+   same wall §11 hit for Challenger tennis — and that wall is worth finding out
+   about on day one, not after the model is trained.
+2. **Pick the market for the right reason.** The owner's goal is markets bookmakers
+   price softly. NBA main markets are among the most efficiently priced anywhere;
+   the structurally interesting ones are the same shape that made corners
+   worthwhile — niche leagues and secondary markets.
+3. **Train with the existing discipline**, which is already generic: time-ordered
+   walk-forward split, Platt calibration, odds-as-feature, band sweep, and a
+   before/after published rather than claimed.
+4. **Gate on the closing line**, as above. A basketball model that cannot beat the
+   close is a model that should not be built — and the football pipeline now has
+   the machinery to answer that honestly.
+
+The one thing **not** to do is what the owner floated earlier: run basketball "like
+football" and hope a 70% hit rate appears. 70% at short prices is not edge
+(§22.9). The order above exists so that is decided by measurement.

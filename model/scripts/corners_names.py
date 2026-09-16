@@ -41,7 +41,13 @@ SUFFIX_TOKENS = {
 # Abbreviations football-data.co.uk uses that a naive strip would break.
 # Tokens that mark a reserve / age-group side. Sharing every other token with the
 # parent club must not be enough to match.
-RESERVE_MARKERS = {"b", "ii", "iii", "castilla", "reserves", "reserve", "u19", "u21", "u23"}
+# `fortuna` joined this list after a live fixture (Segunda's `Celta Fortuna`) was
+# resolved onto La Liga's `Celta` — the first team. It is the reserve side's
+# current name (it used to be `Celta B`), so without the marker the subset tier
+# happily folded a B team onto its parent. `Fortuna Dusseldorf` is unaffected:
+# it is an exact index hit, so it resolves at the first tier before any of this
+# matters.
+RESERVE_MARKERS = {"b", "ii", "iii", "castilla", "reserves", "reserve", "u19", "u21", "u23", "fortuna"}
 
 ABBREV = {
     "man": "manchester",
@@ -57,6 +63,13 @@ ABBREV = {
     "koln": "cologne",
     "ein": "eintracht",
     "bay": "bayern",
+    # football-data.co.uk shortens these to fit its fixed-width columns, so the
+    # feed's spelling and the data's spelling diverge mid-word. Normalising the
+    # WORD rather than the pair means every spelling of the club benefits, not
+    # just the one that happened to appear in a fixture list.
+    "peterborough": "peterboro",
+    "wednesday": "weds",
+    "bromwich": "brom",
     "vallecano": "rayo vallecano",
     "sociedad": "real sociedad",
     "betis": "real betis",
@@ -138,6 +151,38 @@ OVERRIDES = {
     "como 1907": "Como",
     "us salernitana": "Salernitana",
     "us frosinone": "Frosinone",
+    # No token relationship at all between these two spellings, so nothing below
+    # this table can bridge them.
+    "queens park rangers": "QPR",
+    "qpr": "QPR",
+    "sporting gijon": "Sp Gijon",
+    "sporting gijón": "Sp Gijon",
+    "sp gijon": "Sp Gijon",
+    "basaksehir": "Buyuksehyr",
+    "başakşehir": "Buyuksehyr",
+    "istanbul basaksehir": "Buyuksehyr",
+    "buyuksehyr": "Buyuksehyr",
+    "amed": "Amedspor",
+    "amedspor": "Amedspor",
+    "amed sk": "Amedspor",
+    # The reserve side, not the first team. `Celta B` is what the history file
+    # calls it; the feed has adopted the club's newer name.
+    "celta fortuna": "Celta B",
+}
+
+# Tokens that describe what KIND of club it is rather than WHICH club it is.
+#
+# These back the subset tier's identifying-token rule below. The rule used to be
+# "the smaller token set must contain a token of 5+ characters", which is a
+# length proxy for "distinctive" — and the proxy is wrong in both directions. It
+# rejected `Hull`, `York` and `West Ham` (4 and 3 characters, and unmistakable to
+# any human) while happily accepting any long generic word. Measured cost of the
+# old rule: `Hull City`, `West Ham United` and `York City` were skipped as
+# unresolvable with their clubs sitting in the index the whole time.
+GENERIC_TOKENS = {
+    "united", "city", "town", "real", "sporting", "atletico", "athletic",
+    "club", "rovers", "wanderers", "county", "albion", "olympique",
+    "olympic", "deportivo", "borussia", "inter",
 }
 
 
@@ -205,6 +250,12 @@ class TeamIndex:
         # club out (`Newcastle United`, `Hull City`, `Coventry City`). Requiring an
         # exact token-set equality missed every one of those — which is why 88 of
         # 145 fixtures were being skipped.
+        # Folded override, tried after the literal one. The literal lookup above
+        # compares `name.lower()`, so an accented spelling (`Sporting Gijón`) used
+        # to miss a table keyed on the unaccented form. Only adds matches.
+        if f in OVERRIDES and OVERRIDES[f] in self.exact:
+            return OVERRIDES[f], "override"
+
         sub = self._subset_candidates(tk)
         if sub:
             # A unique candidate is accepted outright. A string-ratio floor is the
@@ -243,8 +294,8 @@ class TeamIndex:
         Two guards, both aimed at the ways this could pick the wrong club:
 
         * a single generic token (`united`, `real`, `city`) must never be enough
-          to bridge two clubs, so the smaller token set needs one token of five
-          characters or more;
+          to bridge two clubs, so the smaller token set must contain at least one
+          token that actually names a club (see `GENERIC_TOKENS`);
         * reserve/age-group sides share every token with their parent club
           (`Barcelona B`, `Real Madrid Castilla`), so any extra reserve marker
           disqualifies the match rather than folding a B team onto the first team.
@@ -261,12 +312,26 @@ class TeamIndex:
                 smaller, extra = tk, other - tk
             else:
                 continue
-            if max((len(t) for t in smaller), default=0) < 5:
+            if not _has_identifying_token(smaller):
                 continue
             if extra & RESERVE_MARKERS:
                 continue
             out.append(cand)
         return out
+
+
+def _has_identifying_token(tk: frozenset[str]) -> bool:
+    """True if at least one token actually names a club.
+
+    A bare club-type word must never be enough: `{united}` on its own would
+    bridge `Manchester United` to `Newcastle United`. Any token that is not a
+    club-type word and is at least three characters does the job.
+
+    This is deliberately a different question from "is the token long", which is
+    what it replaced. `Hull` is four characters and identifies a club; `united`
+    is six and identifies nothing.
+    """
+    return any(len(t) >= 3 and t not in GENERIC_TOKENS for t in tk)
 
 
 def _ratio(a: str, b: str) -> float:

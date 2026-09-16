@@ -60,13 +60,6 @@ def reliability_interval(p: float, bands: list | None) -> tuple[float, float]:
     return max(0.0, p - FALLBACK_HALF_WIDTH), min(1.0, p + FALLBACK_HALF_WIDTH)
 
 
-def normalize_name(name: str) -> str:
-    if not name:
-        return ""
-    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
-    return NAME_MAP.get(name, name)
-
-
 def load_history() -> tuple:
     hist_path = os.path.join(ROOT, "data", "historical.json")
     with open(hist_path) as f:
@@ -115,22 +108,49 @@ def main() -> int:
     # Compute pair features ONCE per fixture; each market model consumes the
     # same feature vector (the ou_odds features come from the fixture's own
     # current totals odds — leakage-free, known before kickoff).
-    from predict import fill_odds_features  # noqa: E402
+    from predict import fill_odds_features, resolve_team  # noqa: E402
+    from corners_names import build_index  # noqa: E402
+
+    # Two fixes predict.py already needed, applied here for the same reasons:
+    #
+    # * Name resolution goes through the tiered TeamIndex instead of an exact
+    #   NAME_MAP hit, so a spelling variant (`Newcastle United`, `Girona FC`)
+    #   resolves to the club that is genuinely in the history.
+    # * Clubs with no history get a FIELD-MEDIAN prior, not `TeamState()`. A bare
+    #   TeamState carries START_RATING (1500), but the field's Elo has drifted to
+    #   a median near 940 — so the default made a club with no data look stronger
+    #   than the best real team, and every fixture in a league this model never
+    #   trained on was scored as two elite sides.
+    _index = build_index({t: "" for t in states})
+    _ratings = sorted(s.rating for s in states.values())
+    _ratings_home = sorted(s.rating_home for s in states.values())
+    _ratings_away = sorted(s.rating_away for s in states.values())
+    _mid = len(states) // 2
+    prior_elo, prior_home, prior_away = _ratings[_mid], _ratings_home[_mid], _ratings_away[_mid]
+    print(f"[predict] neutral prior Elo = {prior_elo:.0f} "
+          f"(home {prior_home:.0f} / away {prior_away:.0f}), field median", file=sys.stderr)
+
+    def _fresh_prior() -> TeamState:
+        st = TeamState()
+        st.rating = prior_elo
+        st.rating_home = prior_home
+        st.rating_away = prior_away
+        return st
 
     predictions = []
     skipped = 0
     for fx in fixtures:
-        home = normalize_name(fx.get("homeTeam") or fx.get("home", ""))
-        away = normalize_name(fx.get("awayTeam") or fx.get("away", ""))
+        home = resolve_team(fx.get("homeTeam") or fx.get("home", ""), _index)
+        away = resolve_team(fx.get("awayTeam") or fx.get("away", ""), _index)
         if not home or not away:
             skipped += 1
             continue
         hs = states.get(home)
         as_ = states.get(away)
         if hs is None or as_ is None:
-            print(f"  [warn] no history for {home} or {away} — using defaults", file=sys.stderr)
-            hs = hs or TeamState()
-            as_ = as_ or TeamState()
+            print(f"  [warn] no history for {home} or {away} — scoring on neutral prior", file=sys.stderr)
+            hs = hs or _fresh_prior()
+            as_ = as_ or _fresh_prior()
         ts = int(fx.get("commenceTime") or 0)
         feats = compute_pair_features(hs, as_, matches, home, away, ts)
         odds = fx.get("odds") or {}

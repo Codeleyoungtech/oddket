@@ -800,6 +800,14 @@ export default function SlipsPage() {
                                       {fmtSignedPct(leg.edge)} EV
                                     </span>
                                   )}
+                                  {leg.priorOnly && (
+                                    <span
+                                      title="No club history for these teams. The model fell back to a league-average prior, so this probability mostly echoes the bookmaker's own odds (an input to the model) rather than being a view on this match. Real number, no information."
+                                      className="inline-flex items-center rounded-full border border-slate-500/40 bg-slate-500/15 px-2 py-0.5 text-[11px] font-bold text-slate-300"
+                                    >
+                                      ⚠ No club data
+                                    </span>
+                                  )}
                                   {rulePickFor(leg).map((a) => (
                                     <span
                                       key={a.ruleId}

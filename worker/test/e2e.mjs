@@ -14,13 +14,21 @@
  */
 
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql", "0006_telegram.sql", "0007_bet_source.sql", "0008_corner_v6.sql", "0009_corner_validation.sql"];
+// Read the migrations directory instead of listing files by hand. The hand-kept
+// list silently fell behind: a migration missing from it means the test's local
+// schema lacks a column the worker writes, and the failure surfaces nowhere near
+// the cause (it showed up as "found 0 distinct fixtures for parlay test", several
+// sections away from the broken INSERT). Alphabetical order is the correct order
+// here — the zero-padded prefixes sort exactly as they must apply.
+const MIGRATIONS = readdirSync(join(__dirname, "..", "migrations"))
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -318,6 +326,24 @@ console.log("\n[10] predictions ingest");
   check("empty rejected (400)", bad.status === 400);
   const ps = await api("GET", "/api/predictions");
   check("prediction present", ps.json.some((p) => p.modelVersion === "e2e-test"));
+}
+
+console.log("\n[10b] prior-only flag (a prediction scored with no club history)");
+{
+  const db0 = await api("GET", "/api/db");
+  const fixture = db0.json.fixtures[1] ?? db0.json.fixtures[0];
+  const seeded = db0.json.predictions.find(
+    (p) => p.fixtureId === fixture.id && p.market === "h2h" && p.selection === "home",
+  );
+  // Must be a real boolean, not undefined — the UI branches on it.
+  check("unflagged predictions read false, not undefined", seeded ? seeded.priorOnly === false : true);
+  const r = await api("POST", "/api/predictions/ingest", [
+    { fixtureId: fixture.id, market: "h2h", selection: "home", probability: 0.4, confidenceLow: 0.3, confidenceHigh: 0.5, modelVersion: "e2e-prior", priorOnly: true },
+  ]);
+  check("ingest accepts priorOnly", r.status === 200 && r.json?.ingested === 1, JSON.stringify(r.json));
+  const db1 = await api("GET", "/api/db");
+  const flagged = db1.json.predictions.find((p) => p.modelVersion === "e2e-prior");
+  check("priorOnly round-trips through /api/db", flagged?.priorOnly === true, JSON.stringify(flagged));
 }
 
 console.log("\n[11] manual trigger routes (demo no-op without key)");

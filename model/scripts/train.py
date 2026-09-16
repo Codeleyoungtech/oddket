@@ -33,6 +33,7 @@ from sklearn.calibration import CalibratedClassifierCV  # noqa: E402
 
 from features import (  # noqa: E402
     FEATURE_GROUPS,
+    history_path,
     load_matches_dict,
 )
 
@@ -330,7 +331,7 @@ def main() -> int:
         return 1
     features = [f for g in groups for f in FEATURE_GROUPS[g]]
 
-    path = args.data or os.path.join(ROOT, "data", "historical.json")
+    path = args.data or history_path()
     if not os.path.exists(path):
         print(f"[train] data not found at {path} — run fetch_historical.py first", file=sys.stderr)
         return 1
@@ -399,7 +400,11 @@ def main() -> int:
     meta = {
         "version": version,
         "market": market,
-        "source": "football-data.co.uk EPL/Bundesliga/LaLiga/SerieA 2019-2026",
+        # Derived, not hardcoded — the previous literal still claimed four
+        # leagues after the training set had grown to eleven, so the shipped
+        # meta described a model that no longer existed.
+        "source": "football-data.co.uk — "
+                  + ", ".join(sorted({m.league for m in matches})),
         "feature_groups": groups,
         "features": features,
         "n_train": len(train_m),

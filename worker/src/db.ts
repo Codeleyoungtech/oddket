@@ -129,6 +129,7 @@ interface PredictionRow {
   confidence_high: number;
   model_version: string;
   created_at: number;
+  prior_only?: number;
 }
 
 function toPrediction(r: PredictionRow): Prediction {
@@ -142,6 +143,7 @@ function toPrediction(r: PredictionRow): Prediction {
     confidenceHigh: r.confidence_high,
     modelVersion: r.model_version,
     createdAt: r.created_at,
+    priorOnly: Boolean(r.prior_only),
   };
 }
 
@@ -652,15 +654,15 @@ export async function upsertOdds(db: D1Database, rows: OddsSnapshot[]): Promise<
 
 export async function upsertPredictions(db: D1Database, rows: Prediction[]): Promise<void> {
   const stmt = db.prepare(
-    `INSERT INTO predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+    `INSERT INTO predictions (id, fixture_id, market, selection, probability, confidence_low, confidence_high, model_version, created_at, prior_only)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
      ON CONFLICT(id) DO UPDATE SET
        probability = excluded.probability, confidence_low = excluded.confidence_low,
        confidence_high = excluded.confidence_high, model_version = excluded.model_version,
-       created_at = excluded.created_at`,
+       created_at = excluded.created_at, prior_only = excluded.prior_only`,
   );
   const batch = rows.map((p) =>
-    stmt.bind(p.id, p.fixtureId, p.market, p.selection, p.probability, p.confidenceLow, p.confidenceHigh, p.modelVersion, p.createdAt),
+    stmt.bind(p.id, p.fixtureId, p.market, p.selection, p.probability, p.confidenceLow, p.confidenceHigh, p.modelVersion, p.createdAt, p.priorOnly ? 1 : 0),
   );
   if (batch.length) await batchExecute(db, batch);
 }

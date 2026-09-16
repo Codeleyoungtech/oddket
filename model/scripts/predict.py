@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import numpy as np  # noqa: E402
 
 from corners_names import build_index  # noqa: E402
-from features import TeamState, build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
+from features import TeamState, build_team_states, compute_pair_features, history_path, load_matches_dict  # noqa: E402
 
 # Map The Odds API team names -> football-data.co.uk names.
 NAME_MAP = {
@@ -220,7 +220,7 @@ def main() -> int:
     stem = "h2h" if market == "h2h" else "ou"
     model_path = os.path.join(ROOT, "models", f"{stem}_model.joblib")
     cal_path = os.path.join(ROOT, "models", f"{stem}_calibrator.joblib")
-    hist_path = os.path.join(ROOT, "data", "historical.json")
+    hist_path = history_path()
     meta_path = os.path.join(ROOT, "models", "model_meta.json" if market == "h2h" else "model_meta_ou.json")
     if not os.path.exists(model_path) or not os.path.exists(cal_path):
         print(f"[predict] no trained model — run train.py first", file=sys.stderr)
@@ -279,7 +279,12 @@ def main() -> int:
         # including promoted sides with no history in the training leagues.
         hs = states.get(home)
         as_ = states.get(away)
-        if hs is None or as_ is None:
+        # `prior_only` rides along to the worker and the UI. The prediction is
+        # still produced (better a labelled prior than a blank page), but a row
+        # scored entirely from the field-median prior is mostly a restatement of
+        # the bookmaker's own odds, so it must not look like the others.
+        prior_only = hs is None or as_ is None
+        if prior_only:
             unknown += 1
             print(f"[predict] no history for '{f.get('home')}' vs '{f.get('away')}' — scoring on neutral prior", file=sys.stderr)
             hs = hs or _fresh_prior()
@@ -291,13 +296,13 @@ def main() -> int:
             print(f"[predict] no totals odds for '{f.get('home')}' vs '{f.get('away')}' — skipping (ou)", file=sys.stderr)
             continue
         fill_odds_features(f, features, odds, market)
-        rows.append((f, features))
+        rows.append((f, features, prior_only))
 
     if not rows:
         print("[predict] no predictable fixtures", file=sys.stderr)
         return 1
 
-    X = np.array([[r[1][fname] for fname in features_needed] for r in rows], dtype=float)
+    X = np.array([[r[1][fname] for fname in features_needed] for r in rows], dtype=float)  # r = (fixture, features, prior_only)
     raw = clf.predict_proba(X)
     # Platt-calibrated probabilities (sigmoid per class, fitted on train)
     cal = calibrated.predict_proba(X)
@@ -311,7 +316,7 @@ def main() -> int:
     selections = ["home", "draw", "away"] if market == "h2h" else ["under", "over"]
     api_market = "h2h" if market == "h2h" else "totals"
     predictions = []
-    for i, (f, _) in enumerate(rows):
+    for i, (f, _, prior_only) in enumerate(rows):
         for cls_idx, sel in enumerate(selections):
             p = float(np.clip(cal[i, cls_idx], 0.01, 0.99))
             hw = float(np.clip(half[i, cls_idx], 0.02, 0.25))
@@ -321,6 +326,7 @@ def main() -> int:
                 "selection": sel,
                 "probability": round(p, 4),
                 "confidenceLow": round(max(0.0, p - hw), 4),
+                "priorOnly": bool(prior_only),
                 "confidenceHigh": round(min(1.0, p + hw), 4),
                 "modelVersion": meta.get("version", "h2h-xgb-v3"),
             })

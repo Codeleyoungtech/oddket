@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import numpy as np  # noqa: E402
 
-from features import TeamState, build_team_states, compute_pair_features, load_matches_dict  # noqa: E402
+from features import TeamState, build_team_states, compute_pair_features, history_path, load_matches_dict  # noqa: E402
 from predict import NAME_MAP  # noqa: E402 — reuse the same team-name mapping
 
 MICRO_META = os.path.join(ROOT, "models", "micro_meta.json")
@@ -61,7 +61,7 @@ def reliability_interval(p: float, bands: list | None) -> tuple[float, float]:
 
 
 def load_history() -> tuple:
-    hist_path = os.path.join(ROOT, "data", "historical.json")
+    hist_path = history_path()
     with open(hist_path) as f:
         hist = json.load(f)
     matches = load_matches_dict(hist_path)

@@ -119,6 +119,13 @@ export interface Prediction {
   confidenceHigh: number;
   modelVersion: string;
   createdAt: number;
+  /**
+   * Scored with no club history behind it — the model fell back to a
+   * field-median prior, so the probability is mostly the bookmaker's own odds
+   * (a model input) rather than a view on these two teams. Surfaced in the UI
+   * so those picks are not read as informed ones.
+   */
+  priorOnly?: boolean;
 }
 
 export interface Bet {

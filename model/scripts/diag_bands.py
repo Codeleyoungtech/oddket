@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import numpy as np  # noqa: E402
 from sklearn.calibration import CalibratedClassifierCV  # noqa: E402
 
-from features import FEATURE_GROUPS, load_matches_dict  # noqa: E402
+from features import FEATURE_GROUPS, history_path, load_matches_dict  # noqa: E402
 from train import fill_market_features, odds_for_market  # noqa: E402
 
 
@@ -28,7 +28,7 @@ def main() -> int:
     groups = [g.strip() for g in args.features.split(",") if g.strip()]
     feats = [f for g in groups for f in FEATURE_GROUPS[g]]
 
-    matches = load_matches_dict(os.path.join(ROOT, "data", "historical.json"))
+    matches = load_matches_dict(history_path())
     fill_market_features(matches)
     matches.sort(key=lambda m: m.ts)
     n = len(matches)

@@ -1897,7 +1897,160 @@ run extra manual ingests on the same day as the scheduled ones, or the daily quo
 
 ---
 
-## 30. Where tennis and basketball actually stand (Pass 29 measurement)
+## 30. Pass 30 — h2h now trains on 11 divisions, and the edge gate was never the problem
+
+Pass 29's "still open" named h2h training on 4 leagues as the highest-value
+remaining fix: the live feed covers 11, so **90 of 155 fixtures were scored on a
+field-median prior** instead of on club data. This pass did it and measured the
+result. It also produced a correction to a claim Pass 29 made, which is recorded
+below rather than quietly dropped.
+
+### 30.1 What changed
+
+* `fetch_historical.py` now covers **11 divisions** over 2019–2026: 32,529
+  matches, up from 10,122 over 4. Seasons before 2019/20 are deliberately
+  excluded — those files predate the `Avg*`/`Max*` odds columns (they carry
+  Betbrain `BbAv*`/`BbMx*`), so including them would train on matches with no odds
+  features and then serve on matches where the model is given them.
+* **`build_multi_league_matches`**: one chronological pass over every division
+  sharing a single team-state map, instead of a separate state per division.
+  This is a correctness fix, not a nicety: with second tiers in scope, **123 clubs
+  span two divisions** (Bournemouth, Burnley, Herren/Bochum, Alavés, Cagliari…),
+  and per-division state would reset a promoted club's Elo, form and rest to zero
+  history while `build_team_states` at serve time carried it across. Promoted
+  sides are exactly the case that breaks, and it breaks invisibly.
+* The old `--local-dir` absent path was fine; the join was not: the attach loop
+  scanned every match inside the row loop (O(rows × matches)). Readable at 10k,
+  hopeless at 55k → now a dict lookup.
+* Data is **gzipped: 95 MB → 8.2 MB** (11.1×), lighter than the 28 MB it replaced
+  while carrying 3.2× the data. `history_path()` in features.py resolves the path
+  for all eight readers so the storage format is one decision.
+* `model/data/historical_odds.json` was **written but never read by anything** —
+  7.9 MB of committed weight with no consumer. Removed.
+* `train.py`'s meta `source` field was a hardcoded string that still claimed four
+  leagues; it is now derived from the data.
+
+### 30.2 h2h measured against the closing line (same holdout, n=6,506)
+
+New script `validate_closing_line.py`, raw probabilities for every competitor on
+identical matches:
+
+| | Brier | log loss | accuracy |
+|---|---|---|---|
+| base rate | 0.6503 | 1.0749 | 0.4351 |
+| **closing line** | **0.6025** | **1.0069** | **0.5054** |
+| h2h OLD (4 divisions) | 0.6112 | 1.0212 | 0.5003 |
+| **h2h NEW (11 divisions)** | **0.6035** | 1.0091 | **0.5049** |
+
+The gap to the market went from **+0.0087 to +0.0010 Brier** — from clearly worse
+to indistinguishable. Split by group:
+
+* original 4 divisions (n=2,059): 0.5900 → **0.5796**, exactly the closing line's
+  0.5796
+* added 7 divisions (n=4,447): 0.6211 → **0.6146** vs closing 0.6132
+
+So the fix worked *and* it worked where it was aimed: the new divisions are no
+longer scored from nothing. **Live: 145 of 155 fixtures now have real club data**
+(was 65). The 10 remaining are all J-League, for which football-data.co.uk has no
+history — correctly declined, not guessed.
+
+Honest caveat: "indistinguishable from the closing line" is not an edge. To bet
+profitably you must beat the price you can actually get, not merely match the
+close.
+
+### 30.3 Totals (ou) is still not tradeable — and more data did not help
+
+| | accuracy | Brier (cal) | ROI | bets |
+|---|---|---|---|---|
+| ou OLD | 0.5486 | 0.2455 | −3.53% | 1,569 |
+| ou NEW | 0.5504 | 0.2450 | **−5.16%** | 4,618 |
+
+A constant "52% over" prediction scores Brier ≈ 0.2496, so the model is ~1.8%
+better than knowing nothing, on 3× the bets. The old −3.53% looks like small-sample
+luck; −5.16% on 4,618 bets is close to the bookmaker margin, which is the same
+conclusion Pass 22 reached by another route: **no edge, priced fairly.** Recommendation:
+the `totals` market should be turned OFF in settings until it shows positive ROI.
+
+### 30.4 Correction: the edge gate was never the problem
+
+Pass 29 claimed the 3% gate "sits below the model's own noise floor" and advised
+fixing it instead of the model. That was wrong, and `sweep_edge_threshold.py` —
+which adds a real control — shows it. The control runs the same gate on the model's
+probability rows **shuffled across matches**: same probabilities, same odds, same
+threshold, pairing destroyed. Whatever ROI survives is the noise floor.
+
+| edge ≥ | bets | win% | ROI | shuffled ROI | lift |
+|---|---|---|---|---|---|
+| 0.00 | 7,657 | 31.8% | −0.38% | −6.33% | +5.96% |
+| 0.03 | 5,767 | 31.1% | **+0.55%** | −6.67% | +7.23% |
+| 0.10 | 2,896 | 27.3% | −1.74% | −7.06% | +5.32% |
+| 0.15 | 1,788 | 25.0% | −1.41% | −7.24% | +5.83% |
+
+Real ROI sits **+6 to +7pp above its own shuffled control at every threshold**, so
+the gate *is* filtering — it is selecting on information, not noise. And raising
+the threshold does not improve ROI, so it is not too low. **The 3% gate is near
+optimal; the model was what needed fixing.**
+
+The gate result that actually matters is the price band:
+
+| edge ≥ (odds ≤ 2.5) | bets | win% | ROI | shuffled | lift |
+|---|---|---|---|---|---|
+| 0.00 | 2,023 | 50.6% | +4.57% | −1.78% | +6.36% |
+| 0.03 | 1,394 | 50.5% | **+7.23%** | −1.27% | +8.50% |
+| 0.08 | 664 | 49.8% | +10.02% | −0.65% | +10.67% |
+| 0.15 | 215 | 52.6% | +19.19% | −1.40% | +20.59% |
+
+Restricting to short prices is doing the heavy lifting — **+4.6% at edge ≥ 0**
+versus ~0% unrestricted — which independently reproduces the longshot-bleed finding
+that put `maxOdds` upstream in the first place. Above 3% ROI keeps improving but
+volume falls fast (664 bets over 18 months at 8%; 215 at 15%), so chasing a higher
+threshold is fitting this holdout rather than finding a better rule. **Keep 3%,
+keep the band.**
+
+### 30.5 The prior-only flag shipped
+
+`predictions.prior_only` (migration `0010`) carries the model's own admission that
+a row was scored with no club history. It flows predict.py → ingest → D1 →
+`/api/db` → `SlipLeg.priorOnly` → a **⚠ No club data** chip on the slips card,
+with the explanation on hover. Those picks are labelled, not hidden. Live: 10
+fixtures (all J-League) carry it.
+
+### 30.6 The test harness stopped lying about its schema
+
+`worker/test/e2e.mjs` hand-listed migrations. Adding `0010` without touching that
+list left the test database without the column the worker writes, and the failure
+surfaced **five sections away** as "found 0 distinct fixtures for parlay test".
+The list is now read from the migrations directory, so a new migration cannot be
+forgotten.
+
+### Verification (Pass 30)
+
+* `validate_closing_line.py` — h2h gap to the market 0.0087 → **0.0010**
+* `sweep_edge_threshold.py` — lift over shuffled control **+6 to +20pp**
+* `check_names.py` — 363/363 assertions still pass
+* `pnpm typecheck` clean · **142/142** worker e2e (new `[10b]`) · core green
+* worker deployed, migration `0010` applied to remote D1
+* live h2h coverage 65 → **145** of 155 fixtures
+
+### Still open (Pass 30)
+
+* **`micro` (O1.5 + team-to-score) still has OLD weights.** Its *inputs* now come
+  from the 11-division history, but the artifact was trained on the 4-division
+  set, and its meta still says so. Not retrained here — a retrain is a separate
+  measured run, and shipping mixed provenance silently would be worse than the
+  stale-but-declared state. `dc12` derives from h2h so it is already current.
+* **J-League stays unscored** (10 live fixtures) — no free historical source.
+  Correctly declined; the ⚠ chip is what it looks like.
+* **ou should be switched off in settings** until it shows positive ROI.
+* **A true CLV number still does not exist.** `close_*` is an average closing
+  price and `best` is the max entry price, so their ratio is a best-vs-average
+  spread, not value against the close. Real CLV needs closing prices per book;
+  `validate_closing_line.py`'s Brier comparison is the honest substitute until then.
+* **Tennis and basketball** — see §31.
+
+---
+
+## 31. Where tennis and basketball actually stand (Pass 29 measurement)
 
 ### Tennis — already shipped, and that is the problem it has
 

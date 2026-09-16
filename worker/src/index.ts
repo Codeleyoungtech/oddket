@@ -205,6 +205,7 @@ app.post("/api/predictions/ingest", async (c) => {
     confidenceHigh: p.confidenceHigh ?? 1,
     modelVersion: p.modelVersion ?? "sidecar",
     createdAt: p.createdAt ?? now,
+    priorOnly: p.priorOnly ?? false,
   }));
   // Delete any prior predictions for THESE fixtures AND THIS MARKET (any model
   // version, any id format) so only the latest ingest survives. Scoped to the

@@ -62,6 +62,12 @@ export interface SlipLeg {
   edge: number;
   /** recommended stake via fractional Kelly (singles only) */
   stake: number;
+  /**
+   * The prediction behind this leg was scored with no club history — a
+   * field-median prior rather than a view on these two teams. Carried through
+   * so the UI can mark it; it is NOT a reason to hide the leg.
+   */
+  priorOnly?: boolean;
 }
 
 export interface SlipCandidate {
@@ -269,6 +275,7 @@ export function flagSlips(
         impliedProbability: implied,
         edge,
         stake: suggestedStake(pred.probability, odds, settings.bankroll, settings),
+        priorOnly: pred.priorOnly,
       });
     }
   }
@@ -394,6 +401,7 @@ export function allPredictionsAsLegs(
             impliedProbability: 0,
             edge: 0,
             stake: 0,
+            priorOnly: pred.priorOnly,
           });
         }
         continue;
@@ -434,6 +442,7 @@ export function allPredictionsAsLegs(
         impliedProbability: implied,
         edge,
         stake: suggestedStake(pred.probability, odds, settings.bankroll, settings),
+        priorOnly: pred.priorOnly,
       });
     }
   }

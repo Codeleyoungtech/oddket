@@ -39,6 +39,7 @@ from sklearn.calibration import CalibratedClassifierCV  # noqa: E402
 
 from features import (  # noqa: E402
     FEATURE_GROUPS,
+    history_path,
     load_matches_dict,
 )
 
@@ -177,7 +178,7 @@ def main() -> int:
 
     markets = [args.market] if args.market else list(MARKETS.keys())
 
-    path = args.data or os.path.join(ROOT, "data", "historical.json")
+    path = args.data or history_path()
     if not os.path.exists(path):
         print(f"[train] data not found at {path} — run fetch_historical.py first", file=sys.stderr)
         return 1

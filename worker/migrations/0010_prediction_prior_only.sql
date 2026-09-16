@@ -1,0 +1,13 @@
+-- A prediction scored with NO club history behind it.
+--
+-- The football models fall back to a field-median prior for any club not in the
+-- training data. That is an honest fallback (much better than the wrong-club
+-- mapping it replaced) but the resulting probability is NOT an opinion about
+-- these two teams — it is largely a restatement of the bookmaker's own odds,
+-- which are a model input.
+--
+-- Storing the flag lets the UI mark those picks instead of presenting them
+-- alongside real ones. Before the 11-division retrain this covered 90 of 155
+-- live fixtures; it is now 10, all J-League (no free historical corner/result
+-- source for it), which is exactly the case the badge exists for.
+ALTER TABLE predictions ADD COLUMN prior_only INTEGER NOT NULL DEFAULT 0;

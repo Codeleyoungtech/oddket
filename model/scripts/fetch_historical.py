@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import io
 import json
 import os
@@ -37,9 +38,23 @@ from datetime import datetime as _dt
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE = "https://www.football-data.co.uk/mmz4281"
 
-LEAGUES = {"E0": "EPL", "D1": "Bundesliga", "SP1": "La Liga", "I1": "Serie A"}
+# Canonical football-data.co.uk divisions. The first four are what the models
+# used to train on; the rest are divisions the live odds feed ALREADY covers, so
+# every fixture in them was being scored with no club data at all.
+#
+# Seasons before 2019/20 are deliberately absent: those files predate the
+# Avg*/Max* odds columns (they carry Betbrain's BbAv*/BbMx* instead), so
+# including them would train on matches with no odds features and then serve on
+# matches where the model is given them.
+LEAGUES = {
+    "E0": "EPL", "E1": "Championship", "E2": "League One", "E3": "League Two",
+    "D1": "Bundesliga", "D2": "2. Bundesliga",
+    "SP1": "La Liga", "SP2": "Segunda",
+    "I1": "Serie A", "I2": "Serie B",
+    "T1": "Super Lig",
+}
 
-from features import build_league_matches, matches_to_dict  # noqa: E402
+from features import build_multi_league_matches, matches_to_dict  # noqa: E402
 
 # Bookmaker odds columns per selection (some missing in old data)
 BOOK_COLS = {
@@ -55,6 +70,23 @@ def fetch_csv(url: str) -> list[dict]:
         data = res.read()
     reader = csv.DictReader(io.StringIO(data.decode("utf-8-sig")))
     return list(reader)
+
+
+def read_csv_local(path: str) -> list[dict]:
+    """Same shape as fetch_csv, from a `<DIV>_<YYYY>_<YY>.csv` file on disk.
+
+    Tolerant of the encoding quirks these files actually carry: a byte-order mark,
+    and a stray non-breaking space sitting inside a numeric field, which strict
+    decoding turns into a hard failure for the whole run.
+    """
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1")
+    text = text.replace("\u00a0", " ")
+    return list(csv.DictReader(io.StringIO(text)))
 
 
 def _f(r: dict, key: str) -> float | None:
@@ -119,52 +151,75 @@ def _odds_summary(r: dict) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seasons", default="2019,2020,2021,2022,2023,2024,2025",
+    ap.add_argument("--seasons", default="2019,2020,2021,2022,2023,2024,2025,2026",
                     help="calendar-year season starts, comma-separated")
-    ap.add_argument("--leagues", default="E0,D1,SP1,I1",
-                    help="league codes, comma-separated (E0,D1,SP1,I1)")
+    ap.add_argument("--leagues", default=",".join(LEAGUES),
+                    help="division codes, comma-separated")
+    ap.add_argument("--local-dir", default=None,
+                    help="read <DIV>_<YYYY>_<YY>.csv from this directory instead of "
+                         "downloading, so the build needs no network")
+    # Gzipped by default. The uncompressed history is 95 MB at 11 divisions and
+    # the identical data gzips to 8.5 MB, which matters both for git history
+    # (permanent) and for pushing over a metered connection. `history_path()` in
+    # features.py resolves the file for every reader.
+    ap.add_argument("--out", default=os.path.join(ROOT, "data", "historical.json.gz"))
     args = ap.parse_args()
 
-    seasons = [f"{int(s) % 100:02d}{(int(s) + 1) % 100:02d}" for s in args.seasons.split(",") if s.strip()]
+    years = [int(s) for s in args.seasons.split(",") if s.strip()]
     leagues = [l.strip().upper() for l in args.leagues.split(",") if l.strip()]
+    # football-data's URL path uses the two-digit start/end pair ("1920"), while
+    # the on-disk filename spells both years out ("E0_2019_20.csv").
+    seasons = [f"{y % 100:02d}{(y + 1) % 100:02d}" for y in years]
     meta = {"source": "football-data.co.uk", "seasons": seasons, "leagues": leagues}
 
     all_rows: dict[str, list[dict]] = {code: [] for code in leagues}
-    for season in seasons:
+    for year, season in zip(years, seasons):
         for code in leagues:
-            url = f"{BASE}/{season}/{code}.csv"
-            try:
-                rows = fetch_csv(url)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[fetch] {season}/{code}: failed: {exc}", file=sys.stderr)
-                continue
+            rows: list[dict] | None = None
+            if args.local_dir:
+                path = os.path.join(
+                    args.local_dir, f"{code}_{year}_{str(year + 1)[2:]}.csv")
+                if not os.path.exists(path):
+                    print(f"[fetch] {code} {year}: no local file at {path}", file=sys.stderr)
+                    continue
+                try:
+                    rows = read_csv_local(path)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[fetch] {path}: failed: {exc}", file=sys.stderr)
+                    continue
+            else:
+                url = f"{BASE}/{season}/{code}.csv"
+                try:
+                    rows = fetch_csv(url)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[fetch] {season}/{code}: failed: {exc}", file=sys.stderr)
+                    continue
             if not rows:
                 print(f"[fetch] {season}/{code}: empty", file=sys.stderr)
                 continue
             all_rows[code].extend(rows)
-            print(f"[fetch] {season}/{code}: {len(rows)} rows")
 
-    all_matches = []
-    odds_by_id: dict[str, dict] = {}
-    for code, rows in all_rows.items():
-        if not rows:
-            continue
-        matches = build_league_matches(rows, league=LEAGUES.get(code, code), season=code.lower())
-        print(f"[fetch] {LEAGUES.get(code, code)}: {len(matches)} feature rows")
-        all_matches.extend(matches)
-        for m in matches:
-            odds_by_id[m.id] = {"home": None, "draw": None, "away": None,
-                                "close_home": None, "close_draw": None, "close_away": None}
+    all_matches = build_multi_league_matches(all_rows, LEAGUES)
+    per_league: dict[str, int] = {}
+    for m in all_matches:
+        per_league[m.league] = per_league.get(m.league, 0) + 1
+    for code in leagues:
+        name = LEAGUES.get(code, code)
+        print(f"[fetch] {name:14s} {per_league.get(name, 0):5d} matches", file=sys.stderr)
 
     if not all_matches:
         print("[fetch] no data fetched", file=sys.stderr)
         return 1
 
     # Attach market extras (opening/closing/spread) + backtest odds by id.
+    # Indexed by id: this used to scan every match inside the row loop, which is
+    # O(rows x matches). That was survivable at 10k rows and hopeless at 55k.
+    by_id = {m.id: m for m in all_matches}
+    with_odds = 0
     for code, rows in all_rows.items():
         for r in rows:
             try:
-                hg, ag = int(r.get("FTHG")), int(r.get("FTAG"))
+                int(r.get("FTHG")), int(r.get("FTAG"))
             except (TypeError, ValueError):
                 continue
             try:
@@ -172,22 +227,31 @@ def main() -> int:
             except ValueError:
                 continue
             mid = f"{code.lower()}-{day}-{r['HomeTeam']}-{r['AwayTeam']}"
-            if mid in odds_by_id:
-                odds_by_id[mid] = _odds_summary(r)
-            for m in all_matches:
-                if m.id == mid:
-                    m.market = _market_extras(r)
-                    m.odds = _odds_summary(r)
-                    break
+            m = by_id.get(mid)
+            if m is None:
+                continue
+            summary = _odds_summary(r)
+            m.market = _market_extras(r)
+            m.odds = summary
+            if summary.get("home"):
+                with_odds += 1
 
-    os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
-    path = os.path.join(ROOT, "data", "historical.json")
-    with open(path, "w") as fh:
-        json.dump(matches_to_dict(all_matches), fh, indent=2)
-    with open(os.path.join(ROOT, "data", "historical_odds.json"), "w") as fh:
-        json.dump(odds_by_id, fh, indent=2)
+    print(f"[fetch] {with_odds}/{len(all_matches)} matches carry usable odds "
+          f"({100 * with_odds // max(1, len(all_matches))}%)", file=sys.stderr)
 
-    print(f"[fetch] wrote {len(all_matches)} matches -> {path}")
+    # The separate `historical_odds.json` side-file is gone: every match already
+    # carries `odds` inline, and nothing in the repo ever read the side-file —
+    # it was 7.9 MB of committed weight with no consumer.
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    payload = matches_to_dict(all_matches)
+    if args.out.endswith(".gz"):
+        with gzip.open(args.out, "wt", encoding="utf-8") as fh:
+            json.dump(payload, fh, separators=(",", ":"))
+    else:
+        with open(args.out, "w") as fh:
+            json.dump(payload, fh, indent=2)
+
+    print(f"[fetch] wrote {len(all_matches)} matches -> {args.out}")
     return 0
 
 

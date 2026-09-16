@@ -26,10 +26,28 @@ Team state tracking:
 from __future__ import annotations
 
 import csv
+import gzip
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(ROOT, "data")
+
+
+def history_path(name: str = "historical.json") -> str:
+    """Path to a history file, preferring the gzipped copy when one exists.
+
+    The uncompressed history reached 95 MB at 11 divisions — the per-match
+    feature dict repeats about 40 identical keys — which is a permanent cost in
+    git history and a real one on a metered connection. The identical data gzips
+    to 8.5 MB. Every reader resolves its path through here instead of
+    hardcoding a filename, so the storage format is one decision, not eight.
+    """
+    gz = os.path.join(DATA_DIR, name + ".gz")
+    return gz if os.path.exists(gz) else os.path.join(DATA_DIR, name)
 
 # Feature groups — "base" is always on; others toggle independently.
 BASE_FEATURES = [
@@ -375,6 +393,87 @@ def build_league_matches(rows: list[dict], league: str, season: str = "") -> lis
     return matches
 
 
+def build_multi_league_matches(
+    rows_by_code: dict[str, list[dict]],
+    league_names: dict[str, str],
+) -> list[Match]:
+    """Feature-build several divisions in ONE chronological pass.
+
+    `build_league_matches` keeps a separate TeamState map per division. That is
+    fine while the divisions are disjoint — but the moment a promotion or a
+    relegation links two of them, a club arrives in its new division with no
+    history at all, so Elo, form, goals and rest all restart from scratch. At
+    serve time `build_team_states` runs over every match regardless of league,
+    so the same club DOES carry that history, and the trained features stop
+    matching what the model is actually fed. Promoted sides are precisely the
+    case that breaks, and nothing about it is visible in the output.
+
+    This walks every division's rows interleaved by kickoff time over one shared
+    team-state map, so a club's state follows it across divisions. For the four
+    divisions that do not share clubs it produces byte-identical features to
+    `build_league_matches`, so extending the league list is the only change that
+    shows up in a retrain.
+    """
+    parsed: list[tuple[int, str, str, str, int, int, int, int]] = []
+    for code, rows in rows_by_code.items():
+        for r in rows:
+            try:
+                hg = int(r.get("FTHG"))
+                ag = int(r.get("FTAG"))
+                hst = int(r.get("HST") or 0)
+                ast = int(r.get("AST") or 0)
+            except (TypeError, ValueError):
+                continue
+            if r.get("FTR") not in ("H", "D", "A"):
+                continue
+            try:
+                ts = int(datetime.strptime(r.get("Date", ""), "%d/%m/%Y").timestamp())
+            except ValueError:
+                continue
+            parsed.append((ts, code, r["HomeTeam"], r["AwayTeam"], hg, ag, hst, ast))
+    parsed.sort(key=lambda x: x[0])
+
+    teams: dict[str, TeamState] = {}
+    matches: list[Match] = []
+    seen: set[tuple[int, str, str]] = set()
+
+    for ts, code, home, away, hg, ag, hst, ast in parsed:
+        if (ts, home, away) in seen:
+            continue
+        seen.add((ts, home, away))
+        date = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+        hs = teams.setdefault(home, TeamState())
+        as_ = teams.setdefault(away, TeamState())
+
+        features = compute_pair_features(hs, as_, matches, home, away, ts)
+        outcome = _outcome(hg, ag)
+        m = Match(
+            id=f"{code.lower()}-{date}-{home}-{away}",
+            league=league_names.get(code, code), home=home, away=away,
+            home_goals=hg, away_goals=ag,
+            features=features, outcome=outcome, date=date, ts=ts,
+            home_sot=hst, away_sot=ast,
+        )
+        matches.append(m)
+
+        # --- update state AFTER the match ---
+        exp_h = _expected(hs.rating + ELO_HOME_ADV, as_.rating)
+        exp_a = _expected(as_.rating, hs.rating + ELO_HOME_ADV)
+        hs.rating += ELO_K * ((outcome == 0) - exp_h)
+        as_.rating += ELO_K * ((outcome == 2) - exp_a)
+        exp_home = _expected(hs.rating_home + ELO_HOME_ADV, as_.rating_away)
+        exp_away = _expected(as_.rating_away, hs.rating_home + ELO_HOME_ADV)
+        hs.rating_home += ELO_K * ((outcome == 0) - exp_home)
+        as_.rating_away += ELO_K * ((outcome == 2) - exp_away)
+        hs.results.append((outcome, hg, ag, hst, ast, ts, True))
+        as_.results.append((outcome, hg, ag, ast, hst, ts, False))
+        hs.last_ts = ts
+        as_.last_ts = ts
+
+    return matches
+
+
 def build_team_states(matches: list[Match]) -> dict[str, TeamState]:
     teams: dict[str, TeamState] = {}
     for m in matches:
@@ -412,7 +511,8 @@ def matches_to_dict(matches: list[Match]) -> dict:
 
 
 def load_matches_dict(path: str) -> list[Match]:
-    with open(path) as fh:
+    opener = gzip.open if path.endswith(".gz") else open
+    with opener(path, "rt", encoding="utf-8") as fh:
         data = json.load(fh)
     matches = []
     for m in data["matches"]:

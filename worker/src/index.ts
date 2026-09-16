@@ -23,6 +23,7 @@ import {
 import type { Env } from "./db";
 import {
   deletePushSubscription,
+  getCornerValidation,
   getSettings,
   insertBet,
   normaliseBetSource,
@@ -36,6 +37,7 @@ import {
   settleParlayBets,
   settlePendingBets,
   upsertCornerOutcomes,
+  upsertCornerValidation,
   upsertOutcomes,
   upsertPredictions,
   upsertPushSubscription,
@@ -443,6 +445,28 @@ app.post("/api/corners/ingest", async (c) => {
   } catch (err) {
     return c.json({ ok: false, error: String(err) }, 500);
   }
+});
+
+/* ---------------- corner model validation (holdout report) ---------------- */
+
+/**
+ * The live corner model's own out-of-sample accuracy. Public: it is a fact
+ * about the model, not a prediction, and the page has to be able to show it
+ * before any fixture has finished.
+ */
+app.get("/api/corners/validation", async (c) => {
+  const validation = await getCornerValidation(c.env.DB);
+  return c.json({ validation });
+});
+
+app.post("/api/corners/validation", async (c) => {
+  if (!requireSecret(c)) return c.json({ ok: false, error: "Unauthorized" }, 401);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return c.json({ ok: false, error: "Expected a validation object" }, 400);
+  }
+  await upsertCornerValidation(c.env.DB, body);
+  return c.json({ ok: true });
 });
 
 /* ---------------- corner results (real corner counts) ---------------- */

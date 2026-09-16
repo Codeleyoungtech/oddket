@@ -4,7 +4,9 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 26 — **the corner model was rebuilt honestly (§26).** Three measured defects: six odds features were hardcoded constants at serve time (`odds_overround` was the #2 feature), Elo was computed over the whole history and used as a feature for every past match, and the match total was a sum of two independent models whose **independence assumption is measurably false** (residual covariance −1.28). The deployed total was *worse than predicting the league average*. v6 fixes all three, adds a direct total model, feeds real odds, resolves team names in tiers (coverage 0 → 97 of 145 fixtures), and grades every stored line on a new `/corners` scoreboard. Bet tagging gained a third cohort, **`rule`**. See **`docs/CORNERS.md`** for the full report.
+**Last updated:** Pass 27 — **every published corner line is now within 2.9pp of realized (§27).** The team-line ladders carry a per-line shape correction fitted on half the holdout and evaluated on the other half (team away mean error 2.7pp → **0.6pp**, team home 2.9pp → 1.6pp, total 1.8pp → 1.1pp), applied at serve time with a monotone guard so the ladder can never cross over. The model's own out-of-sample accuracy is now published in the app (`0009_corner_validation.sql` → `GET /api/corners/validation` → the **model accuracy** panel on `/corners`), so "how good is this model?" is answerable on day one rather than after weeks of graded fixtures.
+
+**Previously:** Pass 26 — **the corner model was rebuilt honestly (§26).** Three measured defects: six odds features were hardcoded constants at serve time (`odds_overround` was the #2 feature), Elo was computed over the whole history and used as a feature for every past match, and the match total was a sum of two independent models whose **independence assumption is measurably false** (residual covariance −1.28). The deployed total was *worse than predicting the league average*. v6 fixes all three, adds a direct total model, feeds real odds, resolves team names in tiers (coverage 0 → 97 of 145 fixtures), and grades every stored line on a new `/corners` scoreboard. Bet tagging gained a third cohort, **`rule`**. See **`docs/CORNERS.md`** for the full report.
 
 **Previously:** Pass 25 — **the slips rule filter actually selects the rule now** (`applicationsForLeg` never filtered by rule id, so all 13 rules returned the same 214 legs) plus the filter lag: deferred/transitioned filtering and a 40-card render window. See §24.5.
 
@@ -1093,6 +1095,74 @@ counts live.
 keys above to run for a while. Same discipline as the football book.
 * **Team-line low-rung optimism (+3 to +5pp)** is the next real modelling win.
 * **Match totals are barely predictable** (R² 0.013) — size expectations to that.
+* **More second-tier seasons** in `footballdata/` lift both name coverage and
+history depth (§26.2).
+
+---
+
+## 27. Pass 27 — every published corner line is now within 2.9pp of realized
+
+Pass 26 left one named weakness: the team-line ladders were **+3 to +5pp
+too optimistic on the low rungs**, which is the difference between the safe band
+saying *75%* and it being **71%**. This pass fixed it, and published the model's
+own out-of-sample accuracy in the app so the question "how good is this?" is
+answerable on day one instead of after weeks of graded fixtures.
+
+### 27.1 The fix: a per-line shape correction, fitted asymmetrically
+
+A single parametric shape (Negative Binomial with `sigma(mu)`) describes the
+*whole* distribution, so it cannot be exactly right at every rung at once. The
+low rungs land systematically high and the high rungs systematically low.
+
+`train_corners_v6.py` now fits `p' = a + b·p` **per line**, on **half** the
+holdout, and reports the delta on the **other half** — so the published number is
+not the fit grading itself. `predict_corners_v6.py` applies it at serve time,
+with a **running minimum from the lowest line up** so independent per-line
+corrections can never cross over and produce a ladder that rises with the line.
+
+| market | mean \|error\| before | **after** | max after |
+|---|---|---|---|
+| team home | 0.0289 | **0.0163** | 0.0261 |
+| team away | 0.0272 | **0.0063** | 0.0139 |
+| match total | 0.0184 | **0.0112** | 0.0286 |
+
+The correction is honest about doing nothing where nothing was wrong: home Over
+5.5 was claimed 0.4338 vs actual 0.4279, and the fit returns the identity
+(`a=0, b=1`) rather than inventing a nudge. Where it does act, it works — team
+away Over 2.5 went from 0.0523 error to 0.0139.
+
+### 27.2 The scoreboard starts empty, so the backtest is published too
+
+Graded-fixture accuracy only accumulates as matches finish. To make "is this
+model any good?" answerable today, migration **`0009_corner_validation.sql`**
+adds a `corner_validation` table. The predict workflow writes it from the model
+metadata (`corners_to_ingest.py --meta`), `GET /api/corners/validation` reads it
+back, and `/corners` renders a **model accuracy** panel: MAE and skill vs the
+league-average baseline per market, claimed-vs-realized per line, and the
+before/after of the shape correction.
+
+Only out-of-sample numbers are published — the holdout the models never trained
+on, and for the recalibration delta a half of that holdout the correction never
+saw. A live scoreboard that only fills in as fixtures finish would otherwise let
+the model look better by being quieter.
+
+### Verification (Pass 27)
+
+* core / web / worker typechecks clean
+* **core 44/44**, **worker e2e 139/139** — new `[19]` section: validation reads
+`null` (not an error) while empty, ingests, round-trips unchanged, keeps the
+per-line table, and rejects a non-object payload
+* migration `0009` added to the e2e list
+* retrain logged the corrected numbers above; `corners_backtest.json` carries
+`probability_recalibration` alongside the raw `line_calibration`
+
+### Still open (Pass 27)
+
+* **Corner rule book still not built.** It needs graded corner history, which
+needs the API-Football key running for a while. Same discipline as the football
+book (`docs/RULES.md`).
+* **Match totals are barely predictable** (R² 0.013, +0.8% skill) — size
+  expectations to that; the signal is in team lines (+5.1% / +6.5%).
 * **More second-tier seasons** in `footballdata/` lift both name coverage and
 history depth (§26.2).
 

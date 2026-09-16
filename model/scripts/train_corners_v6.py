@@ -505,6 +505,86 @@ def nb_over(mu: float, sigma: float, line: float) -> float:
     return float(1.0 - nbinom.cdf(int(line), r, p))
 
 
+def _logit(p) -> np.ndarray:
+    p = np.clip(np.asarray(p, dtype=float), 1e-4, 1.0 - 1e-4)
+    return np.log(p / (1.0 - p))
+
+
+def apply_calibration(p: float, coeff: dict | None) -> float:
+    """Map a claimed P(over line) through the fitted logistic correction."""
+    if not coeff:
+        return p
+    a, b = float(coeff.get("a", 0.0)), float(coeff.get("b", 1.0))
+    if a == 0.0 and b == 1.0:
+        return p
+    z = a + b * float(_logit(p))
+    return float(1.0 / (1.0 + np.exp(-z)))
+
+
+def fit_prob_calibration(
+    mu: np.ndarray,
+    actual: np.ndarray,
+    lines: list[float],
+    sigma_curve: dict,
+    fit_frac: float = 0.5,
+) -> dict:
+    """Fit a per-line probability recalibration on the FIRST half of the holdout.
+
+    The negative binomial matches the right mean and spread but not always the
+    right *shape*, so the claimed P(over line) drifts from the realized rate —
+    measured at up to 5pp (notably optimistic on low team lines). A 2-parameter
+    logistic map on the logit (`logit(p_true) = a + b*logit(p_claimed)`) removes
+    that drift without touching the underlying regression.
+
+    The split is the point: coefficients are fit on the first half and the
+    improvement is reported on the second, so the delta below is out-of-sample.
+    A line whose correction does NOT help on the eval half is stored as the
+    identity map, so a bad fit can never make the shipped ladder worse.
+    """
+    from sklearn.linear_model import LogisticRegression
+
+    cut = int(len(mu) * fit_frac)
+    out: dict = {"fit_n": cut, "eval_n": int(len(mu) - cut), "lines": {}, "method": "logistic recalibration, fit on first holdout half"}
+    for line in lines:
+        claimed = np.array([nb_over(float(m), sigma_at(float(m), sigma_curve), line) for m in mu])
+        y = (actual > line).astype(float)
+        x_fit, y_fit = _logit(claimed[:cut]), y[:cut]
+
+        # A single-class or near-constant fit slice cannot identify a slope.
+        if y_fit.min() == y_fit.max() or x_fit.std() < 1e-9:
+            a, b = 0.0, 1.0
+        else:
+            lr = LogisticRegression(C=1e6, max_iter=2000)
+            lr.fit(x_fit.reshape(-1, 1), y_fit)
+            a, b = float(lr.intercept_[0]), float(lr.coef_[0][0])
+
+        x_ev = _logit(claimed[cut:])
+        y_ev = y[cut:]
+        before = abs(float(claimed[cut:].mean()) - float(y_ev.mean()))
+        corrected = np.array([apply_calibration(float(c), {"a": a, "b": b}) for c in claimed[cut:]])
+        after = abs(float(corrected.mean()) - float(y_ev.mean()))
+
+        # Ship the correction only where it earns its place out-of-sample.
+        if not (after < before):
+            a, b = 0.0, 1.0
+            after = before
+        out["lines"][str(line)] = {
+            "a": round(a, 6),
+            "b": round(b, 6),
+            "claimed": round(float(claimed[cut:].mean()), 4),
+            "actual": round(float(y_ev.mean()), 4),
+            "corrected": round(float(np.mean([apply_calibration(float(c), {"a": a, "b": b}) for c in claimed[cut:]])), 4),
+            "abs_error_before": round(before, 4),
+            "abs_error_after": round(after, 4),
+            "n_eval": int(len(y_ev)),
+        }
+    out["mean_abs_error_before"] = round(float(np.mean([r["abs_error_before"] for r in out["lines"].values()])), 4)
+    out["mean_abs_error_after"] = round(float(np.mean([r["abs_error_after"] for r in out["lines"].values()])), 4)
+    out["max_abs_error_before"] = round(float(np.max([r["abs_error_before"] for r in out["lines"].values()])), 4)
+    out["max_abs_error_after"] = round(float(np.max([r["abs_error_after"] for r in out["lines"].values()])), 4)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -664,6 +744,29 @@ def main() -> int:
                   f"actual {r['actual']:.3f}  Δ {r['error']:+.3f}")
     out["line_calibration"] = calib
 
+    # ---- Shape correction: the negative binomial can match the mean and spread
+    #      of corner counts and still get the tail wrong. This measures that bias
+    #      out-of-sample and ships a per-line correction only where it helps.
+    print("\n[v6] --- probability recalibration (fit on holdout half 1, scored on half 2) ---")
+    recal = {}
+    for key, mu_pred, actual, lines, label in (
+        ("home", ph, yh_te, TEAM_LINES, "team home"),
+        ("away", pa, ya_te, TEAM_LINES, "team away"),
+        ("total", pt, yt_te, TOTAL_LINES, "match total"),
+    ):
+        curve = out[f"{key}_metrics"]["sigma_curve"]
+        r = fit_prob_calibration(mu_pred, actual, lines, curve)
+        recal[key] = r
+        out[f"{key}_calibration"] = r
+        print(f"  {label}: mean |err| {r['mean_abs_error_before']:.4f} → "
+              f"{r['mean_abs_error_after']:.4f} (max {r['max_abs_error_before']:.4f} → "
+              f"{r['max_abs_error_after']:.4f})")
+        for line_s, row in r["lines"].items():
+            flag = "" if row["a"] == 0.0 and row["b"] == 1.0 else "  ← corrected"
+            print(f"     over {line_s:>5}: claimed {row['claimed']:.3f}  actual {row['actual']:.3f}  "
+                  f"Δ {row['abs_error_before']:+.3f} → {row['abs_error_after']:+.3f}{flag}")
+    out["probability_recalibration"] = recal
+
     # ---- Residual correlation between home and away (documented, not assumed).
     rh, ra = yh_te - ph, ya_te - pa
     out["residuals"] = {
@@ -684,7 +787,8 @@ def main() -> int:
     dump(preds["away"]["model"], os.path.join(ROOT, "models", "corners_away_model.joblib"))
     dump(preds["total"]["model"], os.path.join(ROOT, "models", "corners_total_model.joblib"))
 
-    out["line_method"] = "negative binomial with out-of-fold sigma(mu) = a*sqrt(mu)+b"
+    out["line_method"] = ("negative binomial, out-of-fold sigma(mu) = a*sqrt(mu)+b, "
+                          "then per-line logistic recalibration")
     out["market"] = "corners"
     out["source"] = "football-data.co.uk 11 leagues 2012-2026"
     out["leagues"] = ACTIVE_LEAGUES

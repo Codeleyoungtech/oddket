@@ -47,6 +47,7 @@ from train_corners_v6 import (  # noqa: E402
     NEUTRAL_ODDS,
     TEAM_LINES,
     TOTAL_LINES,
+    apply_calibration,
     build_features,
     nb_over,
     sigma_at,
@@ -137,6 +138,14 @@ def main() -> int:
     home_curves = meta["home_metrics"]["sigma_curve"]
     away_curves = meta["away_metrics"]["sigma_curve"]
     total_curves = meta["total_metrics"]["sigma_curve"]
+
+    # Per-line shape correction fitted out-of-sample by the trainer. Absent on an
+    # older meta file, in which case the raw negative-binomial ladder ships (and
+    # the warning above has already flagged the version mismatch).
+    recal = meta.get("probability_recalibration") or {}
+
+    def calib_for(side: str) -> dict:
+        return (recal.get(side) or {}).get("lines") or {}
 
     print("[predict] Loading history to rebuild team state...", file=sys.stderr)
     matches = load_all_data(args.data_dir)
@@ -231,9 +240,20 @@ def main() -> int:
         mu_a = min(max(mu_a, 0.5), 15.0)
         mu_t = min(max(mu_t, 1.0), 30.0)
 
-        def lines_for(mu: float, curve: dict, lines: list[float]) -> dict[str, float]:
+        def lines_for(mu: float, curve: dict, lines: list[float], side: str) -> dict[str, float]:
             sigma = sigma_at(mu, curve)
-            return {f"O{line}": round(nb_over(mu, sigma, line), 4) for line in lines}
+            coeffs = calib_for(side)
+            raw = [nb_over(mu, sigma, line) for line in lines]
+            # Correct each rung, then force the ladder to stay non-increasing in
+            # the line. Independent per-line corrections can cross over each
+            # other; a crossing probability ladder would be plainly wrong in the
+            # UI, so a running minimum is applied from the lowest line up.
+            fixed: list[float] = []
+            for line, p in zip(lines, raw):
+                v = apply_calibration(p, coeffs.get(str(line)))
+                v = min(v, fixed[-1]) if fixed else v
+                fixed.append(v)
+            return {f"O{line}": round(p, 4) for line, p in zip(lines, fixed)}
 
         sigma_h = sigma_at(mu_h, home_curves)
         sigma_a = sigma_at(mu_a, away_curves)
@@ -254,20 +274,20 @@ def main() -> int:
                 "ci_low": round(max(0.0, mu_h - 1.28 * sigma_h), 2),
                 "ci_high": round(mu_h + 1.28 * sigma_h, 2),
                 "sigma": round(sigma_h, 3),
-                "lines": lines_for(mu_h, home_curves, TEAM_LINES),
+                "lines": lines_for(mu_h, home_curves, TEAM_LINES, "home"),
             },
             "away_team_corners": {
                 "expected": round(mu_a, 2),
                 "ci_low": round(max(0.0, mu_a - 1.28 * sigma_a), 2),
                 "ci_high": round(mu_a + 1.28 * sigma_a, 2),
                 "sigma": round(sigma_a, 3),
-                "lines": lines_for(mu_a, away_curves, TEAM_LINES),
+                "lines": lines_for(mu_a, away_curves, TEAM_LINES, "away"),
             },
             "total_corners": {
                 "expected": round(mu_t, 2),
                 "sum_of_teams": round(mu_h + mu_a, 2),
                 "sigma": round(sigma_t, 3),
-                "lines": lines_for(mu_t, total_curves, TOTAL_LINES),
+                "lines": lines_for(mu_t, total_curves, TOTAL_LINES, "total"),
             },
         })
 
@@ -275,6 +295,7 @@ def main() -> int:
         "generated_at": datetime.now().isoformat(),
         "model_version": meta["version"],
         "line_method": meta.get("line_method"),
+        "calibrated": bool(recal),
         "sigmas": {
             "home_curve": home_curves, "away_curve": away_curves, "total_curve": total_curves,
         },

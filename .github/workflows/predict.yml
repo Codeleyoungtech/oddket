@@ -98,6 +98,15 @@ jobs:
               --data-binary @/tmp/corners_ingest.json
             echo
           fi
+          # Corner model accuracy (the model's own out-of-sample holdout report).
+          # Pushed alongside the predictions so the accuracy the page displays
+          # always belongs to the model that is actually serving.
+          python3 model/scripts/corners_to_ingest.py --meta > /tmp/corners_validation.json
+          curl -sS -m 60 -X POST "$WORKER_URL/api/corners/validation" \
+            -H "Content-Type: application/json" \
+            -H "x-predict-key: $PREDICT_SECRET" \
+            --data-binary @/tmp/corners_validation.json
+          echo
 
   predict-tennis:
     runs-on: ubuntu-latest

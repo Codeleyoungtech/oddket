@@ -671,6 +671,494 @@
       "method": "negative binomial, out-of-fold sigma(mu)"
     }
   },
+  "home_calibration": {
+    "fit_n": 3136,
+    "eval_n": 3136,
+    "lines": {
+      "2.5": {
+        "a": 0.231078,
+        "b": 0.719206,
+        "claimed": 0.8742,
+        "actual": 0.8278,
+        "corrected": 0.8427,
+        "abs_error_before": 0.0464,
+        "abs_error_after": 0.0148,
+        "n_eval": 3136
+      },
+      "3.5": {
+        "a": 0.118946,
+        "b": 0.717781,
+        "claimed": 0.7476,
+        "actual": 0.7054,
+        "corrected": 0.7172,
+        "abs_error_before": 0.0422,
+        "abs_error_after": 0.0118,
+        "n_eval": 3136
+      },
+      "4.5": {
+        "a": 0.054111,
+        "b": 0.746477,
+        "claimed": 0.5922,
+        "actual": 0.5587,
+        "corrected": 0.5847,
+        "abs_error_before": 0.0336,
+        "abs_error_after": 0.0261,
+        "n_eval": 3136
+      },
+      "5.5": {
+        "a": 0.0,
+        "b": 1.0,
+        "claimed": 0.4338,
+        "actual": 0.4279,
+        "corrected": 0.4338,
+        "abs_error_before": 0.0058,
+        "abs_error_after": 0.0058,
+        "n_eval": 3136
+      },
+      "6.5": {
+        "a": -0.06579,
+        "b": 0.703775,
+        "claimed": 0.2943,
+        "actual": 0.3144,
+        "corrected": 0.3289,
+        "abs_error_before": 0.0201,
+        "abs_error_after": 0.0145,
+        "n_eval": 3136
+      },
+      "7.5": {
+        "a": -0.040917,
+        "b": 0.745002,
+        "claimed": 0.1858,
+        "actual": 0.2111,
+        "corrected": 0.2324,
+        "abs_error_before": 0.0253,
+        "abs_error_after": 0.0213,
+        "n_eval": 3136
+      },
+      "8.5": {
+        "a": -0.0004,
+        "b": 0.762168,
+        "claimed": 0.1098,
+        "actual": 0.1384,
+        "corrected": 0.1583,
+        "abs_error_before": 0.0286,
+        "abs_error_after": 0.0199,
+        "n_eval": 3136
+      }
+    },
+    "method": "logistic recalibration, fit on first holdout half",
+    "mean_abs_error_before": 0.0289,
+    "mean_abs_error_after": 0.0163,
+    "max_abs_error_before": 0.0464,
+    "max_abs_error_after": 0.0261
+  },
+  "away_calibration": {
+    "fit_n": 3136,
+    "eval_n": 3136,
+    "lines": {
+      "2.5": {
+        "a": -0.056391,
+        "b": 0.798973,
+        "claimed": 0.7877,
+        "actual": 0.7353,
+        "corrected": 0.7355,
+        "abs_error_before": 0.0524,
+        "abs_error_after": 0.0002,
+        "n_eval": 3136
+      },
+      "3.5": {
+        "a": -0.181843,
+        "b": 0.840526,
+        "claimed": 0.6234,
+        "actual": 0.5768,
+        "corrected": 0.5653,
+        "abs_error_before": 0.0466,
+        "abs_error_after": 0.0116,
+        "n_eval": 3136
+      },
+      "4.5": {
+        "a": -0.207571,
+        "b": 0.94693,
+        "claimed": 0.4514,
+        "actual": 0.4101,
+        "corrected": 0.4065,
+        "abs_error_before": 0.0413,
+        "abs_error_after": 0.0036,
+        "n_eval": 3136
+      },
+      "5.5": {
+        "a": -0.145481,
+        "b": 0.882694,
+        "claimed": 0.2999,
+        "actual": 0.2822,
+        "corrected": 0.2894,
+        "abs_error_before": 0.0177,
+        "abs_error_after": 0.0072,
+        "n_eval": 3136
+      },
+      "6.5": {
+        "a": -0.20108,
+        "b": 0.869227,
+        "claimed": 0.1838,
+        "actual": 0.1763,
+        "corrected": 0.1808,
+        "abs_error_before": 0.0074,
+        "abs_error_after": 0.0045,
+        "n_eval": 3136
+      },
+      "7.5": {
+        "a": 0.053905,
+        "b": 1.006371,
+        "claimed": 0.1045,
+        "actual": 0.1148,
+        "corrected": 0.1082,
+        "abs_error_before": 0.0103,
+        "abs_error_after": 0.0066,
+        "n_eval": 3136
+      },
+      "8.5": {
+        "a": 0.050709,
+        "b": 0.988087,
+        "claimed": 0.0554,
+        "actual": 0.0702,
+        "corrected": 0.0596,
+        "abs_error_before": 0.0148,
+        "abs_error_after": 0.0105,
+        "n_eval": 3136
+      }
+    },
+    "method": "logistic recalibration, fit on first holdout half",
+    "mean_abs_error_before": 0.0272,
+    "mean_abs_error_after": 0.0063,
+    "max_abs_error_before": 0.0524,
+    "max_abs_error_after": 0.0116
+  },
+  "total_calibration": {
+    "fit_n": 3136,
+    "eval_n": 3136,
+    "lines": {
+      "6.5": {
+        "a": 0.278745,
+        "b": 0.782335,
+        "claimed": 0.8497,
+        "actual": 0.8157,
+        "corrected": 0.8379,
+        "abs_error_before": 0.034,
+        "abs_error_after": 0.0222,
+        "n_eval": 3136
+      },
+      "7.5": {
+        "a": 0.192879,
+        "b": 0.729106,
+        "claimed": 0.7536,
+        "actual": 0.7165,
+        "corrected": 0.734,
+        "abs_error_before": 0.0371,
+        "abs_error_after": 0.0175,
+        "n_eval": 3136
+      },
+      "8.5": {
+        "a": 0.158132,
+        "b": 0.629205,
+        "claimed": 0.6374,
+        "actual": 0.6049,
+        "corrected": 0.6265,
+        "abs_error_before": 0.0325,
+        "abs_error_after": 0.0216,
+        "n_eval": 3136
+      },
+      "9.5": {
+        "a": -0.013363,
+        "b": 0.616751,
+        "claimed": 0.5122,
+        "actual": 0.4994,
+        "corrected": 0.5044,
+        "abs_error_before": 0.0129,
+        "abs_error_after": 0.005,
+        "n_eval": 3136
+      },
+      "10.5": {
+        "a": 0.0,
+        "b": 1.0,
+        "claimed": 0.3902,
+        "actual": 0.3855,
+        "corrected": 0.3902,
+        "abs_error_before": 0.0047,
+        "abs_error_after": 0.0047,
+        "n_eval": 3136
+      },
+      "11.5": {
+        "a": 0.0,
+        "b": 1.0,
+        "claimed": 0.2816,
+        "actual": 0.2746,
+        "corrected": 0.2816,
+        "abs_error_before": 0.007,
+        "abs_error_after": 0.007,
+        "n_eval": 3136
+      },
+      "12.5": {
+        "a": 0.0,
+        "b": 1.0,
+        "claimed": 0.1926,
+        "actual": 0.1929,
+        "corrected": 0.1926,
+        "abs_error_before": 0.0004,
+        "abs_error_after": 0.0004,
+        "n_eval": 3136
+      }
+    },
+    "method": "logistic recalibration, fit on first holdout half",
+    "mean_abs_error_before": 0.0184,
+    "mean_abs_error_after": 0.0112,
+    "max_abs_error_before": 0.0371,
+    "max_abs_error_after": 0.0222
+  },
+  "probability_recalibration": {
+    "home": {
+      "fit_n": 3136,
+      "eval_n": 3136,
+      "lines": {
+        "2.5": {
+          "a": 0.231078,
+          "b": 0.719206,
+          "claimed": 0.8742,
+          "actual": 0.8278,
+          "corrected": 0.8427,
+          "abs_error_before": 0.0464,
+          "abs_error_after": 0.0148,
+          "n_eval": 3136
+        },
+        "3.5": {
+          "a": 0.118946,
+          "b": 0.717781,
+          "claimed": 0.7476,
+          "actual": 0.7054,
+          "corrected": 0.7172,
+          "abs_error_before": 0.0422,
+          "abs_error_after": 0.0118,
+          "n_eval": 3136
+        },
+        "4.5": {
+          "a": 0.054111,
+          "b": 0.746477,
+          "claimed": 0.5922,
+          "actual": 0.5587,
+          "corrected": 0.5847,
+          "abs_error_before": 0.0336,
+          "abs_error_after": 0.0261,
+          "n_eval": 3136
+        },
+        "5.5": {
+          "a": 0.0,
+          "b": 1.0,
+          "claimed": 0.4338,
+          "actual": 0.4279,
+          "corrected": 0.4338,
+          "abs_error_before": 0.0058,
+          "abs_error_after": 0.0058,
+          "n_eval": 3136
+        },
+        "6.5": {
+          "a": -0.06579,
+          "b": 0.703775,
+          "claimed": 0.2943,
+          "actual": 0.3144,
+          "corrected": 0.3289,
+          "abs_error_before": 0.0201,
+          "abs_error_after": 0.0145,
+          "n_eval": 3136
+        },
+        "7.5": {
+          "a": -0.040917,
+          "b": 0.745002,
+          "claimed": 0.1858,
+          "actual": 0.2111,
+          "corrected": 0.2324,
+          "abs_error_before": 0.0253,
+          "abs_error_after": 0.0213,
+          "n_eval": 3136
+        },
+        "8.5": {
+          "a": -0.0004,
+          "b": 0.762168,
+          "claimed": 0.1098,
+          "actual": 0.1384,
+          "corrected": 0.1583,
+          "abs_error_before": 0.0286,
+          "abs_error_after": 0.0199,
+          "n_eval": 3136
+        }
+      },
+      "method": "logistic recalibration, fit on first holdout half",
+      "mean_abs_error_before": 0.0289,
+      "mean_abs_error_after": 0.0163,
+      "max_abs_error_before": 0.0464,
+      "max_abs_error_after": 0.0261
+    },
+    "away": {
+      "fit_n": 3136,
+      "eval_n": 3136,
+      "lines": {
+        "2.5": {
+          "a": -0.056391,
+          "b": 0.798973,
+          "claimed": 0.7877,
+          "actual": 0.7353,
+          "corrected": 0.7355,
+          "abs_error_before": 0.0524,
+          "abs_error_after": 0.0002,
+          "n_eval": 3136
+        },
+        "3.5": {
+          "a": -0.181843,
+          "b": 0.840526,
+          "claimed": 0.6234,
+          "actual": 0.5768,
+          "corrected": 0.5653,
+          "abs_error_before": 0.0466,
+          "abs_error_after": 0.0116,
+          "n_eval": 3136
+        },
+        "4.5": {
+          "a": -0.207571,
+          "b": 0.94693,
+          "claimed": 0.4514,
+          "actual": 0.4101,
+          "corrected": 0.4065,
+          "abs_error_before": 0.0413,
+          "abs_error_after": 0.0036,
+          "n_eval": 3136
+        },
+        "5.5": {
+          "a": -0.145481,
+          "b": 0.882694,
+          "claimed": 0.2999,
+          "actual": 0.2822,
+          "corrected": 0.2894,
+          "abs_error_before": 0.0177,
+          "abs_error_after": 0.0072,
+          "n_eval": 3136
+        },
+        "6.5": {
+          "a": -0.20108,
+          "b": 0.869227,
+          "claimed": 0.1838,
+          "actual": 0.1763,
+          "corrected": 0.1808,
+          "abs_error_before": 0.0074,
+          "abs_error_after": 0.0045,
+          "n_eval": 3136
+        },
+        "7.5": {
+          "a": 0.053905,
+          "b": 1.006371,
+          "claimed": 0.1045,
+          "actual": 0.1148,
+          "corrected": 0.1082,
+          "abs_error_before": 0.0103,
+          "abs_error_after": 0.0066,
+          "n_eval": 3136
+        },
+        "8.5": {
+          "a": 0.050709,
+          "b": 0.988087,
+          "claimed": 0.0554,
+          "actual": 0.0702,
+          "corrected": 0.0596,
+          "abs_error_before": 0.0148,
+          "abs_error_after": 0.0105,
+          "n_eval": 3136
+        }
+      },
+      "method": "logistic recalibration, fit on first holdout half",
+      "mean_abs_error_before": 0.0272,
+      "mean_abs_error_after": 0.0063,
+      "max_abs_error_before": 0.0524,
+      "max_abs_error_after": 0.0116
+    },
+    "total": {
+      "fit_n": 3136,
+      "eval_n": 3136,
+      "lines": {
+        "6.5": {
+          "a": 0.278745,
+          "b": 0.782335,
+          "claimed": 0.8497,
+          "actual": 0.8157,
+          "corrected": 0.8379,
+          "abs_error_before": 0.034,
+          "abs_error_after": 0.0222,
+          "n_eval": 3136
+        },
+        "7.5": {
+          "a": 0.192879,
+          "b": 0.729106,
+          "claimed": 0.7536,
+          "actual": 0.7165,
+          "corrected": 0.734,
+          "abs_error_before": 0.0371,
+          "abs_error_after": 0.0175,
+          "n_eval": 3136
+        },
+        "8.5": {
+          "a": 0.158132,
+          "b": 0.629205,
+          "claimed": 0.6374,
+          "actual": 0.6049,
+          "corrected": 0.6265,
+          "abs_error_before": 0.0325,
+          "abs_error_after": 0.0216,
+          "n_eval": 3136
+        },
+        "9.5": {
+          "a": -0.013363,
+          "b": 0.616751,
+          "claimed": 0.5122,
+          "actual": 0.4994,
+          "corrected": 0.5044,
+          "abs_error_before": 0.0129,
+          "abs_error_after": 0.005,
+          "n_eval": 3136
+        },
+        "10.5": {
+          "a": 0.0,
+          "b": 1.0,
+          "claimed": 0.3902,
+          "actual": 0.3855,
+          "corrected": 0.3902,
+          "abs_error_before": 0.0047,
+          "abs_error_after": 0.0047,
+          "n_eval": 3136
+        },
+        "11.5": {
+          "a": 0.0,
+          "b": 1.0,
+          "claimed": 0.2816,
+          "actual": 0.2746,
+          "corrected": 0.2816,
+          "abs_error_before": 0.007,
+          "abs_error_after": 0.007,
+          "n_eval": 3136
+        },
+        "12.5": {
+          "a": 0.0,
+          "b": 1.0,
+          "claimed": 0.1926,
+          "actual": 0.1929,
+          "corrected": 0.1926,
+          "abs_error_before": 0.0004,
+          "abs_error_after": 0.0004,
+          "n_eval": 3136
+        }
+      },
+      "method": "logistic recalibration, fit on first holdout half",
+      "mean_abs_error_before": 0.0184,
+      "mean_abs_error_after": 0.0112,
+      "max_abs_error_before": 0.0371,
+      "max_abs_error_after": 0.0222
+    }
+  },
   "residuals": {
     "home_away_corr": -0.1947,
     "cov_home_away": -1.3604,
@@ -679,7 +1167,7 @@
     "var_total_actual": 11.3955,
     "var_total_if_independent": 14.1163
   },
-  "line_method": "negative binomial with out-of-fold sigma(mu) = a*sqrt(mu)+b",
+  "line_method": "negative binomial, out-of-fold sigma(mu) = a*sqrt(mu)+b, then per-line logistic recalibration",
   "market": "corners",
   "source": "football-data.co.uk 11 leagues 2012-2026",
   "leagues": [

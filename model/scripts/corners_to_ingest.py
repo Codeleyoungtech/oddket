@@ -20,14 +20,97 @@ numbers the model produced.
 
 Usage:
     python3 scripts/corners_to_ingest.py data/corners_predictions.json > /tmp/corners_ingest.json
+    python3 scripts/corners_to_ingest.py --meta > /tmp/corners_validation.json
+
+The `--meta` mode emits the model's honest holdout report (accuracy + claimed
+vs. realized rate for every line) for `/api/corners/validation`. It is read
+straight from `models/corners_meta.json`, so the accuracy on screen always
+belongs to the model that is actually serving predictions.
 """
 import json
+import os
 import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def build_validation(meta: dict) -> dict:
+    """Condense corners_meta.json into the payload the app displays.
+
+    Only out-of-sample numbers are published: every figure below is measured on
+    the chronological holdout the models never trained on (or, for the
+    recalibration delta, on a half of that holdout the correction never saw).
+    """
+    def acc(key: str) -> dict:
+        m = meta.get(f"{key}_metrics") or {}
+        return {
+            "mae": m.get("mae"),
+            "naive_mae": m.get("naive_mae"),
+            "skill_vs_naive": m.get("skill_vs_naive"),
+            "r2": m.get("r2"),
+            "bias": m.get("bias"),
+            "residual_sigma": m.get("residual_sigma"),
+        }
+
+    lines: dict[str, list] = {}
+    for key in ("home", "away", "total"):
+        cal = ((meta.get("line_calibration") or {}).get(key) or {}).get("lines") or []
+        rec = ((meta.get("probability_recalibration") or {}).get(key) or {}).get("lines") or {}
+        out = []
+        for row in cal:
+            r = rec.get(str(row.get("line"))) or {}
+            out.append({
+                "line": row.get("line"),
+                "claimed": row.get("claimed"),
+                "actual": row.get("actual"),
+                "error": row.get("error"),
+                # Out-of-sample delta for the shape correction, when one shipped.
+                "corrected": r.get("corrected"),
+                "error_after": r.get("abs_error_after"),
+                "error_before": r.get("abs_error_before"),
+                "recalibrated": bool(r and (r.get("a") or 0.0) != 0.0),
+            })
+        lines[key] = out
+
+    recal = {}
+    for key in ("home", "away", "total"):
+        r = (meta.get("probability_recalibration") or {}).get(key) or {}
+        recal[key] = {
+            "mean_abs_error_before": r.get("mean_abs_error_before"),
+            "mean_abs_error_after": r.get("mean_abs_error_after"),
+            "max_abs_error_before": r.get("max_abs_error_before"),
+            "max_abs_error_after": r.get("max_abs_error_after"),
+            "fit_n": r.get("fit_n"),
+            "eval_n": r.get("eval_n"),
+        }
+
+    return {
+        "modelVersion": meta.get("version"),
+        "source": meta.get("source"),
+        "lineMethod": meta.get("line_method"),
+        "holdoutSize": meta.get("n_holdout"),
+        "holdoutRange": meta.get("holdout_range"),
+        "trainSize": meta.get("n_train"),
+        "leagues": meta.get("leagues") or [],
+        "accuracy": {k: acc(k) for k in ("home", "away", "total")},
+        "lines": lines,
+        "recalibration": recal,
+        "totalModel": meta.get("total_model_comparison") or {},
+        "teamLines": meta.get("team_lines") or [],
+        "totalLines": meta.get("total_lines") or [],
+    }
 
 
 def main() -> int:
+    if len(sys.argv) >= 2 and sys.argv[1] == "--meta":
+        with open(os.path.join(ROOT, "models", "corners_meta.json")) as f:
+            meta = json.load(f)
+        json.dump(build_validation(meta), sys.stdout)
+        print(f"Prepared corner validation for {meta.get('version')}", file=sys.stderr)
+        return 0
+
     if len(sys.argv) < 2:
-        print("usage: corners_to_ingest.py <corners_predictions.json>", file=sys.stderr)
+        print("usage: corners_to_ingest.py <corners_predictions.json> | --meta", file=sys.stderr)
         return 2
     with open(sys.argv[1]) as f:
         data = json.load(f)

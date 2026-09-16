@@ -81,8 +81,59 @@ export interface CornerPrediction {
   createdAt: number;
 }
 
+/**
+ * The live corner model's own out-of-sample report. Published by the training
+ * pipeline, so these numbers always belong to the model serving predictions
+ * rather than a copy that has drifted from it.
+ */
+export interface CornerLineRow {
+  line: number;
+  claimed: number | null;
+  actual: number | null;
+  error: number | null;
+  corrected: number | null;
+  error_before: number | null;
+  error_after: number | null;
+  recalibrated: boolean;
+}
+
+export interface CornerValidation {
+  modelVersion: string | null;
+  source: string | null;
+  lineMethod: string | null;
+  holdoutSize: number | null;
+  holdoutRange: string | null;
+  trainSize: number | null;
+  leagues: string[];
+  accuracy: Record<
+    "home" | "away" | "total",
+    {
+      mae: number | null;
+      naive_mae: number | null;
+      skill_vs_naive: number | null;
+      r2: number | null;
+      bias: number | null;
+      residual_sigma: number | null;
+    }
+  >;
+  lines: Record<"home" | "away" | "total", CornerLineRow[]>;
+  recalibration: Record<
+    "home" | "away" | "total",
+    {
+      mean_abs_error_before: number | null;
+      mean_abs_error_after: number | null;
+      max_abs_error_before: number | null;
+      max_abs_error_after: number | null;
+      fit_n: number | null;
+      eval_n: number | null;
+    }
+  >;
+  totalModel: { summed_mae?: number; direct_mae?: number; naive_mae?: number };
+}
+
 export const api = {
   health: () => req<Health>("/api/health"),
+  cornersValidation: () => req<{ validation: CornerValidation | null }>("/api/corners/validation"),
   football: makeClient("/api"),
   tennis: makeClient("/api/tennis"),
   corners: () => req<CornerPrediction[]>("/api/corners"),

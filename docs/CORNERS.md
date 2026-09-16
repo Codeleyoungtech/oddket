@@ -153,12 +153,36 @@ Claimed vs realised, out-of-fold `sigma(mu)`, both sides of every rung:
 | team away | **0.0263** | 0.0525 | Over 2.5 (+5.2pp) |
 | match total | **0.0135** | 0.0286 | Over 7.5 (+2.9pp) |
 
-The total ladder is now within **2.9pp** everywhere, and within 0.2pp at Over
-10.5 and Over 11.5 — the rungs that actually matter for "Over/Under X.5" bets.
-The team ladders carry a systematic **+3 to +5pp optimism on the low rungs**
+The raw ladder carries a systematic **+3 to +5pp optimism on the low rungs**
 (the model thinks Over 2.5 is likelier than it is) and a matching pessimism on
-the high rungs. That is the remaining known weakness, and it is the reason the
-"safe band" can pick a line it calls 75% that is closer to 71%.
+the high rungs — the reason the "safe band" could pick a line it called 75% that
+was closer to 71%.
+
+### Per-line shape correction (shipped)
+
+The cause is that a single parametric shape (Negative Binomial with `sigma(mu)`)
+is fitted to the *whole* distribution, so it cannot be exactly right at every
+rung at once — the low rungs are systematically too high, the high rungs too low.
+
+The fix is a per-line correction `p' = a + b·p`, fitted on **half** the holdout
+and evaluated on the **other half** (so the published delta is not the fit
+describing itself). It is applied at serve time in `predict_corners_v6`, with a
+running minimum from the lowest line up so the corrected ladder can never cross
+over itself.
+
+| market | mean \|error\| before | **after** | max after |
+|---|---|---|---|
+| team home | 0.0289 | **0.0163** | 0.0261 |
+| team away | 0.0272 | **0.0063** | 0.0139 |
+| match total | 0.0184 | **0.0112** | 0.0286 |
+
+Team home/away go from ~2.8pp mean error to ~1.6pp and ~0.6pp. Every line the
+model publishes is now within **2.9pp** of realized, and the team rungs — the
+ones the page leads with — within 2.6pp.
+
+Where a line had no measurable miscalibration (e.g. home Over 5.5, claimed
+0.4338 vs actual 0.4279), the fit correctly returns the identity (`a=0, b=1`),
+so the correction only moves the rungs that were actually wrong.
 
 ---
 
@@ -243,24 +267,41 @@ The cron (`corners` endpoint, 21:45 UTC daily) pulls real corner counts for
 finished fixtures we predicted. It costs credits only for fixtures not yet
 graded, so a quiet day costs nothing.
 
+### The scoreboard is empty on day one — so the backtest is published too
+
+Graded-fixture accuracy only accumulates as matches finish, which means "is this
+model any good?" would be unanswerable for weeks. It is answered today instead,
+from the holdout report the trainer already produces.
+
+Migration `0009_corner_validation.sql` adds a `corner_validation` table. The
+predict workflow writes it from the model metadata (`corners_to_ingest.py --meta`)
+and it is read back at `GET /api/corners/validation`, rendered on `/corners` as a
+**model accuracy** panel: MAE and skill vs the league-average baseline per market,
+plus claimed-vs-realized per line and the before/after of the shape correction.
+
+Only out-of-sample numbers are published: every figure is measured on the
+chronological holdout the models never trained on, and the recalibration delta on
+a half of that holdout the correction never saw.
+
 ---
 
 ## 7. Still open
 
-1. **API-Football keys are not configured yet.** Set `API_FOOTBALL_KEYS` on the
-   Cloudflare worker (comma- or whitespace-separated, one key or many). Without
-   it `POST /api/corners/fetch-results` returns `501 {configured:false}` and
-   nothing else breaks — the scoreboard simply stays empty. Note the
-   `/fixtures/statistics` endpoint must be included in your plan; that is where
-   corner counts live.
-2. **The +3 to +5pp low-rung optimism on team lines** (§3) is the next real
-   modelling win. It is the difference between "the safe band said 75%" and
-   "it was 71%".
-3. **The match total is barely predictable** (R² 0.013). Size expectations
+1. **One API-Football key is live; more multiply the capacity.** `API_FOOTBALL_KEYS`
+   accepts one key or many (comma- or whitespace-separated) and the client
+   round-robins them, putting a key on cooldown on 429/403 so a spent key never
+   fails a run. One free key is 100 requests/day against a grading need of ~24/day,
+   so it is sufficient today. Verified on the free tier: `/fixtures?date=&status=FT`
+   and `/fixtures/statistics?fixture=` both work — that is the whole grading path.
+   Season-scoped calls are restricted to 2022–2024 on free, which we do not need
+   (fixture IDs already come from The Odds API). If `API_FOOTBALL_KEYS` is unset,
+   `POST /api/corners/fetch-results` returns `501 {configured:false}` and nothing
+   else breaks — the scoreboard simply stays empty.
+2. **The match total is barely predictable** (R² 0.013). Size expectations
    accordingly; team lines are where the signal is.
-4. **More second-tier seasons** would lift name coverage and team-history depth
+3. **More second-tier seasons** would lift name coverage and team-history depth
    together (§4).
-5. **No corner rule book yet.** The football rule book exists
+4. **No corner rule book yet.** The football rule book exists
    (`docs/RULES.md`) because there was enough graded history to mine it. Corner
    rules need the same thing, and that requires item 1 running for a while
    first — which is exactly the discipline the football book was built on.

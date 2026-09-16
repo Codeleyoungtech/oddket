@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   computeTeamCornerLines,
   computeTotalCornerLines,
@@ -9,6 +9,7 @@ import {
   mostCorners3Way,
 } from "@oddket/core";
 import { useData } from "../../lib/data-provider";
+import { api, type CornerValidation } from "../../lib/api";
 import { Card, EmptyState, PageSkeleton, SectionTitle, SkeletonList } from "../../components/ui";
 
 function fmtDate(ts: number): string {
@@ -157,12 +158,158 @@ const TOTAL_LINE_LABELS: Record<string, string> = {
   over125: "O12.5",
 };
 
+/**
+ * The live corner model's own out-of-sample accuracy, published by the
+ * training pipeline.
+ *
+ * This exists so "is this model any good?" is answerable today, from the
+ * holdout backtest, instead of only after enough fixtures have finished to
+ * grade. Every number here is measured on data the model never trained on.
+ */
+function CornerModelAccuracy({ v }: { v: CornerValidation }) {
+  const sides = [
+    ['home', 'Home team'],
+    ['away', 'Away team'],
+    ['total', 'Match total'],
+  ] as const;
+  const pct = (x: number | null | undefined) =>
+    typeof x === 'number' ? `${(x * 100).toFixed(1)}%` : '—';
+  const num = (x: number | null | undefined, dp = 2) =>
+    typeof x === 'number' ? x.toFixed(dp) : '—';
+
+  return (
+    <details className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-3.5 py-2.5">
+      <summary className="cursor-pointer text-xs font-semibold text-zinc-200 select-none">
+        🎯 Model accuracy
+        <span className="ml-1.5 font-normal text-zinc-500">
+          out-of-sample backtest · {v.holdoutSize?.toLocaleString() ?? '—'} matches
+        </span>
+      </summary>
+
+      <div className="mt-3 space-y-3">
+        <div className="text-[11px] leading-relaxed text-zinc-500">
+          Trained on everything before {v.holdoutRange?.split(' -> ')[0] ?? '—'}, then
+          scored on the matches after it. A model that only looks good here has
+          earned it — the holdout was never trained on.
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px] tabular-nums">
+            <thead>
+              <tr className="text-zinc-500">
+                <th className="py-1 text-left font-medium">Corners</th>
+                <th className="py-1 text-right font-medium">Mean error</th>
+                <th className="py-1 text-right font-medium">League avg</th>
+                <th className="py-1 text-right font-medium">Skill</th>
+                <th className="py-1 text-right font-medium">R²</th>
+              </tr>
+            </thead>
+            <tbody className="text-zinc-300">
+              {sides.map(([key, label]) => {
+                const a = v.accuracy?.[key];
+                const skill = a?.skill_vs_naive;
+                return (
+                  <tr key={key} className="border-t border-zinc-800/70">
+                    <td className="py-1 text-left text-zinc-200">{label}</td>
+                    <td className="py-1 text-right">{num(a?.mae)}</td>
+                    <td className="py-1 text-right text-zinc-500">{num(a?.naive_mae)}</td>
+                    <td
+                      className={`py-1 text-right font-semibold ${
+                        typeof skill === 'number' && skill > 0 ? 'text-emerald-400' : 'text-red-400'
+                      }`}
+                    >
+                      {typeof skill === 'number' ? `${skill >= 0 ? '+' : ''}${(skill * 100).toFixed(1)}%` : '—'}
+                    </td>
+                    <td className="py-1 text-right text-zinc-500">{num(a?.r2, 3)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {sides.map(([key, label]) => {
+          const rows = v.lines?.[key] ?? [];
+          if (rows.length === 0) return null;
+          return (
+            <div key={key}>
+              <div className="text-[10px] uppercase tracking-wide text-zinc-500">{label} lines — what the model said vs what happened</div>
+              <div className="mt-1 overflow-x-auto">
+                <table className="w-full text-[10px] tabular-nums">
+                  <thead>
+                    <tr className="text-zinc-500">
+                      <th className="py-1 text-left font-medium">Line</th>
+                      {rows.map((r) => (
+                        <th key={r.line} className="py-1 text-right font-medium">O{r.line}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="text-sky-300">
+                      <td className="py-0.5 text-left text-zinc-500">model</td>
+                      {rows.map((r) => (
+                        <td key={r.line} className="py-0.5 text-right">{pct(r.claimed)}</td>
+                      ))}
+                    </tr>
+                    <tr className="text-zinc-200">
+                      <td className="py-0.5 text-left text-zinc-500">actual</td>
+                      {rows.map((r) => (
+                        <td key={r.line} className="py-0.5 text-right font-semibold">{pct(r.actual)}</td>
+                      ))}
+                    </tr>
+                    <tr className="text-zinc-500">
+                      <td className="py-0.5 text-left">gap</td>
+                      {rows.map((r) => {
+                        const e = r.error;
+                        const bad = typeof e === 'number' && Math.abs(e) >= 0.03;
+                        return (
+                          <td key={r.line} className={`py-0.5 text-right ${bad ? 'text-amber-400' : ''}`}>
+                            {typeof e === 'number' ? `${e >= 0 ? '+' : ''}${(e * 100).toFixed(1)}` : '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-2 text-[10px] leading-relaxed text-zinc-500">
+          Line probabilities come from a negative binomial on the predicted count,
+          then a per-line correction fitted on half the holdout and scored on the
+          other half. Where a row reads amber, the model is still off by 3pp or
+          more — that is the honest ceiling on those lines, not a bug.
+        </div>
+      </div>
+    </details>
+  );
+}
+
 export default function CornersPage() {
   const { cornerPredictions, db, mode } = useData();
   const fixtures = db?.fixtures ?? [];
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "tomorrow" | "week" | "past">("all");
   const [leagueFilter, setLeagueFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+
+  // The live model's own out-of-sample accuracy. Fetched separately from the
+  // prediction payload: it describes the model rather than the fixtures, and it
+  // has to render even when nothing has finished yet.
+  const [validation, setValidation] = useState<CornerValidation | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .cornersValidation()
+      .then((r) => {
+        if (alive) setValidation(r.validation ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Build fixture groups from predictions
   // Graded corner predictions: every stored line scored against the real count
@@ -350,6 +497,10 @@ export default function CornersPage() {
           </div>
         </div>
       </details>
+
+      {/* How accurate the model is, from its own backend holdout. Sits above the
+          live scoreboard because it answers the same question a day earlier. */}
+      {validation && <CornerModelAccuracy v={validation} />}
 
       {/* Scoreboard — how the corner predictions actually turned out.
           Deliberately placed above the fixtures: checking these by hand was the

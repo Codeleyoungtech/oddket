@@ -762,6 +762,37 @@ export async function listCornerOutcomes(db: D1Database): Promise<CornerOutcome[
   return (results ?? []).map(toCornerOutcome);
 }
 
+/* ---------------- corner model validation (holdout report) ---------------- */
+
+/**
+ * Persist the trained corner model's out-of-sample report. One row ('current')
+ * is kept: only the live model's accuracy is meaningful, and a history of stale
+ * reports would invite reading the wrong one.
+ */
+export async function upsertCornerValidation(db: D1Database, payload: unknown): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO corner_model_validation (id, payload, updated_at)
+       VALUES ('current', ?1, ?2)
+       ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
+    )
+    .bind(JSON.stringify(payload), Math.floor(Date.now() / 1000))
+    .run();
+}
+
+export async function getCornerValidation(db: D1Database): Promise<unknown | null> {
+  const row = await db
+    .prepare(`SELECT payload FROM corner_model_validation WHERE id = 'current'`)
+    .first<{ payload: string }>()
+    .catch(() => null);
+  if (!row?.payload) return null;
+  try {
+    return JSON.parse(row.payload);
+  } catch {
+    return null;
+  }
+}
+
 export async function insertBet(db: D1Database, b: Bet): Promise<void> {
   await db
     .prepare(

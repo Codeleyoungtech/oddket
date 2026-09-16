@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { D1Adapter } from "./d1-adapter.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql", "0006_telegram.sql", "0007_bet_source.sql", "0008_corner_v6.sql"];
+const MIGRATIONS = ["0000_init.sql", "0001_corners.sql", "0001_tennis.sql", "0002_multiples.sql", "0003_parlays.sql", "0004_settlement_alerts.sql", "0005_ev_filters.sql", "0006_telegram.sql", "0007_bet_source.sql", "0008_corner_v6.sql", "0009_corner_validation.sql"];
 const BUNDLE = join(__dirname, "..", "dist", "worker.mjs");
 
 let passed = 0;
@@ -637,6 +637,39 @@ console.log("\n[18] corner v6 ingest (line prob passthrough + grading)");
     const bad = await api("POST", "/api/corners/outcomes", { fixtureId: fix.id });
     check("corner outcome rejects a payload without counts", bad.status === 400, JSON.stringify(bad.json));
   }
+}
+
+console.log("\n[19] corner model validation (holdout report round-trip)");
+{
+  // The accuracy panel renders before any fixture has finished, so the report
+  // has to be readable when nothing else about the model is available.
+  const empty = await api("GET", "/api/corners/validation");
+  check("validation readable while empty (null, not an error)",
+    empty.status === 200 && empty.json?.validation === null, JSON.stringify(empty.json));
+
+  const payload = {
+    modelVersion: "corners-lgb-v6",
+    holdoutSize: 6272,
+    holdoutRange: "2022-02-24 -> 2026-05-24",
+    accuracy: {
+      home: { mae: 2.2445, naive_mae: 2.3649, skill_vs_naive: 0.0509, r2: 0.1037 },
+      away: { mae: 1.9523, naive_mae: 2.0882, skill_vs_naive: 0.0651, r2: 0.0943 },
+      total: { mae: 2.6888, naive_mae: 2.7113, skill_vs_naive: 0.0083, r2: 0.0129 },
+    },
+    lines: { home: [{ line: 2.5, claimed: 0.875, actual: 0.8359, error: 0.039 }] },
+  };
+  const posted = await api("POST", "/api/corners/validation", payload);
+  check("validation ingest accepted", posted.status === 200 && posted.json?.ok === true, JSON.stringify(posted.json));
+
+  const got = await api("GET", "/api/corners/validation");
+  check("validation round-trips unchanged",
+    got.json?.validation?.modelVersion === "corners-lgb-v6" &&
+    got.json?.validation?.accuracy?.home?.mae === 2.2445, JSON.stringify(got.json?.validation?.accuracy));
+  check("validation keeps the per-line table",
+    got.json?.validation?.lines?.home?.[0]?.actual === 0.8359, JSON.stringify(got.json?.validation?.lines));
+
+  const rejected = await api("POST", "/api/corners/validation", "not-an-object");
+  check("validation rejects a non-object payload", rejected.status === 400, JSON.stringify(rejected.json));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

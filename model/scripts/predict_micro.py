@@ -61,10 +61,10 @@ def reliability_interval(p: float, bands: list | None) -> tuple[float, float]:
 
 
 def load_history() -> tuple:
-    hist_path = history_path()
-    with open(hist_path) as f:
-        hist = json.load(f)
-    matches = load_matches_dict(hist_path)
+    # The file used to be parsed twice here — a redundant `json.load` whose result
+    # was never read. It went unnoticed until the data became gzip-compressed,
+    # at which point the pointless parse was the only thing that failed.
+    matches = load_matches_dict(history_path())
     states = build_team_states(matches)
     return states, matches
 

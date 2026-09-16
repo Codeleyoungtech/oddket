@@ -184,6 +184,76 @@ Where a line had no measurable miscalibration (e.g. home Over 5.5, claimed
 0.4338 vs actual 0.4279), the fit correctly returns the identity (`a=0, b=1`),
 so the correction only moves the rungs that were actually wrong.
 
+### 3.1 Full-depth retrain — the second tier finally has a history
+
+The seven second-tier leagues were listed in `ACTIVE_LEAGUES` but the repo only
+held **three scattered seasons** of them (2012, 2020, 2021) and **no current
+season at all**, while they accounted for **38% of live corner output**. Clubs
+promoted since 2021 had no history whatsoever.
+
+`model/scripts/fetch_footballdata.py` closes that. football-data.co.uk serves
+every division and season from a predictable path —
+`https://football-data.co.uk/mmz4281/<YYYY_YY>/<DIV>.csv` — so the whole history
+is scriptable with no browser and no API key. (The earlier belief that the site
+blocks scripted fetching, and the manual downloading it caused, was simply wrong.)
+
+| | before | **after** |
+|---|---|---|
+| matches loaded | 31,358 | **50,935** |
+| leagues with real depth | 4 | **11** |
+| history reaches | May 2026 | **14 Sep 2026** (567 current-season matches) |
+
+Every season from 2014/15 to 2026/27 is now present for all eleven divisions,
+except that **football-data.co.uk does not publish corner columns for
+D2/SP2/I2/T1 before 2017/18** — verified per file, and those four leagues'
+corner history genuinely starts there.
+
+**Retrained on the deeper history** (holdout is now 2024-04-21 → 2026-09-14,
+**n=10,187** — larger *and* harder, since it contains second-tier matches):
+
+| | naive MAE | previous v6 | skill | **now** | skill |
+|---|---|---|---|---|---|
+| home corners | 2.3157 | 2.2445 | +5.1% | **2.1883** | **+5.50%** |
+| away corners | 2.0505 | 1.9523 | +6.5% | **1.9472** | **+5.04%** |
+| match total | 2.7052 | 2.6888 | +0.8% | **2.6710** | **+1.26%** |
+
+R²: home 0.0818, away 0.0724, total 0.0186.
+
+**Line calibration improved on every market, on the harder holdout:**
+
+| market | previous | **now** | max now |
+|---|---|---|---|
+| team home | 0.0163 | **0.0075** | 0.0162 |
+| team away | 0.0063 | **0.0032** | 0.0062 |
+| match total | 0.0112 | **0.0049** | 0.0093 |
+
+Live coverage went from 97 to **134** fixtures, all 134 with real odds, and
+second-tier fixtures now make up about half of the page.
+
+### 3.2 Two bugs the deeper history exposed
+
+Adding overlapping coverage surfaced a defect that no amount of tuning would
+have revealed.
+
+**Match identity was its position in a file.** `id=f"corners-{league}-{season}-{i}"`
+is only unique *within* one file. The repo holds both the canonical
+`<DIV>_<YYYY_YY>.csv` naming and legacy copies (`EPL_2014_15.csv`, `E1_2021.csv`),
+and `E1_2021.csv` is the **2020/21** season — the same matches as
+`E1_2020_21.csv`. Under index ids those load as two unrelated seasons and every
+match in them is counted **twice** in the form windows and the Elo walk, quietly
+inflating the history. Identity is now content-based
+(`corners-{league}-{ts}-{home}-{away}`), which also removes the silent
+"whichever file loads first wins" behaviour. It is safe to change because `id`
+is used only for deduplication and is never persisted.
+
+**One bad byte could abort a training run.** `load_match_csv` decoded strictly,
+and `I2_2018_19.csv` contains a non-breaking space inside a numeric column. A
+stray byte in an odds field killed the entire run. Reads are now tolerant
+(`errors="replace"`) and non-breaking spaces are normalised to spaces — which
+matters beyond parsing, because left in place a stray character on a club name
+would invent a team that never played. Verified: **50,935 matches, 50,935 unique
+ids, zero duplicates.**
+
 ---
 
 ## 4. Team-name resolution
@@ -299,8 +369,19 @@ a half of that holdout the correction never saw.
    else breaks — the scoreboard simply stays empty.
 2. **The match total is barely predictable** (R² 0.013). Size expectations
    accordingly; team lines are where the signal is.
-3. **More second-tier seasons** would lift name coverage and team-history depth
-   together (§4).
+3. **Cup ties are declined (12 per round).** `unresolved team name` covers 21 of
+   155 fixtures: 9 J-League (correctly out of scope) and **12 domestic cup ties**
+   — Millwall/West Ham, Hull/Everton, Wolves/West Brom, Andorra/Sporting Gijón,
+   Basaksehir/Genclerbirligi. Both clubs in each tie exist in the data; they fail
+   because name resolution is **league-scoped** and "EFL Cup"/"Copa del Rey" is
+   not a league we train on.
+
+   This is deliberately left alone for now. Resolving globally would be easy, but
+   the model's own features are league-conditioned (league one-hots, league
+   scoring pace) and cup football differs from league football in ways the
+   training data never sees, so enabling it would publish a confident number
+   built on the wrong context. The honest fix is either cup-specific training
+   data or an explicit "cup" treatment — not a resolution fallback.
 4. **No corner rule book yet.** The football rule book exists
    (`docs/RULES.md`) because there was enough graded history to mine it. Corner
    rules need the same thing, and that requires item 1 running for a while

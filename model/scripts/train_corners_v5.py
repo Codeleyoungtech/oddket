@@ -76,7 +76,7 @@ ACTIVE_LEAGUES = [
 SEASONS = [
     "2014_15", "2015_16", "2016_17", "2017_18", "2018_19",
     "2019_20", "2020_21", "2021_22", "2022_23", "2023_24",
-    "2024_25", "2025_26",
+    "2024_25", "2025_26", "2026_27",
 ]
 
 # Rolling windows for form
@@ -166,6 +166,11 @@ class TeamState:
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
+def _scrub(line: str) -> str:
+    """Normalise characters that would otherwise corrupt a parsed value."""
+    return line.replace("\xa0", " ")
+
+
 def _parse_date(date_str: str) -> tuple[str, int]:
     for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d"):
         try:
@@ -202,10 +207,22 @@ def _find_odds(row: dict, h_key: str, d_key: str, a_key: str) -> tuple[float, fl
 
 
 def load_match_csv(path: str, league: str, season: str) -> list[Match]:
-    """Load a single CSV, extracting all available stats."""
+    """Load a single CSV, extracting all available stats.
+
+    Read tolerantly on purpose. football-data.co.uk emits the occasional
+    non-UTF-8 byte (a non-breaking space inside a numeric column is the one
+    actually observed, in `I2_2018_19.csv`), and a strict decode turns one bad
+    byte in an odds column into `UnicodeDecodeError` — aborting the whole
+    training run. Replacing undecodable bytes keeps a long download usable, and
+    `_float`/`_int` already treat anything unparseable as 0.
+
+    Non-breaking spaces are normalised to plain spaces before parsing: elsewhere
+    in this data they are a thousands separator, and left alone they would glue a
+    stray character onto a club name and invent a team that never played.
+    """
     matches = []
-    with open(path, encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
+    with open(path, encoding="utf-8-sig", errors="replace") as f:
+        reader = csv.DictReader(_scrub(line) for line in f)
         cols = reader.fieldnames or []
         for i, row in enumerate(reader):
             hc = row.get("HC", "").strip()
@@ -237,12 +254,26 @@ def load_match_csv(path: str, league: str, season: str) -> list[Match]:
             # Asian handicap
             ah = _float(row.get("AHh", row.get("BbAHh", "")))
 
+            home = row.get("HomeTeam", "").strip()
+            away = row.get("AwayTeam", "").strip()
+
             matches.append(Match(
-                id=f"corners-{league}-{season}-{i}",
+                # Identity is the MATCH, not its position in a file.
+                #
+                # Row-index ids look fine until the same season arrives under two
+                # filenames — the repo holds both `<DIV>_<YYYY_YY>.csv` (canonical
+                # football-data naming) and legacy `EPL_2014_15.csv` / `E1_2021.csv`
+                # copies, and `E1_2021.csv` is the 2020/21 season, the same matches
+                # as `E1_2020_21.csv`. Under index ids those load as two different
+                # seasons and every match in them is counted twice in the form
+                # windows and the Elo walk, silently inflating the history.
+                # Keying on league + date + teams dedupes by content, so which file
+                # wins no longer matters.
+                id=f"corners-{league}-{ts}-{home}-{away}",
                 league=league,
                 season=season,
-                home=row.get("HomeTeam", "").strip(),
-                away=row.get("AwayTeam", "").strip(),
+                home=home,
+                away=away,
                 date=date_str,
                 ts=ts,
                 hc=hc_i,

@@ -4,7 +4,9 @@
 > be kept current whenever the repo changes hands. If you are picking this project up,
 > start here, then read `OddKet_PRD.md` and `OddKet_Build_Prompt.md`.
 
-**Last updated:** Pass 27 — **every published corner line is now within 2.9pp of realized (§27).** The team-line ladders carry a per-line shape correction fitted on half the holdout and evaluated on the other half (team away mean error 2.7pp → **0.6pp**, team home 2.9pp → 1.6pp, total 1.8pp → 1.1pp), applied at serve time with a monotone guard so the ladder can never cross over. The model's own out-of-sample accuracy is now published in the app (`0009_corner_validation.sql` → `GET /api/corners/validation` → the **model accuracy** panel on `/corners`), so "how good is this model?" is answerable on day one rather than after weeks of graded fixtures.
+**Last updated:** Pass 28 — **the second tier finally has a history (§28).** football-data.co.uk turned out to be directly scriptable (`mmz4281/<YYYY_YY>/<DIV>.csv`), so the manual downloading was never necessary: `model/scripts/fetch_footballdata.py` pulls all 11 divisions × 13 seasons, taking loaded history from 31,358 to **50,935 matches** with **zero duplicate ids**. Adding that coverage exposed a real defect — match identity was its *row index in a file*, so `E1_2021.csv` and `E1_2020_21.csv` (the same 2020/21 season under two names) would each have loaded and doubled every match in the form windows and the Elo walk. Identity is now content-based. Retrained on the deeper history, every market improved on a larger **and harder** holdout: home **+5.50%**, away **+5.04%**, total **+1.26%** skill; line calibration team home **0.0163 → 0.0075**, team away **0.0063 → 0.0032**, total **0.0112 → 0.0049**. Live coverage 97 → **134** fixtures.
+
+**Previously:** Pass 27 — **every published corner line is now within 2.9pp of realized (§27).** The team-line ladders carry a per-line shape correction fitted on half the holdout and evaluated on the other half (team away mean error 2.7pp → **0.6pp**, team home 2.9pp → 1.6pp, total 1.8pp → 1.1pp), applied at serve time with a monotone guard so the ladder can never cross over. The model's own out-of-sample accuracy is now published in the app (`0009_corner_validation.sql` → `GET /api/corners/validation` → the **model accuracy** panel on `/corners`), so "how good is this model?" is answerable on day one rather than after weeks of graded fixtures.
 
 **Previously:** Pass 26 — **the corner model was rebuilt honestly (§26).** Three measured defects: six odds features were hardcoded constants at serve time (`odds_overround` was the #2 feature), Elo was computed over the whole history and used as a feature for every past match, and the match total was a sum of two independent models whose **independence assumption is measurably false** (residual covariance −1.28). The deployed total was *worse than predicting the league average*. v6 fixes all three, adds a direct total model, feeds real odds, resolves team names in tiers (coverage 0 → 97 of 145 fixtures), and grades every stored line on a new `/corners` scoreboard. Bet tagging gained a third cohort, **`rule`**. See **`docs/CORNERS.md`** for the full report.
 
@@ -1164,7 +1166,112 @@ book (`docs/RULES.md`).
 * **Match totals are barely predictable** (R² 0.013, +0.8% skill) — size
   expectations to that; the signal is in team lines (+5.1% / +6.5%).
 * **More second-tier seasons** in `footballdata/` lift both name coverage and
-history depth (§26.2).
+history depth (§26.2). → **done in §28**.
+
+---
+
+## 28. Pass 28 — the second tier finally has a history (and it was a download, not code)
+
+Full report: **`docs/CORNERS.md`** §3.1–3.2.
+
+The owner was offered a manual data run and asked, correctly, *"should I fetch you
+more data?"* Two things came out of it: the answer to **how** (nobody needs to
+download by hand), and two real bugs the added coverage exposed.
+
+### 28.1 The manual download was never necessary
+
+**football-data.co.uk is directly scriptable.** Every division and season sits at
+`https://football-data.co.uk/mmz4281/<YYYY_YY>/<DIV>.csv` — verified by pulling
+files (`2627/E1.csv` → 200, 39,905 bytes; `2526/E1.csv` → 200, 294,390 bytes, both
+with `HC`/`AC` corner columns). The earlier conclusion that the site blocks
+scripted fetching — and the hand-downloading of 48 files it caused — was wrong.
+
+`model/scripts/fetch_footballdata.py` now does it: 11 divisions × 13 seasons,
+concurrent, with backoff on the owner's slow link, and a per-file check that the
+season actually carries `HC`/`AC` and at least one played match. A file that
+fails is **skipped and reported rather than written**, because a half-empty
+season would silently poison the history.
+
+| | before | **after** |
+|---|---|---|
+| matches loaded | 31,358 | **50,935** |
+| leagues with real depth | 4 | **11** |
+| history reaches | May 2026 | **14 Sep 2026** |
+
+Real limit found and verified per file: **D2/SP2/I2/T1 have no corner columns
+before 2017/18.** Those four leagues' corner history genuinely starts there.
+
+### 28.2 Match identity was its position in a file 🔴
+
+`id=f"corners-{league}-{season}-{i}"` is unique only *within* one file. The repo
+holds canonical `<DIV>_<YYYY_YY>.csv` names **and** legacy copies — and
+`E1_2021.csv` is the **2020/21** season, the same matches as `E1_2020_21.csv`.
+Under index ids those load as two unrelated seasons and every match in them is
+counted **twice** in the form windows and the Elo walk.
+
+This would have been introduced by adding better coverage — the more complete the
+data, the more the overlap. Identity is now content-based
+(`corners-{league}-{ts}-{home}-{away}`), which also removes the "whichever file
+loads first silently wins" behaviour. Safe to change because `id` is used **only**
+for dedupe and never persisted. Verified: 50,935 matches, 50,935 unique ids,
+**zero duplicates**.
+
+### 28.3 One bad byte could abort a training run
+
+`load_match_csv` decoded strictly, and `I2_2018_19.csv` contains a non-breaking
+space in a numeric column — `UnicodeDecodeError`, whole run dead. Reads are now
+tolerant and non-breaking spaces are normalised to spaces. The normalisation
+matters beyond parsing: left in place, a stray character on a club name would
+invent a team that never played.
+
+### 28.4 Honest before/after (holdout 2024-04-21 → 2026-09-14, n=10,187)
+
+The holdout is larger **and harder** than the one Pass 27 reported on (it now
+contains second-tier matches), so this is not a like-for-like comparison — the
+naive baseline moved too.
+
+| | naive MAE | previous v6 | skill | **now** | skill |
+|---|---|---|---|---|---|
+| home corners | 2.3157 | 2.2445 | +5.1% | **2.1883** | **+5.50%** |
+| away corners | 2.0505 | 1.9523 | +6.5% | **1.9472** | **+5.04%** |
+| match total | 2.7052 | 2.6888 | +0.8% | **2.6710** | **+1.26%** |
+
+Line calibration, previous → now: team home **0.0163 → 0.0075**, team away
+**0.0063 → 0.0032**, match total **0.0112 → 0.0049**. Every market improved on the
+harder holdout.
+
+Live coverage: 97 → **134** fixtures, all with real odds; second-tier fixtures are
+now about half the page.
+
+### 28.5 Still declined, deliberately: cup ties
+
+21 of 155 fixtures skip. 9 are J-League (out of scope, correct). The other **12
+are domestic cup ties** — Millwall/West Ham, Hull/Everton, Wolves/West Brom,
+Andorra/Sporting Gijón — where **both clubs exist in the data** and resolution
+fails only because it is league-scoped.
+
+Left alone on purpose. Resolving globally is trivial, but the model's features are
+league-conditioned (league one-hots, league scoring pace) and cup football differs
+from league football in ways the training data never sees. Enabling it would
+publish a confident number built on the wrong context. The honest fix is
+cup-specific data or explicit cup handling — not a resolution fallback.
+
+### Verification (Pass 28)
+
+* fetcher run: **131 files**, 0 failed, 12 skipped (no `HC`/`AC` pre-2017/18); repo
+  +19.5 MB
+* loader: 50,935 matches, **0 duplicate ids**, date range 2014-08-08 → 2026-09-14
+* corner model retrained; `corners_meta.json` + all three joblibs rewritten
+* predictor re-run against the live feed: **134 predictions**, 134 with real odds
+* calibration gains re-measured on the new holdout, not carried over
+
+### Still open (Pass 28)
+
+* **Cup ties** (§28.5) — deliberate decline, needs cup-aware treatment.
+* **Corner rule book still not built** — needs graded corner history accumulating
+  from the API-Football key.
+* **Match totals remain barely predictable** (R² 0.0186, +1.26%) — size
+  expectations to that; team lines carry the signal.
 
 ---
 
